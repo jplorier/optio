@@ -62,7 +62,12 @@ export async function ticketRoutes(app: FastifyInstance) {
 
       if (matchingTask) {
         try {
-          await taskService.transitionTask(matchingTask.id, TaskState.COMPLETED, "pr_merged", prUrl);
+          await taskService.transitionTask(
+            matchingTask.id,
+            TaskState.COMPLETED,
+            "pr_merged",
+            prUrl,
+          );
           logger.info({ taskId: matchingTask.id, prUrl }, "Task completed via PR merge");
         } catch {
           // May already be completed

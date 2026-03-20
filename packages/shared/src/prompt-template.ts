@@ -40,10 +40,7 @@ export const TASK_FILE_PATH = ".optio/task.md";
 /**
  * Render a prompt template by replacing {{VARIABLE}} placeholders.
  */
-export function renderPromptTemplate(
-  template: string,
-  vars: Record<string, string>,
-): string {
+export function renderPromptTemplate(template: string, vars: Record<string, string>): string {
   let result = template;
 
   // Handle {{#if VAR}}...{{else}}...{{/if}} blocks

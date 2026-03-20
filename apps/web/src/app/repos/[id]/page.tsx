@@ -5,15 +5,7 @@ import { api } from "@/lib/api-client";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PRESET_IMAGES, type PresetImageId } from "@optio/shared";
-import {
-  Loader2,
-  FolderGit2,
-  Save,
-  Trash2,
-  ArrowLeft,
-  Lock,
-  Globe,
-} from "lucide-react";
+import { Loader2, FolderGit2, Save, Trash2, ArrowLeft, Lock, Globe } from "lucide-react";
 import { cn } from "@/lib/utils";
 import Link from "next/link";
 
@@ -33,7 +25,8 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [defaultBranch, setDefaultBranch] = useState("main");
 
   useEffect(() => {
-    api.getRepo(id)
+    api
+      .getRepo(id)
       .then((res) => {
         const r = res.repo;
         setRepo(r);
@@ -88,11 +81,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   }
 
   if (!repo) {
-    return (
-      <div className="flex items-center justify-center h-full text-error">
-        Repo not found
-      </div>
-    );
+    return <div className="flex items-center justify-center h-full text-error">Repo not found</div>;
   }
 
   return (
@@ -103,7 +92,11 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         </Link>
         <FolderGit2 className="w-5 h-5 text-text-muted" />
         <h1 className="text-xl font-bold">{repo.fullName}</h1>
-        {repo.isPrivate ? <Lock className="w-4 h-4 text-text-muted" /> : <Globe className="w-4 h-4 text-text-muted" />}
+        {repo.isPrivate ? (
+          <Lock className="w-4 h-4 text-text-muted" />
+        ) : (
+          <Globe className="w-4 h-4 text-text-muted" />
+        )}
       </div>
 
       {/* Default branch */}
@@ -131,21 +124,32 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
       {/* Image */}
       <section className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
         <h2 className="text-sm font-medium">Container Image</h2>
-        <p className="text-xs text-text-muted">Choose the base image for agent pods working on this repo.</p>
+        <p className="text-xs text-text-muted">
+          Choose the base image for agent pods working on this repo.
+        </p>
         <div className="grid gap-1.5">
-          {(Object.entries(PRESET_IMAGES) as [PresetImageId, typeof PRESET_IMAGES[PresetImageId]][]).map(([key, img]) => (
+          {(
+            Object.entries(PRESET_IMAGES) as [
+              PresetImageId,
+              (typeof PRESET_IMAGES)[PresetImageId],
+            ][]
+          ).map(([key, img]) => (
             <button
               key={key}
               onClick={() => setImagePreset(key)}
               className={cn(
                 "flex items-start gap-3 p-2.5 rounded-md border text-left text-sm transition-colors",
-                imagePreset === key ? "border-primary bg-primary/5" : "border-border hover:border-text-muted bg-bg"
+                imagePreset === key
+                  ? "border-primary bg-primary/5"
+                  : "border-border hover:border-text-muted bg-bg",
               )}
             >
-              <div className={cn(
-                "w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center",
-                imagePreset === key ? "border-primary" : "border-border"
-              )}>
+              <div
+                className={cn(
+                  "w-4 h-4 rounded-full border-2 mt-0.5 shrink-0 flex items-center justify-center",
+                  imagePreset === key ? "border-primary" : "border-border",
+                )}
+              >
                 {imagePreset === key && <div className="w-2 h-2 rounded-full bg-primary" />}
               </div>
               <div>
@@ -156,7 +160,9 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           ))}
         </div>
         <div>
-          <label className="block text-xs text-text-muted mb-1">Extra packages (comma-separated)</label>
+          <label className="block text-xs text-text-muted mb-1">
+            Extra packages (comma-separated)
+          </label>
           <input
             value={extraPackages}
             onChange={(e) => setExtraPackages(e.target.value)}

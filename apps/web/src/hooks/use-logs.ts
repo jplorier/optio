@@ -19,15 +19,20 @@ export function useLogs(taskId: string) {
 
   // Load historical logs
   useEffect(() => {
-    api.getTaskLogs(taskId, { limit: 500 }).then((res) => {
-      setLogs(res.logs.map((l: any) => ({
-        content: l.content,
-        stream: l.stream,
-        timestamp: l.timestamp,
-        logType: l.logType ?? undefined,
-        metadata: l.metadata ?? undefined,
-      })));
-    }).catch(() => {});
+    api
+      .getTaskLogs(taskId, { limit: 500 })
+      .then((res) => {
+        setLogs(
+          res.logs.map((l: any) => ({
+            content: l.content,
+            stream: l.stream,
+            timestamp: l.timestamp,
+            logType: l.logType ?? undefined,
+            metadata: l.metadata ?? undefined,
+          })),
+        );
+      })
+      .catch(() => {});
   }, [taskId]);
 
   // Live stream
@@ -38,13 +43,16 @@ export function useLogs(taskId: string) {
     setConnected(true);
 
     client.on("task:log", (event) => {
-      setLogs((prev) => [...prev, {
-        content: event.content,
-        stream: event.stream,
-        timestamp: event.timestamp,
-        logType: event.logType,
-        metadata: event.metadata,
-      }]);
+      setLogs((prev) => [
+        ...prev,
+        {
+          content: event.content,
+          stream: event.stream,
+          timestamp: event.timestamp,
+          logType: event.logType,
+          metadata: event.metadata,
+        },
+      ]);
     });
 
     return () => {

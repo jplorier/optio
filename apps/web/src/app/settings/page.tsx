@@ -12,7 +12,8 @@ function PromptTemplateEditor() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.getEffectiveTemplate()
+    api
+      .getEffectiveTemplate()
       .then((res) => {
         setTemplate(res.template);
         setAutoMerge(res.autoMerge);
@@ -52,7 +53,9 @@ function PromptTemplateEditor() {
         <p className="text-xs text-text-muted">
           Default prompt used for all repos unless overridden in repo settings.
         </p>
-        <button onClick={handleReset} className="text-xs text-primary hover:underline">Reset to default</button>
+        <button onClick={handleReset} className="text-xs text-primary hover:underline">
+          Reset to default
+        </button>
       </div>
       <textarea
         value={template}
@@ -65,7 +68,9 @@ function PromptTemplateEditor() {
         <ul className="text-xs space-y-1.5">
           <li className="flex items-start gap-2">
             <code className="text-primary shrink-0">{"{{TASK_FILE}}"}</code>
-            <span className="text-text-muted">Path to the task markdown file written into the worktree</span>
+            <span className="text-text-muted">
+              Path to the task markdown file written into the worktree
+            </span>
           </li>
           <li className="flex items-start gap-2">
             <code className="text-primary shrink-0">{"{{BRANCH_NAME}}"}</code>
@@ -85,7 +90,10 @@ function PromptTemplateEditor() {
           </li>
           <li className="flex items-start gap-2">
             <code className="text-primary shrink-0">{"{{AUTO_MERGE}}"}</code>
-            <span className="text-text-muted">Whether auto-merge is enabled — use with <code className="text-primary">{"{{#if AUTO_MERGE}}...{{/if}}"}</code></span>
+            <span className="text-text-muted">
+              Whether auto-merge is enabled — use with{" "}
+              <code className="text-primary">{"{{#if AUTO_MERGE}}...{{/if}}"}</code>
+            </span>
           </li>
         </ul>
       </div>
@@ -120,7 +128,10 @@ export default function SettingsPage() {
     if (typeof Notification !== "undefined") {
       setNotificationsEnabled(Notification.permission === "granted");
     }
-    api.listTicketProviders().then((res) => setProviders(res.providers)).catch(() => {});
+    api
+      .listTicketProviders()
+      .then((res) => setProviders(res.providers))
+      .catch(() => {});
   }, []);
 
   const requestNotifications = async () => {
@@ -159,7 +170,9 @@ export default function SettingsPage() {
               <Bell className="w-5 h-5 text-text-muted" />
               <div>
                 <p className="text-sm">Browser Notifications</p>
-                <p className="text-xs text-text-muted">Get notified when tasks complete or need attention</p>
+                <p className="text-xs text-text-muted">
+                  Get notified when tasks complete or need attention
+                </p>
               </div>
             </div>
             <button
@@ -182,16 +195,22 @@ export default function SettingsPage() {
         <h2 className="text-sm font-medium text-text-muted mb-3">Ticket Integration</h2>
         <div className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
           <p className="text-xs text-text-muted">
-            Sync issues labeled with <code className="px-1 py-0.5 bg-bg rounded text-primary">optio</code> from your configured ticket providers.
+            Sync issues labeled with{" "}
+            <code className="px-1 py-0.5 bg-bg rounded text-primary">optio</code> from your
+            configured ticket providers.
           </p>
           {providers.length > 0 ? (
             <div className="space-y-2">
               {providers.map((p: any) => (
                 <div key={p.id} className="flex items-center gap-2 text-sm">
-                  <span className={`w-2 h-2 rounded-full ${p.enabled ? "bg-success" : "bg-text-muted"}`} />
+                  <span
+                    className={`w-2 h-2 rounded-full ${p.enabled ? "bg-success" : "bg-text-muted"}`}
+                  />
                   <span className="capitalize">{p.source}</span>
                   <span className="text-xs text-text-muted">
-                    {p.source === "github" && p.config?.owner && `${p.config.owner}/${p.config.repo}`}
+                    {p.source === "github" &&
+                      p.config?.owner &&
+                      `${p.config.owner}/${p.config.repo}`}
                   </span>
                 </div>
               ))}
@@ -204,7 +223,11 @@ export default function SettingsPage() {
             disabled={syncing}
             className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors disabled:opacity-50"
           >
-            {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+            {syncing ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <RefreshCw className="w-3 h-3" />
+            )}
             Sync Now
           </button>
         </div>

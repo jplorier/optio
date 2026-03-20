@@ -1,9 +1,6 @@
 import type { TaskState } from "./task.js";
 
-export type WsEvent =
-  | TaskStateChangedEvent
-  | TaskLogEvent
-  | TaskCreatedEvent;
+export type WsEvent = TaskStateChangedEvent | TaskLogEvent | TaskCreatedEvent;
 
 export interface TaskStateChangedEvent {
   type: "task:state_changed";

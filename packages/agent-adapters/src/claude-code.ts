@@ -81,9 +81,8 @@ export class ClaudeCodeAdapter implements AgentAdapter {
     return {
       success: exitCode === 0,
       prUrl: prMatch?.[0],
-      summary: exitCode === 0
-        ? "Agent completed successfully"
-        : `Agent exited with code ${exitCode}`,
+      summary:
+        exitCode === 0 ? "Agent completed successfully" : `Agent exited with code ${exitCode}`,
       error: exitCode !== 0 ? `Exit code: ${exitCode}` : undefined,
     };
   }

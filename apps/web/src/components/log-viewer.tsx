@@ -45,16 +45,22 @@ export function LogViewer({ taskId }: { taskId: string }) {
     setAutoScroll(atBottom);
   };
 
-  const filteredLogs = showTools ? logs : logs.filter((l) => l.logType !== "tool_use" && l.logType !== "tool_result");
+  const filteredLogs = showTools
+    ? logs
+    : logs.filter((l) => l.logType !== "tool_use" && l.logType !== "tool_result");
 
   return (
     <div className="flex flex-col h-full border border-border rounded-lg overflow-hidden bg-bg">
       <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-bg-card">
         <div className="flex items-center gap-2 text-xs text-text-muted">
           {connected ? (
-            <><Wifi className="w-3 h-3 text-success" /> Live</>
+            <>
+              <Wifi className="w-3 h-3 text-success" /> Live
+            </>
           ) : (
-            <><WifiOff className="w-3 h-3 text-error" /> Disconnected</>
+            <>
+              <WifiOff className="w-3 h-3 text-error" /> Disconnected
+            </>
           )}
           <span className="opacity-50">·</span>
           <span>{logs.length} events</span>
@@ -62,7 +68,10 @@ export function LogViewer({ taskId }: { taskId: string }) {
         <div className="flex items-center gap-1">
           <button
             onClick={() => setShowTools(!showTools)}
-            className={cn("px-2 py-0.5 rounded text-xs transition-colors", showTools ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover")}
+            className={cn(
+              "px-2 py-0.5 rounded text-xs transition-colors",
+              showTools ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
+            )}
           >
             Tools
           </button>
@@ -70,7 +79,10 @@ export function LogViewer({ taskId }: { taskId: string }) {
             <button
               onClick={() => {
                 setAutoScroll(true);
-                containerRef.current?.scrollTo({ top: containerRef.current.scrollHeight, behavior: "smooth" });
+                containerRef.current?.scrollTo({
+                  top: containerRef.current.scrollHeight,
+                  behavior: "smooth",
+                });
               }}
               className="p-1 rounded hover:bg-bg-hover text-text-muted"
               title="Scroll to bottom"
@@ -78,12 +90,20 @@ export function LogViewer({ taskId }: { taskId: string }) {
               <ArrowDown className="w-3.5 h-3.5" />
             </button>
           )}
-          <button onClick={clear} className="p-1 rounded hover:bg-bg-hover text-text-muted" title="Clear">
+          <button
+            onClick={clear}
+            className="p-1 rounded hover:bg-bg-hover text-text-muted"
+            title="Clear"
+          >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
-      <div ref={containerRef} onScroll={handleScroll} className="flex-1 overflow-auto p-2 font-mono text-xs leading-relaxed">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-auto p-2 font-mono text-xs leading-relaxed"
+      >
         {filteredLogs.length === 0 ? (
           <div className="text-text-muted text-center py-8">Waiting for output...</div>
         ) : (

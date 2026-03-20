@@ -66,7 +66,7 @@ export const taskLogs = pgTable("task_logs", {
     .references(() => tasks.id),
   stream: text("stream").notNull().default("stdout"),
   content: text("content").notNull(),
-  logType: text("log_type"),  // "text" | "tool_use" | "tool_result" | "thinking" | "system" | "error" | "info"
+  logType: text("log_type"), // "text" | "tool_use" | "tool_result" | "thinking" | "system" | "error" | "info"
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -99,9 +99,9 @@ export const repos = pgTable("repos", {
   defaultBranch: text("default_branch").notNull().default("main"),
   isPrivate: boolean("is_private").notNull().default(false),
   imagePreset: text("image_preset").default("base"),
-  extraPackages: text("extra_packages"),  // comma-separated
+  extraPackages: text("extra_packages"), // comma-separated
   autoMerge: boolean("auto_merge").notNull().default(false),
-  promptTemplateOverride: text("prompt_template_override"),  // null = use global default
+  promptTemplateOverride: text("prompt_template_override"), // null = use global default
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -141,7 +141,7 @@ export const promptTemplates = pgTable("prompt_templates", {
   name: text("name").notNull().unique(),
   template: text("template").notNull(),
   isDefault: boolean("is_default").notNull().default(false),
-  repoUrl: text("repo_url"),  // null = global default, set = repo-specific
+  repoUrl: text("repo_url"), // null = global default, set = repo-specific
   autoMerge: boolean("auto_merge").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

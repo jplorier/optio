@@ -30,9 +30,18 @@ async function fetchMetrics<T>(path: string): Promise<T | null> {
   }
 }
 
-interface MetricsUsage { cpu: string; memory: string }
-interface NodeMetrics { metadata: { name: string }; usage: MetricsUsage }
-interface PodMetrics { metadata: { name: string }; containers: Array<{ name: string; usage: MetricsUsage }> }
+interface MetricsUsage {
+  cpu: string;
+  memory: string;
+}
+interface NodeMetrics {
+  metadata: { name: string };
+  usage: MetricsUsage;
+}
+interface PodMetrics {
+  metadata: { name: string };
+  containers: Array<{ name: string; usage: MetricsUsage }>;
+}
 
 function parseCpuNano(cpu: string): number {
   // "183270758n" -> nanocores, "100m" -> millicores, "1" -> cores
@@ -73,7 +82,9 @@ export async function clusterRoutes(app: FastifyInstance) {
       // Fetch metrics (gracefully fail if metrics-server not installed)
       const [nodeMetricsList, podMetricsList] = await Promise.all([
         fetchMetrics<{ items: NodeMetrics[] }>("/apis/metrics.k8s.io/v1beta1/nodes"),
-        fetchMetrics<{ items: PodMetrics[] }>(`/apis/metrics.k8s.io/v1beta1/namespaces/${NAMESPACE}/pods`),
+        fetchMetrics<{ items: PodMetrics[] }>(
+          `/apis/metrics.k8s.io/v1beta1/namespaces/${NAMESPACE}/pods`,
+        ),
       ]);
 
       const nodeMetricsMap = new Map(
@@ -102,7 +113,10 @@ export async function clusterRoutes(app: FastifyInstance) {
 
         return {
           name,
-          status: n.status?.conditions?.find((c) => c.type === "Ready")?.status === "True" ? "Ready" : "NotReady",
+          status:
+            n.status?.conditions?.find((c) => c.type === "Ready")?.status === "True"
+              ? "Ready"
+              : "NotReady",
           kubeletVersion: n.status?.nodeInfo?.kubeletVersion,
           os: n.status?.nodeInfo?.osImage,
           arch: n.status?.nodeInfo?.architecture,
@@ -127,7 +141,9 @@ export async function clusterRoutes(app: FastifyInstance) {
         return {
           name: podName,
           phase: p.status?.phase,
-          status: waiting?.reason ?? (running ? "Running" : terminated?.reason ?? p.status?.phase ?? "Unknown"),
+          status:
+            waiting?.reason ??
+            (running ? "Running" : (terminated?.reason ?? p.status?.phase ?? "Unknown")),
           ready: containerStatus?.ready ?? false,
           restarts: containerStatus?.restartCount ?? 0,
           image: containerStatus?.image ?? p.spec?.containers?.[0]?.image,
@@ -136,7 +152,9 @@ export async function clusterRoutes(app: FastifyInstance) {
           startedAt: running?.startedAt ?? p.status?.startTime,
           labels: p.metadata?.labels ?? {},
           isOptioManaged: p.metadata?.labels?.["managed-by"] === "optio",
-          isInfra: !!(p.metadata?.labels?.["app"] && ["postgres", "redis"].includes(p.metadata.labels["app"])),
+          isInfra: !!(
+            p.metadata?.labels?.["app"] && ["postgres", "redis"].includes(p.metadata.labels["app"])
+          ),
           // Resource usage
           cpuMillicores: metrics ? Math.round(metrics.cpu / 1_000_000) : null,
           memoryMi: metrics ? Math.round(metrics.memoryKi / 1024) : null,

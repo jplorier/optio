@@ -15,8 +15,10 @@ const ERROR_PATTERNS: Array<{
     classify: () => ({
       category: "image",
       title: "Container image not found",
-      description: "Kubernetes could not pull the agent container image. This usually means the image hasn't been built locally or isn't accessible from the cluster.",
-      remedy: "Run: docker build -t optio-agent:latest -f Dockerfile.agent .\nThen ensure OPTIO_IMAGE_PULL_POLICY=Never is set in your .env file.",
+      description:
+        "Kubernetes could not pull the agent container image. This usually means the image hasn't been built locally or isn't accessible from the cluster.",
+      remedy:
+        "Run: docker build -t optio-agent:latest -f Dockerfile.agent .\nThen ensure OPTIO_IMAGE_PULL_POLICY=Never is set in your .env file.",
       retryable: true,
     }),
   },
@@ -26,7 +28,8 @@ const ERROR_PATTERNS: Array<{
       category: "timeout",
       title: "Pod startup timed out",
       description: `The agent pod did not reach Running state within ${match[1]}s. This could be caused by image pull issues, resource constraints, or scheduling problems.`,
-      remedy: "Check the Cluster page for pod status and events. Common causes:\n- Image not built (run docker build)\n- Insufficient cluster resources\n- Node scheduling issues",
+      remedy:
+        "Check the Cluster page for pod status and events. Common causes:\n- Image not built (run docker build)\n- Insufficient cluster resources\n- Node scheduling issues",
       retryable: true,
     }),
   },
@@ -46,7 +49,8 @@ const ERROR_PATTERNS: Array<{
       category: "auth",
       title: "Anthropic API key missing",
       description: "No Anthropic API key is configured and Claude Code cannot authenticate.",
-      remedy: "Go to Secrets and add ANTHROPIC_API_KEY, or switch to Max subscription auth in Settings.",
+      remedy:
+        "Go to Secrets and add ANTHROPIC_API_KEY, or switch to Max subscription auth in Settings.",
       retryable: true,
     }),
   },
@@ -66,7 +70,8 @@ const ERROR_PATTERNS: Array<{
       category: "resource",
       title: "Out of memory",
       description: "The agent container was killed because it exceeded its memory limit.",
-      remedy: "Increase the memory limit in the repo's container settings, or use a larger image preset.",
+      remedy:
+        "Increase the memory limit in the repo's container settings, or use a larger image preset.",
       retryable: true,
     }),
   },
@@ -75,8 +80,10 @@ const ERROR_PATTERNS: Array<{
     classify: () => ({
       category: "auth",
       title: "API rate limit exceeded",
-      description: "The agent hit an API rate limit. This can happen with heavy usage on subscription plans.",
-      remedy: "Wait a few minutes before retrying, or switch to API key auth with higher rate limits.",
+      description:
+        "The agent hit an API rate limit. This can happen with heavy usage on subscription plans.",
+      remedy:
+        "Wait a few minutes before retrying, or switch to API key auth with higher rate limits.",
       retryable: true,
     }),
   },
@@ -85,8 +92,10 @@ const ERROR_PATTERNS: Array<{
     classify: () => ({
       category: "network",
       title: "Network error",
-      description: "The agent could not connect to a required service. This could be the GitHub API, Anthropic API, or an internal service.",
-      remedy: "Check that port-forwards are running (kubectl port-forward) and external APIs are reachable.",
+      description:
+        "The agent could not connect to a required service. This could be the GitHub API, Anthropic API, or an internal service.",
+      remedy:
+        "Check that port-forwards are running (kubectl port-forward) and external APIs are reachable.",
       retryable: true,
     }),
   },
@@ -95,8 +104,10 @@ const ERROR_PATTERNS: Array<{
     classify: (match) => ({
       category: "agent",
       title: `Agent exited with code ${match[1]}`,
-      description: "The coding agent process exited with a non-zero exit code. Check the logs for details about what went wrong.",
-      remedy: "Review the task logs for error messages. The agent may have encountered an issue it couldn't resolve.",
+      description:
+        "The coding agent process exited with a non-zero exit code. Check the logs for details about what went wrong.",
+      remedy:
+        "Review the task logs for error messages. The agent may have encountered an issue it couldn't resolve.",
       retryable: true,
     }),
   },

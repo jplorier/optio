@@ -27,8 +27,7 @@ export const api = {
     return request<{ tasks: any[] }>(`/api/tasks${query ? `?${query}` : ""}`);
   },
 
-  getTask: (id: string) =>
-    request<{ task: any }>(`/api/tasks/${id}`),
+  getTask: (id: string) => request<{ task: any }>(`/api/tasks/${id}`),
 
   createTask: (data: {
     title: string;
@@ -46,11 +45,9 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  cancelTask: (id: string) =>
-    request<{ task: any }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
+  cancelTask: (id: string) => request<{ task: any }>(`/api/tasks/${id}/cancel`, { method: "POST" }),
 
-  retryTask: (id: string) =>
-    request<{ task: any }>(`/api/tasks/${id}/retry`, { method: "POST" }),
+  retryTask: (id: string) => request<{ task: any }>(`/api/tasks/${id}/retry`, { method: "POST" }),
 
   resumeTask: (id: string, prompt?: string) =>
     request<{ task: any }>(`/api/tasks/${id}/resume`, {
@@ -66,8 +63,7 @@ export const api = {
     return request<{ logs: any[] }>(`/api/tasks/${id}/logs${query ? `?${query}` : ""}`);
   },
 
-  getTaskEvents: (id: string) =>
-    request<{ events: any[] }>(`/api/tasks/${id}/events`),
+  getTaskEvents: (id: string) => request<{ events: any[] }>(`/api/tasks/${id}/events`),
 
   // Secrets
   listSecrets: (scope?: string) => {
@@ -90,11 +86,9 @@ export const api = {
   getHealth: () => request<{ healthy: boolean; checks: Record<string, boolean> }>("/api/health"),
 
   // Tickets (Phase 3)
-  syncTickets: () =>
-    request<{ synced: number }>("/api/tickets/sync", { method: "POST" }),
+  syncTickets: () => request<{ synced: number }>("/api/tickets/sync", { method: "POST" }),
 
-  listTicketProviders: () =>
-    request<{ providers: any[] }>("/api/tickets/providers"),
+  listTicketProviders: () => request<{ providers: any[] }>("/api/tickets/providers"),
 
   createTicketProvider: (data: { source: string; config: Record<string, unknown> }) =>
     request<{ provider: any }>("/api/tickets/providers", {
@@ -110,8 +104,7 @@ export const api = {
     );
   },
 
-  getBuiltinDefault: () =>
-    request<{ template: string }>("/api/prompt-templates/builtin-default"),
+  getBuiltinDefault: () => request<{ template: string }>("/api/prompt-templates/builtin-default"),
 
   savePromptTemplate: (data: { template: string; autoMerge?: boolean; repoUrl?: string }) =>
     request<{ ok: boolean }>("/api/prompt-templates", {
@@ -124,31 +117,35 @@ export const api = {
 
   getRepo: (id: string) => request<{ repo: any }>(`/api/repos/${id}`),
 
-  createRepoConfig: (data: { repoUrl: string; fullName: string; defaultBranch?: string; isPrivate?: boolean }) =>
-    request<{ repo: any }>("/api/repos", { method: "POST", body: JSON.stringify(data) }),
+  createRepoConfig: (data: {
+    repoUrl: string;
+    fullName: string;
+    defaultBranch?: string;
+    isPrivate?: boolean;
+  }) => request<{ repo: any }>("/api/repos", { method: "POST", body: JSON.stringify(data) }),
 
   updateRepo: (id: string, data: Record<string, unknown>) =>
     request<{ repo: any }>(`/api/repos/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
 
-  deleteRepo: (id: string) =>
-    request<void>(`/api/repos/${id}`, { method: "DELETE" }),
+  deleteRepo: (id: string) => request<void>(`/api/repos/${id}`, { method: "DELETE" }),
 
   // Cluster
-  getClusterOverview: () => request<{
-    nodes: any[];
-    pods: any[];
-    services: any[];
-    events: any[];
-    repoPods: any[];
-    summary: {
-      totalPods: number;
-      runningPods: number;
-      agentPods: number;
-      infraPods: number;
-      totalNodes: number;
-      readyNodes: number;
-    };
-  }>("/api/cluster/overview"),
+  getClusterOverview: () =>
+    request<{
+      nodes: any[];
+      pods: any[];
+      services: any[];
+      events: any[];
+      repoPods: any[];
+      summary: {
+        totalPods: number;
+        runningPods: number;
+        agentPods: number;
+        infraPods: number;
+        totalNodes: number;
+        readyNodes: number;
+      };
+    }>("/api/cluster/overview"),
 
   listClusterPods: () => request<{ pods: any[] }>("/api/cluster/pods"),
 
@@ -186,16 +183,16 @@ export const api = {
     ),
 
   validateAnthropicKey: (key: string) =>
-    request<{ valid: boolean; error?: string }>(
-      "/api/setup/validate/anthropic-key",
-      { method: "POST", body: JSON.stringify({ key }) },
-    ),
+    request<{ valid: boolean; error?: string }>("/api/setup/validate/anthropic-key", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    }),
 
   validateOpenAIKey: (key: string) =>
-    request<{ valid: boolean; error?: string }>(
-      "/api/setup/validate/openai-key",
-      { method: "POST", body: JSON.stringify({ key }) },
-    ),
+    request<{ valid: boolean; error?: string }>("/api/setup/validate/openai-key", {
+      method: "POST",
+      body: JSON.stringify({ key }),
+    }),
 
   validateRepo: (repoUrl: string, token?: string) =>
     request<{

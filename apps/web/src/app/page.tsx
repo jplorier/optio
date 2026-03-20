@@ -26,11 +26,21 @@ import {
 import { StateBadge } from "@/components/state-badge";
 
 const STATUS_COLORS: Record<string, string> = {
-  Running: "text-success", Ready: "text-success", ready: "text-success",
-  Succeeded: "text-text-muted", Pending: "text-warning", provisioning: "text-warning",
-  ImagePullBackOff: "text-error", ErrImagePull: "text-error", CrashLoopBackOff: "text-error",
-  Error: "text-error", error: "text-error", Failed: "text-error", failed: "text-error",
-  NotReady: "text-error", Unknown: "text-text-muted",
+  Running: "text-success",
+  Ready: "text-success",
+  ready: "text-success",
+  Succeeded: "text-text-muted",
+  Pending: "text-warning",
+  provisioning: "text-warning",
+  ImagePullBackOff: "text-error",
+  ErrImagePull: "text-error",
+  CrashLoopBackOff: "text-error",
+  Error: "text-error",
+  error: "text-error",
+  Failed: "text-error",
+  failed: "text-error",
+  NotReady: "text-error",
+  Unknown: "text-text-muted",
 };
 
 function formatK8sResource(value: string | undefined): string {
@@ -75,22 +85,21 @@ export default function OverviewPage() {
   const [dismissedEvents, setDismissedEvents] = useState<Set<number>>(new Set());
 
   const refresh = () => {
-    Promise.all([
-      api.listTasks({ limit: 100 }),
-      api.getClusterOverview().catch(() => null),
-    ]).then(([tasksRes, clusterRes]) => {
-      const tasks = tasksRes.tasks;
-      setTaskStats({
-        total: tasks.length,
-        running: tasks.filter((t: any) => t.state === "running").length,
-        needsAttention: tasks.filter((t: any) => t.state === "needs_attention").length,
-        prOpened: tasks.filter((t: any) => t.state === "pr_opened").length,
-        completed: tasks.filter((t: any) => t.state === "completed").length,
-        failed: tasks.filter((t: any) => t.state === "failed").length,
-      });
-      setRecentTasks(tasks.slice(0, 5));
-      if (clusterRes) setCluster(clusterRes);
-    }).finally(() => setLoading(false));
+    Promise.all([api.listTasks({ limit: 100 }), api.getClusterOverview().catch(() => null)])
+      .then(([tasksRes, clusterRes]) => {
+        const tasks = tasksRes.tasks;
+        setTaskStats({
+          total: tasks.length,
+          running: tasks.filter((t: any) => t.state === "running").length,
+          needsAttention: tasks.filter((t: any) => t.state === "needs_attention").length,
+          prOpened: tasks.filter((t: any) => t.state === "pr_opened").length,
+          completed: tasks.filter((t: any) => t.state === "completed").length,
+          failed: tasks.filter((t: any) => t.state === "failed").length,
+        });
+        setRecentTasks(tasks.slice(0, 5));
+        if (clusterRes) setCluster(clusterRes);
+      })
+      .finally(() => setLoading(false));
   };
 
   useEffect(() => {
@@ -108,8 +117,18 @@ export default function OverviewPage() {
   }
 
   const { nodes, pods, services, events, summary } = cluster ?? {
-    nodes: [], pods: [], services: [], events: [],
-    summary: { totalPods: 0, runningPods: 0, agentPods: 0, infraPods: 0, totalNodes: 0, readyNodes: 0 },
+    nodes: [],
+    pods: [],
+    services: [],
+    events: [],
+    summary: {
+      totalPods: 0,
+      runningPods: 0,
+      agentPods: 0,
+      infraPods: 0,
+      totalNodes: 0,
+      readyNodes: 0,
+    },
   };
 
   return (
@@ -123,10 +142,30 @@ export default function OverviewPage() {
 
       {/* Top stats row: tasks + cluster combined */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <StatCard icon={Activity} label="Running Tasks" value={taskStats?.running ?? 0} color="text-primary" />
-        <StatCard icon={AlertTriangle} label="Needs Attention" value={taskStats?.needsAttention ?? 0} color="text-warning" />
-        <StatCard icon={GitPullRequest} label="PRs Open" value={taskStats?.prOpened ?? 0} color="text-success" />
-        <StatCard icon={CheckCircle} label="Completed" value={taskStats?.completed ?? 0} color="text-success" />
+        <StatCard
+          icon={Activity}
+          label="Running Tasks"
+          value={taskStats?.running ?? 0}
+          color="text-primary"
+        />
+        <StatCard
+          icon={AlertTriangle}
+          label="Needs Attention"
+          value={taskStats?.needsAttention ?? 0}
+          color="text-warning"
+        />
+        <StatCard
+          icon={GitPullRequest}
+          label="PRs Open"
+          value={taskStats?.prOpened ?? 0}
+          color="text-success"
+        />
+        <StatCard
+          icon={CheckCircle}
+          label="Completed"
+          value={taskStats?.completed ?? 0}
+          color="text-success"
+        />
       </div>
 
       {/* Cluster health bar */}
@@ -139,14 +178,23 @@ export default function OverviewPage() {
               </span>
             )}
             <span className="flex items-center gap-1.5">
-              <Circle className={cn("w-2 h-2 fill-current", summary.readyNodes > 0 ? "text-success" : "text-error")} />
+              <Circle
+                className={cn(
+                  "w-2 h-2 fill-current",
+                  summary.readyNodes > 0 ? "text-success" : "text-error",
+                )}
+              />
               <span className="text-text-muted">Nodes</span>
-              <span className="font-medium">{summary.readyNodes}/{summary.totalNodes}</span>
+              <span className="font-medium">
+                {summary.readyNodes}/{summary.totalNodes}
+              </span>
             </span>
             <span className="flex items-center gap-1.5">
               <Container className="w-3 h-3 text-text-muted" />
               <span className="text-text-muted">Pods</span>
-              <span className="font-medium">{summary.runningPods}/{summary.totalPods}</span>
+              <span className="font-medium">
+                {summary.runningPods}/{summary.totalPods}
+              </span>
             </span>
             <span className="flex items-center gap-1.5">
               <Activity className="w-3 h-3 text-text-muted" />
@@ -164,7 +212,10 @@ export default function OverviewPage() {
               <span className="flex items-center gap-1">
                 <Cpu className="w-3 h-3" />
                 {nodes[0].cpuPercent != null ? (
-                  <><span className="font-medium text-text">{nodes[0].cpuPercent}%</span> of {nodes[0].cpu} cores</>
+                  <>
+                    <span className="font-medium text-text">{nodes[0].cpuPercent}%</span> of{" "}
+                    {nodes[0].cpu} cores
+                  </>
                 ) : (
                   <>{nodes[0].cpu} cores</>
                 )}
@@ -172,7 +223,10 @@ export default function OverviewPage() {
               <span className="flex items-center gap-1">
                 <HardDrive className="w-3 h-3" />
                 {nodes[0].memoryUsedGi != null ? (
-                  <><span className="font-medium text-text">{nodes[0].memoryUsedGi}</span> / {nodes[0].memoryTotalGi} Gi</>
+                  <>
+                    <span className="font-medium text-text">{nodes[0].memoryUsedGi}</span> /{" "}
+                    {nodes[0].memoryTotalGi} Gi
+                  </>
                 ) : (
                   <>{formatK8sResource(nodes[0].memory)}</>
                 )}
@@ -189,15 +243,23 @@ export default function OverviewPage() {
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-text-muted">Recent Tasks</h2>
             <div className="flex items-center gap-2">
-              <Link href="/tasks/new" className="text-xs text-primary hover:underline flex items-center gap-1">
+              <Link
+                href="/tasks/new"
+                className="text-xs text-primary hover:underline flex items-center gap-1"
+              >
                 <Plus className="w-3 h-3" /> New
               </Link>
-              <Link href="/tasks" className="text-xs text-primary hover:underline">All →</Link>
+              <Link href="/tasks" className="text-xs text-primary hover:underline">
+                All →
+              </Link>
             </div>
           </div>
           {recentTasks.length === 0 ? (
             <div className="text-center py-8 text-text-muted border border-dashed border-border rounded-lg text-sm">
-              No tasks yet. <Link href="/tasks/new" className="text-primary hover:underline">Create one →</Link>
+              No tasks yet.{" "}
+              <Link href="/tasks/new" className="text-primary hover:underline">
+                Create one →
+              </Link>
             </div>
           ) : (
             <div className="grid gap-2">
@@ -227,21 +289,33 @@ export default function OverviewPage() {
                       <Circle className={cn("w-2 h-2 fill-current shrink-0", color)} />
                       <span className="font-mono text-xs font-medium truncate">{pod.name}</span>
                       {pod.isOptioManaged && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary">agent</span>
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary">
+                          agent
+                        </span>
                       )}
                       {pod.isInfra && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-info/10 text-info">infra</span>
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-info/10 text-info">
+                          infra
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-text-muted mt-1 ml-4">
                       <span className={color}>{pod.status}</span>
                       {pod.cpuMillicores != null && (
-                        <span className="flex items-center gap-0.5"><Cpu className="w-2.5 h-2.5" />{pod.cpuMillicores}m</span>
+                        <span className="flex items-center gap-0.5">
+                          <Cpu className="w-2.5 h-2.5" />
+                          {pod.cpuMillicores}m
+                        </span>
                       )}
                       {pod.memoryMi != null && (
-                        <span className="flex items-center gap-0.5"><HardDrive className="w-2.5 h-2.5" />{pod.memoryMi} Mi</span>
+                        <span className="flex items-center gap-0.5">
+                          <HardDrive className="w-2.5 h-2.5" />
+                          {pod.memoryMi} Mi
+                        </span>
                       )}
-                      {pod.restarts > 0 && <span className="text-warning">{pod.restarts} restarts</span>}
+                      {pod.restarts > 0 && (
+                        <span className="text-warning">{pod.restarts} restarts</span>
+                      )}
                       <span className="font-mono">{pod.image?.split("/").pop()}</span>
                       {pod.startedAt && <span>{formatRelativeTime(pod.startedAt)}</span>}
                     </div>
@@ -258,7 +332,9 @@ export default function OverviewPage() {
                 <h3 className="text-xs font-medium text-text-muted">Recent Events</h3>
                 {dismissedEvents.size < events.length && (
                   <button
-                    onClick={() => setDismissedEvents(new Set(events.map((_: any, i: number) => i)))}
+                    onClick={() =>
+                      setDismissedEvents(new Set(events.map((_: any, i: number) => i)))
+                    }
                     className="text-[10px] text-text-muted hover:text-text"
                   >
                     Dismiss all
@@ -271,13 +347,24 @@ export default function OverviewPage() {
                   return (
                     <div key={i} className="p-2.5 rounded-md border border-border bg-bg-card group">
                       <div className="flex items-center gap-2">
-                        <AlertTriangle className={cn("w-3 h-3 shrink-0", event.type === "Warning" ? "text-warning" : "text-info")} />
+                        <AlertTriangle
+                          className={cn(
+                            "w-3 h-3 shrink-0",
+                            event.type === "Warning" ? "text-warning" : "text-info",
+                          )}
+                        />
                         <span className="text-xs font-medium">{event.reason}</span>
-                        <span className="text-[10px] text-text-muted font-mono">{event.involvedObject}</span>
-                        {event.count > 1 && <span className="text-[10px] text-text-muted">x{event.count}</span>}
+                        <span className="text-[10px] text-text-muted font-mono">
+                          {event.involvedObject}
+                        </span>
+                        {event.count > 1 && (
+                          <span className="text-[10px] text-text-muted">x{event.count}</span>
+                        )}
                         <span className="flex-1" />
                         {event.lastTimestamp && (
-                          <span className="text-[10px] text-text-muted/50">{formatRelativeTime(event.lastTimestamp)}</span>
+                          <span className="text-[10px] text-text-muted/50">
+                            {formatRelativeTime(event.lastTimestamp)}
+                          </span>
                         )}
                         <button
                           onClick={() => setDismissedEvents((prev) => new Set([...prev, i]))}
@@ -286,7 +373,9 @@ export default function OverviewPage() {
                           <X className="w-3 h-3" />
                         </button>
                       </div>
-                      <p className="text-[10px] text-text-muted mt-1 ml-5 truncate">{event.message}</p>
+                      <p className="text-[10px] text-text-muted mt-1 ml-5 truncate">
+                        {event.message}
+                      </p>
                     </div>
                   );
                 })}
@@ -299,7 +388,17 @@ export default function OverviewPage() {
   );
 }
 
-function StatCard({ icon: Icon, label, value, color }: { icon: any; label: string; value: number; color: string }) {
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  color,
+}: {
+  icon: any;
+  label: string;
+  value: number;
+  color: string;
+}) {
   return (
     <div className="p-3 rounded-lg border border-border bg-bg-card">
       <div className="flex items-center gap-2 mb-1">

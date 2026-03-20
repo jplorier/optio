@@ -10,5 +10,9 @@ export interface TicketProvider {
   addComment(ticketId: string, comment: string, config: TicketProviderConfig): Promise<void>;
 
   /** Update ticket state */
-  updateState(ticketId: string, state: "open" | "closed", config: TicketProviderConfig): Promise<void>;
+  updateState(
+    ticketId: string,
+    state: "open" | "closed",
+    config: TicketProviderConfig,
+  ): Promise<void>;
 }

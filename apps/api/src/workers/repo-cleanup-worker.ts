@@ -2,7 +2,10 @@ import { Queue, Worker } from "bullmq";
 import { cleanupIdleRepoPods } from "../services/repo-pool-service.js";
 import { logger } from "../logger.js";
 
-const connectionOpts = { url: process.env.REDIS_URL ?? "redis://localhost:6379", maxRetriesPerRequest: null };
+const connectionOpts = {
+  url: process.env.REDIS_URL ?? "redis://localhost:6379",
+  maxRetriesPerRequest: null,
+};
 
 export const repoCleanupQueue = new Queue("repo-cleanup", { connection: connectionOpts });
 

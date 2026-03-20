@@ -25,9 +25,7 @@ export async function syncAllTickets(): Promise<number> {
         // Check if task already exists for this ticket
         const existingTasks = await taskService.listTasks({ limit: 500 });
         const alreadyExists = existingTasks.some(
-          (t: any) =>
-            t.ticketSource === ticket.source &&
-            t.ticketExternalId === ticket.externalId,
+          (t: any) => t.ticketSource === ticket.source && t.ticketExternalId === ticket.externalId,
         );
 
         if (alreadyExists) continue;
@@ -54,11 +52,15 @@ export async function syncAllTickets(): Promise<number> {
         });
 
         await taskService.transitionTask(task.id, TaskState.QUEUED, "ticket_sync");
-        await taskQueue.add("process-task", { taskId: task.id }, {
-          jobId: task.id,
-          attempts: task.maxRetries + 1,
-          backoff: { type: "exponential", delay: 5000 },
-        });
+        await taskQueue.add(
+          "process-task",
+          { taskId: task.id },
+          {
+            jobId: task.id,
+            attempts: task.maxRetries + 1,
+            backoff: { type: "exponential", delay: 5000 },
+          },
+        );
 
         // Comment on the ticket
         try {
@@ -68,13 +70,19 @@ export async function syncAllTickets(): Promise<number> {
             providerConfig.config,
           );
         } catch (commentErr) {
-          logger.warn({ err: commentErr, ticketId: ticket.externalId }, "Failed to comment on ticket");
+          logger.warn(
+            { err: commentErr, ticketId: ticket.externalId },
+            "Failed to comment on ticket",
+          );
         }
 
         totalSynced++;
       }
     } catch (err) {
-      logger.error({ err, provider: providerConfig.source }, "Failed to sync tickets from provider");
+      logger.error(
+        { err, provider: providerConfig.source },
+        "Failed to sync tickets from provider",
+      );
     }
   }
 

@@ -105,9 +105,7 @@ export function parseClaudeEvent(
         timestamp,
         sessionId,
         type: "system",
-        content: event.subtype
-          ? `[${event.subtype}] ${event.error ?? ""}`
-          : JSON.stringify(event),
+        content: event.subtype ? `[${event.subtype}] ${event.error ?? ""}` : JSON.stringify(event),
         metadata: {
           subtype: event.subtype,
           attempt: event.attempt,

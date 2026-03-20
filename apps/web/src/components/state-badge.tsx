@@ -13,9 +13,19 @@ const STATE_CONFIG: Record<string, { label: string; color: string; bg: string }>
 };
 
 export function StateBadge({ state }: { state: string }) {
-  const config = STATE_CONFIG[state] ?? { label: state, color: "text-text-muted", bg: "bg-text-muted/10" };
+  const config = STATE_CONFIG[state] ?? {
+    label: state,
+    color: "text-text-muted",
+    bg: "bg-text-muted/10",
+  };
   return (
-    <span className={cn("inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium", config.color, config.bg)}>
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
+        config.color,
+        config.bg,
+      )}
+    >
       <span className={cn("w-1.5 h-1.5 rounded-full", config.color.replace("text-", "bg-"))} />
       {config.label}
     </span>

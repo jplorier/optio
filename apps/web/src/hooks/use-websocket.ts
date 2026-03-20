@@ -13,14 +13,19 @@ export function useGlobalWebSocket() {
     client.connect();
 
     client.on("task:state_changed", (event) => {
-      useStore.getState().updateTask(event.taskId, { state: event.toState, updatedAt: event.timestamp });
+      useStore
+        .getState()
+        .updateTask(event.taskId, { state: event.toState, updatedAt: event.timestamp });
 
       if (["needs_attention", "pr_opened", "completed", "failed"].includes(event.toState)) {
         useStore.getState().addNotification({
           id: crypto.randomUUID(),
-          type: event.toState === "completed" || event.toState === "pr_opened" ? "success"
-            : event.toState === "failed" ? "error"
-            : "warning",
+          type:
+            event.toState === "completed" || event.toState === "pr_opened"
+              ? "success"
+              : event.toState === "failed"
+                ? "error"
+                : "warning",
           title: `Task ${event.toState.replace("_", " ")}`,
           message: `Task moved to ${event.toState}`,
           taskId: event.taskId,
