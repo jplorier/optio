@@ -13,12 +13,13 @@ interface TimelineEvent {
 export function EventTimeline({ events }: { events: TimelineEvent[] }) {
   return (
     <div className="space-y-3">
-      {events.map((event) => (
+      {events.map((event, i) => (
         <div key={event.id} className="flex items-start gap-3">
-          <div className="mt-1">
-            <div className="w-2 h-2 rounded-full bg-border" />
+          <div className="flex flex-col items-center">
+            <div className="w-2 h-2 rounded-full bg-primary mt-2" />
+            {i < events.length - 1 && <div className="w-px flex-1 bg-border mt-1" />}
           </div>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 pb-3">
             <div className="flex items-center gap-2 flex-wrap">
               {event.fromState && (
                 <>
