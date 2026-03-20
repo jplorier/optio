@@ -23,8 +23,8 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [promptOverride, setPromptOverride] = useState("");
   const [useCustomPrompt, setUseCustomPrompt] = useState(false);
   const [defaultBranch, setDefaultBranch] = useState("main");
-  const [claudeModel, setClaudeModel] = useState("sonnet");
-  const [claudeContextWindow, setClaudeContextWindow] = useState("200k");
+  const [claudeModel, setClaudeModel] = useState("opus");
+  const [claudeContextWindow, setClaudeContextWindow] = useState("1m");
   const [claudeThinking, setClaudeThinking] = useState(true);
   const [claudeEffort, setClaudeEffort] = useState("high");
 
@@ -38,8 +38,8 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setExtraPackages(r.extraPackages ?? "");
         setAutoMerge(r.autoMerge);
         setDefaultBranch(r.defaultBranch);
-        setClaudeModel(r.claudeModel ?? "sonnet");
-        setClaudeContextWindow(r.claudeContextWindow ?? "200k");
+        setClaudeModel(r.claudeModel ?? "opus");
+        setClaudeContextWindow(r.claudeContextWindow ?? "1m");
         setClaudeThinking(r.claudeThinking ?? true);
         setClaudeEffort(r.claudeEffort ?? "high");
         if (r.promptTemplateOverride) {
