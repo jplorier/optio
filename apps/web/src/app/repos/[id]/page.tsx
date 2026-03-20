@@ -23,6 +23,10 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [promptOverride, setPromptOverride] = useState("");
   const [useCustomPrompt, setUseCustomPrompt] = useState(false);
   const [defaultBranch, setDefaultBranch] = useState("main");
+  const [claudeModel, setClaudeModel] = useState("sonnet");
+  const [claudeContextWindow, setClaudeContextWindow] = useState("200k");
+  const [claudeThinking, setClaudeThinking] = useState(true);
+  const [claudeEffort, setClaudeEffort] = useState("high");
 
   useEffect(() => {
     api
@@ -34,6 +38,10 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setExtraPackages(r.extraPackages ?? "");
         setAutoMerge(r.autoMerge);
         setDefaultBranch(r.defaultBranch);
+        setClaudeModel(r.claudeModel ?? "sonnet");
+        setClaudeContextWindow(r.claudeContextWindow ?? "200k");
+        setClaudeThinking(r.claudeThinking ?? true);
+        setClaudeEffort(r.claudeEffort ?? "high");
         if (r.promptTemplateOverride) {
           setUseCustomPrompt(true);
           setPromptOverride(r.promptTemplateOverride);
@@ -52,6 +60,10 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         autoMerge,
         defaultBranch,
         promptTemplateOverride: useCustomPrompt ? promptOverride : null,
+        claudeModel,
+        claudeContextWindow,
+        claudeThinking,
+        claudeEffort,
       });
       toast.success("Repo settings saved");
     } catch {
@@ -119,6 +131,62 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           />
           <span className="text-sm">Auto-merge PRs when CI passes</span>
         </label>
+      </section>
+
+      {/* Agent Settings */}
+      <section className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+        <h2 className="text-sm font-medium">Agent Settings</h2>
+        <p className="text-xs text-text-muted">
+          Configure the Claude Code model and behavior for this repo.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Model</label>
+            <select
+              value={claudeModel}
+              onChange={(e) => setClaudeModel(e.target.value)}
+              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            >
+              <option value="sonnet">Sonnet 4.6</option>
+              <option value="opus">Opus 4.6</option>
+              <option value="haiku">Haiku 4.5</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Context Window</label>
+            <select
+              value={claudeContextWindow}
+              onChange={(e) => setClaudeContextWindow(e.target.value)}
+              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            >
+              <option value="200k">200K tokens</option>
+              <option value="1m">1M tokens</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Effort Level</label>
+            <select
+              value={claudeEffort}
+              onChange={(e) => setClaudeEffort(e.target.value)}
+              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
+          <div className="flex items-end pb-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={claudeThinking}
+                onChange={(e) => setClaudeThinking(e.target.checked)}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm">Extended Thinking</span>
+            </label>
+          </div>
+        </div>
       </section>
 
       {/* Image */}

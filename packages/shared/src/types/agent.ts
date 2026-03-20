@@ -14,6 +14,10 @@ export interface AgentTaskInput {
   taskFileContent?: string;
   /** Path for the task file inside the worktree */
   taskFilePath?: string;
+  claudeModel?: string;
+  claudeContextWindow?: string;
+  claudeThinking?: boolean;
+  claudeEffort?: string;
 }
 
 export interface AgentContainerConfig {

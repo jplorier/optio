@@ -15,6 +15,10 @@ const updateRepoSchema = z.object({
   autoMerge: z.boolean().optional(),
   promptTemplateOverride: z.string().nullable().optional(),
   defaultBranch: z.string().optional(),
+  claudeModel: z.string().optional(),
+  claudeContextWindow: z.string().optional(),
+  claudeThinking: z.boolean().optional(),
+  claudeEffort: z.string().optional(),
 });
 
 export async function repoRoutes(app: FastifyInstance) {
