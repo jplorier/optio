@@ -14,17 +14,10 @@ Read your task file at: {{TASK_FILE}}
    \`\`\`
    gh pr create --title "{{TASK_TITLE}}" --body "Implements task {{TASK_ID}}"
    \`\`\`
-6. Monitor the GitHub Actions CI checks on your PR:
-   - Run \`gh pr checks\` to see the status.
-   - If any checks fail, read the logs with \`gh run view\`, fix the issues, push, and wait again.
-   - Repeat until all checks pass.
+6. After opening the PR, you are done. Do NOT wait for CI checks or monitor them.
+   The orchestration system handles CI monitoring and code review automatically.
 {{#if AUTO_MERGE}}
-7. Once all checks pass and there are no merge conflicts, merge the PR:
-   \`\`\`
-   gh pr merge --squash --delete-branch
-   \`\`\`
-{{else}}
-7. Once all checks pass, comment on the PR that it is ready for review.
+   If CI passes and review is approved, the PR will be merged automatically.
 {{/if}}
 
 ## Environment Note
