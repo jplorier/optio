@@ -197,9 +197,11 @@ export function startTaskWorker() {
         log.info("Running agent in worktree");
 
         // Build the agent command based on type
+        const isReviewTask = !!reviewOverride || task.taskType === "review";
         const agentCommand = buildAgentCommand(task.agentType, allEnv, {
           resumeSessionId,
           resumePrompt,
+          isReview: isReviewTask,
         });
 
         // Execute the task in the repo pod via worktree
@@ -326,9 +328,10 @@ export function startTaskWorker() {
 function buildAgentCommand(
   agentType: string,
   env: Record<string, string>,
-  opts?: { resumeSessionId?: string; resumePrompt?: string },
+  opts?: { resumeSessionId?: string; resumePrompt?: string; isReview?: boolean },
 ): string[] {
   const prompt = opts?.resumePrompt ?? env.OPTIO_PROMPT;
+  const maxTurns = opts?.isReview ? 10 : 50;
 
   switch (agentType) {
     case "claude-code": {
@@ -346,12 +349,12 @@ function buildAgentCommand(
 
       return [
         ...authSetup,
-        `echo "[optio] Running Claude Code..."`,
+        `echo "[optio] Running Claude Code${opts?.isReview ? " (review)" : ""}..."`,
         `claude -p ${JSON.stringify(prompt)} \\`,
         `  --dangerously-skip-permissions \\`,
         `  --output-format stream-json \\`,
         `  --verbose \\`,
-        `  --max-turns 50 \\`,
+        `  --max-turns ${maxTurns} \\`,
         `  ${resumeFlag}`.trim(),
       ];
     }

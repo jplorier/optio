@@ -76,9 +76,12 @@ export const DEFAULT_REVIEW_PROMPT_TEMPLATE = `You are a code reviewer. You have
 ## Guidelines
 
 - Review ONLY PR #{{PR_NUMBER}}. Nothing else.
+- Do NOT modify any code, create commits, push changes, or check out branches.
+- Do NOT run builds, install dependencies, or execute test suites.
+- Your job is to READ the diff and submit a review. That's it.
 - Only request changes for real issues, not style nitpicks.
 - Be specific about what needs fixing and why.
-- If the tests pass and the code correctly implements the task, approve it.
+- If the code correctly implements the task, approve it.
 `;
 
 export const REVIEW_TASK_FILE_PATH = ".optio/review-context.md";
