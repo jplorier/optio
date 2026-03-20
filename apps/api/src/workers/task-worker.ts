@@ -238,11 +238,26 @@ export function startTaskWorker() {
                 entry.metadata,
               );
 
-              // Check for PR URL in any entry type
-              const prMatch = entry.content.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
-              if (prMatch) {
-                await taskService.updateTaskPr(taskId, prMatch[0]);
-                log.info({ prUrl: prMatch[0] }, "PR URL detected in logs");
+              // Check for PR URL — only capture URLs likely from this task's own gh pr create.
+              // Reject URLs embedded in JSON arrays (from gh pr list of other tasks).
+              const prUrlPattern = /https:\/\/github\.com\/[^\s"]+\/pull\/\d+/g;
+              const prMatches = entry.content.match(prUrlPattern);
+              if (prMatches) {
+                const taskBranch = `optio/task-${taskId}`;
+                const content = entry.content.trim();
+                const looksLikeJsonArray = content.startsWith("[") && content.includes('"number"');
+                if (!looksLikeJsonArray) {
+                  // Accept: standalone URL (gh pr create), text mentioning our branch,
+                  // or any non-JSON context (agent narrative text)
+                  const url = prMatches[prMatches.length - 1]; // last URL is usually the created one
+                  await taskService.updateTaskPr(taskId, url);
+                  log.info({ prUrl: url }, "PR URL detected in logs");
+                } else if (entry.content.includes(taskBranch)) {
+                  // JSON output but mentions our branch — safe to capture
+                  const url = prMatches[prMatches.length - 1];
+                  await taskService.updateTaskPr(taskId, url);
+                  log.info({ prUrl: url }, "PR URL detected in logs (own branch in JSON)");
+                }
               }
             }
           }
