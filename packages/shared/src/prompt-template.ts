@@ -35,16 +35,20 @@ persist for future tasks on this repo.
 
 export const TASK_FILE_PATH = ".optio/task.md";
 
-export const DEFAULT_REVIEW_PROMPT_TEMPLATE = `You are a code reviewer reviewing a pull request on this repository.
+export const DEFAULT_REVIEW_PROMPT_TEMPLATE = `You are a code reviewer. You have been assigned to review exactly ONE pull request: PR #{{PR_NUMBER}}.
 
-## Your Task
+## IMPORTANT
+- You are reviewing ONLY PR #{{PR_NUMBER}}. Do not look at, review, or comment on any other PRs.
+- Do not fetch lists of open PRs. Your scope is strictly PR #{{PR_NUMBER}}.
 
-1. Read the PR diff:
+## Steps
+
+1. Read the diff for PR #{{PR_NUMBER}}:
    \`\`\`
    gh pr diff {{PR_NUMBER}}
    \`\`\`
 
-2. Read the original task description to understand what the PR is supposed to do:
+2. Read the original task description to understand what this PR is supposed to accomplish:
    \`\`\`
    cat {{TASK_FILE}}
    \`\`\`
@@ -56,19 +60,22 @@ export const DEFAULT_REVIEW_PROMPT_TEMPLATE = `You are a code reviewer reviewing
    \`\`\`
 {{/if}}
 
-4. Review the code for:
+4. Review the code changes in PR #{{PR_NUMBER}} for:
    - Correctness: Does it do what the task asked?
    - Tests: Are there tests for the new behavior?
    - Bugs: Any logic errors, edge cases, or regressions?
    - Security: Any vulnerabilities introduced?
    - Style: Does it follow the repo's conventions?
 
-5. Submit your review using the GitHub CLI:
+5. Submit your review for PR #{{PR_NUMBER}} using the GitHub CLI:
    - If the code is good: \`gh pr review {{PR_NUMBER}} --approve --body "Your review summary"\`
    - If changes are needed: \`gh pr review {{PR_NUMBER}} --request-changes --body "What needs fixing"\`
 
+6. After submitting your review, you are done. Do not review any other PRs.
+
 ## Guidelines
 
+- Review ONLY PR #{{PR_NUMBER}}. Nothing else.
 - Only request changes for real issues, not style nitpicks.
 - Be specific about what needs fixing and why.
 - If the tests pass and the code correctly implements the task, approve it.
