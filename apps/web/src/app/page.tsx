@@ -84,6 +84,7 @@ export default function OverviewPage() {
   const [cluster, setCluster] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [dismissedEvents, setDismissedEvents] = useState<Set<number>>(new Set());
+  const [expandedPods, setExpandedPods] = useState<Set<string>>(new Set());
 
   const refresh = () => {
     Promise.all([api.listTasks({ limit: 100 }), api.getClusterOverview().catch(() => null)])
@@ -117,7 +118,6 @@ export default function OverviewPage() {
     );
   }
 
-  const [expandedPods, setExpandedPods] = useState<Set<string>>(new Set());
   const { nodes, pods, services, events, summary } = cluster ?? {
     nodes: [],
     pods: [],
