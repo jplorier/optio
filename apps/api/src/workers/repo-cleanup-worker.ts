@@ -156,14 +156,17 @@ export function startRepoCleanupWorker() {
           const worktreeIds = output.trim().split("\n").filter(Boolean);
           if (worktreeIds.length === 0) continue;
 
-          // Check which ones belong to completed/failed tasks
+          // Check which ones belong to completed/failed tasks (with grace period)
+          const WORKTREE_GRACE_MS = 120_000; // 2 minutes after terminal state before cleanup
           for (const taskId of worktreeIds) {
             const [task] = await db
-              .select({ state: tasks.state })
+              .select({ state: tasks.state, updatedAt: tasks.updatedAt })
               .from(tasks)
               .where(eq(tasks.id, taskId));
 
-            if (task && ["completed", "failed", "cancelled"].includes(task.state)) {
+            const isTerminal = task && ["completed", "failed", "cancelled"].includes(task.state);
+            const age = task?.updatedAt ? Date.now() - new Date(task.updatedAt).getTime() : 0;
+            if (isTerminal && age > WORKTREE_GRACE_MS) {
               // Orphaned worktree — clean it up
               try {
                 const cleanSession = await rt.exec(
