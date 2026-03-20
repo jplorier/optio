@@ -6,7 +6,17 @@ import { api } from "@/lib/api-client";
 import { useStore, type TaskSummary } from "@/hooks/use-store";
 import { TaskCard } from "./task-card";
 import { StateBadge } from "./state-badge";
-import { Loader2, ChevronUp, ChevronDown, GripVertical, Bot } from "lucide-react";
+import {
+  Loader2,
+  ChevronUp,
+  ChevronDown,
+  GripVertical,
+  Bot,
+  Clock,
+  Play,
+  CheckCircle2,
+  AlertTriangle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -39,40 +49,48 @@ export function TaskList() {
 
   const filteredTasks = filter ? tasks.filter((t) => t.state === filter) : tasks;
 
-  // Separate review tasks from parent tasks
-  const reviewTasks = new Map<string, TaskSummary[]>();
-  const parentTasks: TaskSummary[] = [];
+  // Build parent→review map
+  const reviewMap = new Map<string, TaskSummary[]>();
+  const topLevelTasks: TaskSummary[] = [];
 
   for (const t of filteredTasks) {
     if (t.taskType === "review" && t.parentTaskId) {
-      const existing = reviewTasks.get(t.parentTaskId) ?? [];
+      const existing = reviewMap.get(t.parentTaskId) ?? [];
       existing.push(t);
-      reviewTasks.set(t.parentTaskId, existing);
+      reviewMap.set(t.parentTaskId, existing);
+    } else if (t.parentTaskId) {
+      // Other subtasks — also nest under parent
+      const existing = reviewMap.get(t.parentTaskId) ?? [];
+      existing.push(t);
+      reviewMap.set(t.parentTaskId, existing);
     } else {
-      parentTasks.push(t);
+      topLevelTasks.push(t);
     }
   }
 
-  // Split parents into running, queued, other
-  const runningTasks = parentTasks.filter((t) =>
+  // Split into clear sections
+  const running = topLevelTasks.filter((t) =>
     ["running", "provisioning"].includes(t.state),
   );
-  const queuedTasks = parentTasks.filter(
-    (t) => t.state === "queued" || t.state === "pending",
+  const queued = topLevelTasks.filter((t) =>
+    ["queued", "pending"].includes(t.state),
   );
-  const otherTasks = parentTasks.filter(
-    (t) => !["running", "provisioning", "queued", "pending"].includes(t.state),
+  const awaitingAction = topLevelTasks.filter((t) =>
+    ["pr_opened", "needs_attention"].includes(t.state),
+  );
+  const done = topLevelTasks.filter((t) =>
+    ["completed", "failed", "cancelled"].includes(t.state),
   );
 
   const moveTask = async (index: number, direction: "up" | "down") => {
     const newIndex = direction === "up" ? index - 1 : index + 1;
-    if (newIndex < 0 || newIndex >= queuedTasks.length) return;
+    if (newIndex < 0 || newIndex >= queued.length) return;
 
-    const reordered = [...queuedTasks];
+    const reordered = [...queued];
     const [moved] = reordered.splice(index, 1);
     reordered.splice(newIndex, 0, moved);
 
-    const newTasks = [...runningTasks, ...reordered, ...otherTasks];
+    const newTasks = [...running, ...reordered, ...awaitingAction, ...done];
     setTasks(newTasks);
 
     try {
@@ -83,42 +101,31 @@ export function TaskList() {
     }
   };
 
-  const renderTaskWithReview = (task: TaskSummary) => {
-    const reviews = reviewTasks.get(task.id) ?? [];
-    const activeReview = reviews.find((r) =>
-      ["running", "provisioning", "queued"].includes(r.state),
-    );
-
+  const renderSubtasks = (parentId: string) => {
+    const subs = reviewMap.get(parentId);
+    if (!subs || subs.length === 0) return null;
     return (
-      <div key={task.id}>
-        <div className="relative">
-          <TaskCard task={task} />
-          {/* Review indicator on parent */}
-          {activeReview && (
-            <div className="mt-1 ml-4 flex items-center gap-2 text-xs text-info">
-              <div className="w-px h-3 bg-info/30" />
-              <Loader2 className="w-3 h-3 animate-spin" />
-              <span>Code review in progress...</span>
-            </div>
-          )}
-        </div>
-        {/* Nested review subtasks */}
-        {reviews.length > 0 && (
-          <div className="ml-6 mt-1 space-y-1">
-            {reviews.map((review) => (
-              <Link
-                key={review.id}
-                href={`/tasks/${review.id}`}
-                className="flex items-center gap-2 p-2 rounded-md border border-info/20 bg-info/5 hover:bg-info/10 transition-colors text-xs"
-              >
-                <div className="w-px h-6 bg-info/30 -ml-4 shrink-0" />
-                <Bot className="w-3.5 h-3.5 text-info shrink-0" />
-                <span className="truncate text-text/80">{review.title}</span>
-                <StateBadge state={review.state} />
-              </Link>
-            ))}
-          </div>
-        )}
+      <div className="ml-6 mt-1 space-y-1">
+        {subs.map((sub) => (
+          <Link
+            key={sub.id}
+            href={`/tasks/${sub.id}`}
+            className={cn(
+              "flex items-center gap-2 p-2 rounded-md border text-xs transition-colors hover:bg-bg-hover",
+              sub.taskType === "review"
+                ? "border-info/20 bg-info/5"
+                : "border-border bg-bg-card",
+            )}
+          >
+            {sub.taskType === "review" ? (
+              <Bot className="w-3.5 h-3.5 text-info shrink-0" />
+            ) : (
+              <span className="w-3.5 h-3.5 text-text-muted shrink-0 text-center">•</span>
+            )}
+            <span className="truncate flex-1">{sub.title}</span>
+            <StateBadge state={sub.state} />
+          </Link>
+        ))}
       </div>
     );
   };
@@ -152,61 +159,107 @@ export function TaskList() {
           <p>No tasks found</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {/* Running tasks first */}
-          {runningTasks.length > 0 && (
-            <div className="grid gap-2">
-              {runningTasks.map((task) => renderTaskWithReview(task))}
-            </div>
+        <div className="space-y-6">
+          {/* Running */}
+          {running.length > 0 && (
+            <Section icon={Play} label="Running" count={running.length} color="text-primary">
+              {running.map((task) => (
+                <div key={task.id}>
+                  <TaskCard task={task} />
+                  {renderSubtasks(task.id)}
+                </div>
+              ))}
+            </Section>
           )}
 
-          {/* Queued/pending tasks — reorderable */}
-          {queuedTasks.length > 0 && (
-            <div>
-              {(filter === "" || filter === "queued") && queuedTasks.length > 1 && (
+          {/* Awaiting action (PR opened, needs attention) */}
+          {awaitingAction.length > 0 && (
+            <Section icon={AlertTriangle} label="Awaiting Action" count={awaitingAction.length} color="text-warning">
+              {awaitingAction.map((task) => (
+                <div key={task.id}>
+                  <TaskCard task={task} />
+                  {renderSubtasks(task.id)}
+                </div>
+              ))}
+            </Section>
+          )}
+
+          {/* Queue */}
+          {queued.length > 0 && (
+            <Section icon={Clock} label="Queue" count={queued.length} color="text-text-muted">
+              {queued.length > 1 && (
                 <div className="text-xs text-text-muted mb-2 flex items-center gap-1">
                   <GripVertical className="w-3 h-3" />
-                  Queue order — use arrows to reprioritize
+                  Use arrows to reprioritize
                 </div>
               )}
-              <div className="grid gap-2">
-                {queuedTasks.map((task, i) => (
-                  <div key={task.id} className="flex items-center gap-1">
-                    {queuedTasks.length > 1 && (
-                      <div className="flex flex-col shrink-0">
-                        <button
-                          onClick={() => moveTask(i, "up")}
-                          disabled={i === 0}
-                          className="p-0.5 text-text-muted hover:text-text disabled:opacity-20"
-                        >
-                          <ChevronUp className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => moveTask(i, "down")}
-                          disabled={i === queuedTasks.length - 1}
-                          className="p-0.5 text-text-muted hover:text-text disabled:opacity-20"
-                        >
-                          <ChevronDown className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      {renderTaskWithReview(task)}
+              {queued.map((task, i) => (
+                <div key={task.id} className="flex items-center gap-1">
+                  {queued.length > 1 && (
+                    <div className="flex flex-col shrink-0">
+                      <button
+                        onClick={() => moveTask(i, "up")}
+                        disabled={i === 0}
+                        className="p-0.5 text-text-muted hover:text-text disabled:opacity-20"
+                      >
+                        <ChevronUp className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => moveTask(i, "down")}
+                        disabled={i === queued.length - 1}
+                        className="p-0.5 text-text-muted hover:text-text disabled:opacity-20"
+                      >
+                        <ChevronDown className="w-4 h-4" />
+                      </button>
                     </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <TaskCard task={task} />
+                    {renderSubtasks(task.id)}
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              ))}
+            </Section>
           )}
 
-          {/* Other tasks */}
-          {otherTasks.length > 0 && (
-            <div className="grid gap-2">
-              {otherTasks.map((task) => renderTaskWithReview(task))}
-            </div>
+          {/* Completed / Failed */}
+          {done.length > 0 && (
+            <Section icon={CheckCircle2} label="Completed" count={done.length} color="text-text-muted">
+              {done.map((task) => (
+                <div key={task.id}>
+                  <TaskCard task={task} />
+                  {renderSubtasks(task.id)}
+                </div>
+              ))}
+            </Section>
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function Section({
+  icon: Icon,
+  label,
+  count,
+  color,
+  children,
+}: {
+  icon: any;
+  label: string;
+  count: number;
+  color: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-2">
+        <Icon className={cn("w-4 h-4", color)} />
+        <span className="text-sm font-medium">{label}</span>
+        <span className="text-xs text-text-muted">({count})</span>
+      </div>
+      <div className="grid gap-2">{children}</div>
     </div>
   );
 }
