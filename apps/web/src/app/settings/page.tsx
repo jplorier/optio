@@ -57,12 +57,6 @@ function PromptTemplateEditor() {
           Reset to default
         </button>
       </div>
-      <textarea
-        value={template}
-        onChange={(e) => setTemplate(e.target.value)}
-        rows={12}
-        className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
-      />
       <div className="p-3 rounded-md bg-bg border border-border">
         <p className="text-xs text-text-muted mb-2">Available template variables:</p>
         <ul className="text-xs space-y-1.5">
@@ -97,6 +91,12 @@ function PromptTemplateEditor() {
           </li>
         </ul>
       </div>
+      <textarea
+        value={template}
+        onChange={(e) => setTemplate(e.target.value)}
+        rows={12}
+        className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+      />
       <div className="flex items-center justify-between">
         <label className="flex items-center gap-2 text-sm cursor-pointer">
           <input
