@@ -57,6 +57,10 @@ export function startTaskWorker() {
         // Load and render prompt template
         const promptConfig = await getPromptTemplate(task.repoUrl);
 
+        // Load repo config for Claude settings
+        const { getRepoByUrl } = await import("../services/repo-service.js");
+        const repoConfig = await getRepoByUrl(task.repoUrl);
+
         const repoName = task.repoUrl.replace(/.*github\.com[/:]/, "").replace(/\.git$/, "");
         const branchName = `${TASK_BRANCH_PREFIX}${task.id}`;
         const taskFilePath = TASK_FILE_PATH;
@@ -88,6 +92,10 @@ export function startTaskWorker() {
           renderedPrompt,
           taskFileContent,
           taskFilePath,
+          claudeModel: repoConfig?.claudeModel ?? undefined,
+          claudeContextWindow: repoConfig?.claudeContextWindow ?? undefined,
+          claudeThinking: repoConfig?.claudeThinking ?? undefined,
+          claudeEffort: repoConfig?.claudeEffort ?? undefined,
         });
 
         // Encode setup files

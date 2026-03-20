@@ -12,6 +12,10 @@ export interface RepoRecord {
   extraPackages: string | null;
   autoMerge: boolean;
   promptTemplateOverride: string | null;
+  claudeModel: string | null;
+  claudeContextWindow: string | null;
+  claudeThinking: boolean;
+  claudeEffort: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -65,6 +69,10 @@ export async function updateRepo(
     autoMerge?: boolean;
     promptTemplateOverride?: string | null;
     defaultBranch?: string;
+    claudeModel?: string;
+    claudeContextWindow?: string;
+    claudeThinking?: boolean;
+    claudeEffort?: string;
   },
 ): Promise<RepoRecord | null> {
   const [repo] = await db

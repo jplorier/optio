@@ -102,6 +102,10 @@ export const repos = pgTable("repos", {
   extraPackages: text("extra_packages"), // comma-separated
   autoMerge: boolean("auto_merge").notNull().default(false),
   promptTemplateOverride: text("prompt_template_override"), // null = use global default
+  claudeModel: text("claude_model").default("sonnet"),
+  claudeContextWindow: text("claude_context_window").default("200k"), // "200k" or "1m"
+  claudeThinking: boolean("claude_thinking").notNull().default(true),
+  claudeEffort: text("claude_effort").default("high"), // "low", "medium", "high"
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

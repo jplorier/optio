@@ -49,15 +49,27 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       const apiUrl = input.optioApiUrl ?? "http://host.docker.internal:4000";
       env.OPTIO_API_URL = apiUrl;
       // CLAUDE_CODE_OAUTH_TOKEN will be injected by the task worker after fetching from auth proxy
-
-      // Claude Code needs hasCompletedOnboarding to skip interactive setup
-      setupFiles.push({
-        path: "/home/agent/.claude/settings.json",
-        content: JSON.stringify({
-          hasCompletedOnboarding: true,
-        }),
-      });
     }
+
+    // Claude Code settings
+    const claudeSettings: Record<string, unknown> = {
+      hasCompletedOnboarding: true,
+    };
+    // Model: format is "sonnet", "opus", "sonnet[1m]", "opus[1m]"
+    if (input.claudeModel) {
+      const ctx = input.claudeContextWindow === "1m" ? "[1m]" : "";
+      claudeSettings.model = `${input.claudeModel}${ctx}`;
+    }
+    if (input.claudeThinking !== undefined) {
+      claudeSettings.alwaysThinkingEnabled = input.claudeThinking;
+    }
+    if (input.claudeEffort) {
+      claudeSettings.effortLevel = input.claudeEffort;
+    }
+    setupFiles.push({
+      path: "/home/agent/.claude/settings.json",
+      content: JSON.stringify(claudeSettings),
+    });
 
     return {
       command: ["/opt/optio/entrypoint.sh"],
