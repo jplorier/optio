@@ -342,19 +342,77 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           <input
             type="checkbox"
             checked={useCustomPrompt}
-            onChange={(e) => setUseCustomPrompt(e.target.checked)}
+            onChange={(e) => {
+              const checked = e.target.checked;
+              setUseCustomPrompt(checked);
+              // Auto-populate with global default when enabling
+              if (checked && !promptOverride) {
+                api
+                  .getBuiltinDefault()
+                  .then((res) => setPromptOverride(res.template))
+                  .catch(() => {});
+              }
+            }}
             className="w-4 h-4 rounded"
           />
           <span className="text-sm">Override the global prompt template for this repo</span>
         </label>
         {useCustomPrompt && (
-          <textarea
-            value={promptOverride}
-            onChange={(e) => setPromptOverride(e.target.value)}
-            rows={10}
-            placeholder="Custom prompt template for this repo..."
-            className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
-          />
+          <>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-text-muted">
+                Custom prompt for this repo. Overrides the global default.
+              </p>
+              <button
+                onClick={() =>
+                  api.getBuiltinDefault().then((res) => setPromptOverride(res.template))
+                }
+                className="text-xs text-primary hover:underline"
+              >
+                Reset to default
+              </button>
+            </div>
+            <textarea
+              value={promptOverride}
+              onChange={(e) => setPromptOverride(e.target.value)}
+              rows={12}
+              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+            />
+            <div className="p-3 rounded-md bg-bg border border-border">
+              <p className="text-xs text-text-muted mb-2">Available template variables:</p>
+              <ul className="text-xs space-y-1.5">
+                <li className="flex items-start gap-2">
+                  <code className="text-primary shrink-0">{"{{TASK_FILE}}"}</code>
+                  <span className="text-text-muted">
+                    Path to the task markdown file written into the worktree
+                  </span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <code className="text-primary shrink-0">{"{{BRANCH_NAME}}"}</code>
+                  <span className="text-text-muted">Git branch name the agent is working on</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <code className="text-primary shrink-0">{"{{TASK_ID}}"}</code>
+                  <span className="text-text-muted">Unique task identifier</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <code className="text-primary shrink-0">{"{{TASK_TITLE}}"}</code>
+                  <span className="text-text-muted">Short title of the task</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <code className="text-primary shrink-0">{"{{REPO_NAME}}"}</code>
+                  <span className="text-text-muted">Repository name (e.g. owner/repo)</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <code className="text-primary shrink-0">{"{{AUTO_MERGE}}"}</code>
+                  <span className="text-text-muted">
+                    Whether auto-merge is enabled — use with{" "}
+                    <code className="text-primary">{"{{#if AUTO_MERGE}}...{{/if}}"}</code>
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </>
         )}
       </section>
 
