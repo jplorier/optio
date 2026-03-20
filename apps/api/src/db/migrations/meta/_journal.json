@@ -57,6 +57,13 @@
       "when": 1773980347972,
       "tag": "0007_hesitant_lilith",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1774015768205,
+      "tag": "0008_mighty_zarda",
+      "breakpoints": true
     }
   ]
 }

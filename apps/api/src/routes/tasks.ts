@@ -1,8 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { TaskState } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
+import { db } from "../db/client.js";
+import { tasks } from "../db/schema.js";
 
 const createTaskSchema = z.object({
   title: z.string().min(1),
@@ -14,6 +17,7 @@ const createTaskSchema = z.object({
   ticketExternalId: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
   maxRetries: z.number().int().min(0).max(10).optional(),
+  priority: z.number().int().min(1).max(1000).optional(),
 });
 
 export async function taskRoutes(app: FastifyInstance) {
@@ -46,6 +50,7 @@ export async function taskRoutes(app: FastifyInstance) {
       { taskId: task.id },
       {
         jobId: task.id,
+        priority: task.priority ?? 100,
         attempts: task.maxRetries + 1,
         backoff: { type: "exponential", delay: 5000 },
       },
@@ -92,5 +97,21 @@ export async function taskRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const events = await taskService.getTaskEvents(id);
     reply.send({ events });
+  });
+
+  // Reorder tasks (update priorities)
+  app.post("/api/tasks/reorder", async (req, reply) => {
+    const body = req.body as { taskIds: string[] };
+    if (!Array.isArray(body.taskIds)) {
+      return reply.status(400).send({ error: "taskIds array required" });
+    }
+    // Assign priorities based on position: first = 1, second = 2, etc.
+    for (let i = 0; i < body.taskIds.length; i++) {
+      await db
+        .update(tasks)
+        .set({ priority: i + 1, updatedAt: new Date() })
+        .where(eq(tasks.id, body.taskIds[i]));
+    }
+    reply.send({ ok: true, reordered: body.taskIds.length });
   });
 }

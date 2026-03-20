@@ -19,6 +19,7 @@ export interface RepoRecord {
   claudeThinking: boolean;
   claudeEffort: string | null;
   autoResumeOnReview: boolean;
+  maxConcurrentTasks: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -79,6 +80,7 @@ export async function updateRepo(
     claudeThinking?: boolean;
     claudeEffort?: string;
     autoResumeOnReview?: boolean;
+    maxConcurrentTasks?: number;
   },
 ): Promise<RepoRecord | null> {
   const [repo] = await db

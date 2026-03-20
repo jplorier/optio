@@ -39,6 +39,7 @@ export const api = {
     ticketExternalId?: string;
     metadata?: Record<string, unknown>;
     maxRetries?: number;
+    priority?: number;
   }) =>
     request<{ task: any }>("/api/tasks", {
       method: "POST",
@@ -221,5 +222,11 @@ export const api = {
   bulkCancelActive: () =>
     request<{ cancelled: number; total: number }>("/api/tasks/bulk/cancel-active", {
       method: "POST",
+    }),
+
+  reorderTasks: (taskIds: string[]) =>
+    request<{ ok: boolean; reordered: number }>("/api/tasks/reorder", {
+      method: "POST",
+      body: JSON.stringify({ taskIds }),
     }),
 };

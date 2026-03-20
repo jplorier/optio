@@ -31,6 +31,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [claudeThinking, setClaudeThinking] = useState(true);
   const [claudeEffort, setClaudeEffort] = useState("high");
   const [autoResumeOnReview, setAutoResumeOnReview] = useState(false);
+  const [maxConcurrentTasks, setMaxConcurrentTasks] = useState(2);
 
   useEffect(() => {
     api
@@ -45,6 +46,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         if (r.setupCommands || r.customDockerfile) setShowAdvanced(true);
         setAutoMerge(r.autoMerge);
         setAutoResumeOnReview(r.autoResumeOnReview ?? false);
+        setMaxConcurrentTasks(r.maxConcurrentTasks ?? 2);
         setDefaultBranch(r.defaultBranch);
         setClaudeModel(r.claudeModel ?? "opus");
         setClaudeContextWindow(r.claudeContextWindow ?? "1m");
@@ -69,6 +71,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         customDockerfile: customDockerfile || null,
         autoMerge,
         autoResumeOnReview,
+        maxConcurrentTasks,
         defaultBranch,
         promptTemplateOverride: useCustomPrompt ? promptOverride : null,
         claudeModel,
@@ -157,6 +160,20 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             </p>
           </div>
         </label>
+        <div>
+          <label className="block text-xs text-text-muted mb-1">Max concurrent tasks</label>
+          <p className="text-[10px] text-text-muted/60 mb-1.5">
+            Maximum number of tasks that can run simultaneously on this repo.
+          </p>
+          <input
+            type="number"
+            min={1}
+            max={50}
+            value={maxConcurrentTasks}
+            onChange={(e) => setMaxConcurrentTasks(parseInt(e.target.value, 10) || 2)}
+            className="w-24 px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+          />
+        </div>
       </section>
 
       {/* Agent Settings */}

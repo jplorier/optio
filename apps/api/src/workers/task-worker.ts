@@ -10,7 +10,7 @@ import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import * as taskService from "../services/task-service.js";
 import * as repoPool from "../services/repo-pool-service.js";
 import { resolveSecretsForTask, retrieveSecret } from "../services/secret-service.js";
@@ -43,6 +43,47 @@ export function startTaskWorker() {
           return;
         }
 
+        // Check global concurrency limit
+        const [{ count: activeCount }] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(tasks)
+          .where(sql`${tasks.state} IN ('provisioning', 'running')`);
+        const globalMax = parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10);
+        if (Number(activeCount) >= globalMax) {
+          log.info({ activeCount, globalMax }, "Global concurrency limit reached, re-queuing");
+          // Re-add with a delay so it tries again later
+          await taskQueue.add("process-task", job.data, {
+            jobId: `${taskId}-delayed-${Date.now()}`,
+            priority: currentTask.priority ?? 100,
+            delay: 10000,
+          });
+          return;
+        }
+
+        // Check per-repo concurrency limit
+        const { getRepoByUrl } = await import("../services/repo-service.js");
+        const repoConfig = await getRepoByUrl(currentTask.repoUrl);
+        if (repoConfig?.maxConcurrentTasks) {
+          const [{ count: repoActiveCount }] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(tasks)
+            .where(
+              sql`${tasks.repoUrl} = ${currentTask.repoUrl} AND ${tasks.state} IN ('provisioning', 'running')`,
+            );
+          if (Number(repoActiveCount) >= repoConfig.maxConcurrentTasks) {
+            log.info(
+              { repoActiveCount, max: repoConfig.maxConcurrentTasks },
+              "Repo concurrency limit reached, re-queuing",
+            );
+            await taskQueue.add("process-task", job.data, {
+              jobId: `${taskId}-delayed-${Date.now()}`,
+              priority: currentTask.priority ?? 100,
+              delay: 10000,
+            });
+            return;
+          }
+        }
+
         // Transition to provisioning
         await taskService.transitionTask(taskId, TaskState.PROVISIONING, "worker_pickup");
         log.info("Provisioning");
@@ -60,9 +101,7 @@ export function startTaskWorker() {
         // Load and render prompt template
         const promptConfig = await getPromptTemplate(task.repoUrl);
 
-        // Load repo config for Claude settings
-        const { getRepoByUrl } = await import("../services/repo-service.js");
-        const repoConfig = await getRepoByUrl(task.repoUrl);
+        // repoConfig already loaded above for concurrency check
 
         const repoName = task.repoUrl.replace(/.*github\.com[/:]/, "").replace(/\.git$/, "");
         const branchName = `${TASK_BRANCH_PREFIX}${task.id}`;

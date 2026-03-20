@@ -19,6 +19,7 @@ export default function NewTaskPage() {
     repoBranch: "main",
     agentType: "claude-code",
     maxRetries: 3,
+    priority: 100,
   });
 
   useEffect(() => {
@@ -63,6 +64,7 @@ export default function NewTaskPage() {
         repoBranch: form.repoBranch,
         agentType: form.agentType,
         maxRetries: form.maxRetries,
+        priority: form.priority,
       });
       toast.success("Task created", { description: `Task "${form.title}" has been queued.` });
       router.push(`/tasks/${res.task.id}`);
@@ -161,6 +163,24 @@ export default function NewTaskPage() {
               <option value="codex">OpenAI Codex</option>
             </select>
           </div>
+        </div>
+
+        {/* Priority */}
+        <div>
+          <label className="block text-sm text-text-muted mb-1.5">Priority</label>
+          <p className="text-xs text-text-muted/60 mb-1.5">
+            Lower number = higher priority. Default is 100.
+          </p>
+          <input
+            type="number"
+            min={1}
+            max={1000}
+            value={form.priority}
+            onChange={(e) =>
+              setForm((f) => ({ ...f, priority: parseInt(e.target.value, 10) || 100 }))
+            }
+            className="w-24 px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary transition-colors"
+          />
         </div>
 
         {/* Submit */}

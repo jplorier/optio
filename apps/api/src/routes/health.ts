@@ -23,6 +23,7 @@ export async function healthRoutes(app: FastifyInstance) {
     }
 
     const healthy = Object.values(checks).every(Boolean);
-    reply.status(healthy ? 200 : 503).send({ healthy, checks });
+    const maxConcurrent = parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10);
+    reply.status(healthy ? 200 : 503).send({ healthy, checks, maxConcurrent });
   });
 }

@@ -53,4 +53,5 @@ export interface CreateTaskInput {
   ticketExternalId?: string;
   metadata?: Record<string, unknown>;
   maxRetries?: number;
+  priority?: number;
 }

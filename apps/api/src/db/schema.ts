@@ -47,6 +47,7 @@ export const tasks = pgTable("tasks", {
   metadata: jsonb("metadata").$type<Record<string, unknown>>(),
   retryCount: integer("retry_count").notNull().default(0),
   maxRetries: integer("max_retries").notNull().default(3),
+  priority: integer("priority").notNull().default(100), // lower = higher priority
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -115,6 +116,7 @@ export const repos = pgTable("repos", {
   claudeThinking: boolean("claude_thinking").notNull().default(true),
   claudeEffort: text("claude_effort").default("high"), // "low", "medium", "high"
   autoResumeOnReview: boolean("auto_resume_on_review").notNull().default(false),
+  maxConcurrentTasks: integer("max_concurrent_tasks").notNull().default(2),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

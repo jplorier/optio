@@ -17,6 +17,7 @@ export async function createTask(input: CreateTaskInput) {
       ticketExternalId: input.ticketExternalId,
       metadata: input.metadata,
       maxRetries: input.maxRetries ?? 3,
+      priority: input.priority ?? 100,
     })
     .returning();
 
