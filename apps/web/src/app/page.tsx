@@ -20,6 +20,7 @@ import {
   Database,
   Network,
   ChevronRight,
+  ChevronDown,
   X,
   Plus,
 } from "lucide-react";
@@ -116,6 +117,7 @@ export default function OverviewPage() {
     );
   }
 
+  const [expandedPods, setExpandedPods] = useState<Set<string>>(new Set());
   const { nodes, pods, services, events, summary } = cluster ?? {
     nodes: [],
     pods: [],
@@ -283,42 +285,97 @@ export default function OverviewPage() {
             <div className="space-y-1.5">
               {pods.map((pod: any) => {
                 const color = STATUS_COLORS[pod.status] ?? "text-text-muted";
+                const isExpanded = expandedPods.has(pod.name);
+                const podTasks = pod.isOptioManaged
+                  ? recentTasks.filter((t: any) => {
+                      // Match tasks to pods by repo URL pattern in the pod name
+                      const podRepo = pod.labels?.["optio.repo-url"] ?? "";
+                      return t.repoUrl
+                        ?.replace(/[^a-zA-Z0-9-_.]/g, "_")
+                        .startsWith(podRepo.slice(0, 20));
+                    })
+                  : [];
+
                 return (
-                  <div key={pod.name} className="p-2.5 rounded-md border border-border bg-bg-card">
-                    <div className="flex items-center gap-2">
-                      <Circle className={cn("w-2 h-2 fill-current shrink-0", color)} />
-                      <span className="font-mono text-xs font-medium truncate">{pod.name}</span>
-                      {pod.isOptioManaged && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary">
-                          agent
-                        </span>
+                  <div key={pod.name} className="rounded-md border border-border bg-bg-card">
+                    <button
+                      onClick={() => {
+                        if (!pod.isOptioManaged) return;
+                        setExpandedPods((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(pod.name)) next.delete(pod.name);
+                          else next.add(pod.name);
+                          return next;
+                        });
+                      }}
+                      className={cn(
+                        "w-full text-left p-2.5",
+                        pod.isOptioManaged && "cursor-pointer hover:bg-bg-hover",
                       )}
-                      {pod.isInfra && (
-                        <span className="text-[9px] px-1 py-0.5 rounded bg-info/10 text-info">
-                          infra
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] text-text-muted mt-1 ml-4">
-                      <span className={color}>{pod.status}</span>
-                      {pod.cpuMillicores != null && (
-                        <span className="flex items-center gap-0.5">
-                          <Cpu className="w-2.5 h-2.5" />
-                          {pod.cpuMillicores}m
-                        </span>
-                      )}
-                      {pod.memoryMi != null && (
-                        <span className="flex items-center gap-0.5">
-                          <HardDrive className="w-2.5 h-2.5" />
-                          {pod.memoryMi} Mi
-                        </span>
-                      )}
-                      {pod.restarts > 0 && (
-                        <span className="text-warning">{pod.restarts} restarts</span>
-                      )}
-                      <span className="font-mono">{pod.image?.split("/").pop()}</span>
-                      {pod.startedAt && <span>{formatRelativeTime(pod.startedAt)}</span>}
-                    </div>
+                    >
+                      <div className="flex items-center gap-2">
+                        <Circle className={cn("w-2 h-2 fill-current shrink-0", color)} />
+                        <span className="font-mono text-xs font-medium truncate">{pod.name}</span>
+                        {pod.isOptioManaged && (
+                          <>
+                            <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary">
+                              agent
+                            </span>
+                            <ChevronDown
+                              className={cn(
+                                "w-3 h-3 text-text-muted ml-auto shrink-0 transition-transform",
+                                isExpanded && "rotate-180",
+                              )}
+                            />
+                          </>
+                        )}
+                        {pod.isInfra && (
+                          <span className="text-[9px] px-1 py-0.5 rounded bg-info/10 text-info">
+                            infra
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[10px] text-text-muted mt-1 ml-4">
+                        <span className={color}>{pod.status}</span>
+                        {pod.cpuMillicores != null && (
+                          <span className="flex items-center gap-0.5">
+                            <Cpu className="w-2.5 h-2.5" />
+                            {pod.cpuMillicores}m
+                          </span>
+                        )}
+                        {pod.memoryMi != null && (
+                          <span className="flex items-center gap-0.5">
+                            <HardDrive className="w-2.5 h-2.5" />
+                            {pod.memoryMi} Mi
+                          </span>
+                        )}
+                        {pod.restarts > 0 && (
+                          <span className="text-warning">{pod.restarts} restarts</span>
+                        )}
+                        <span className="font-mono">{pod.image?.split("/").pop()}</span>
+                        {pod.startedAt && <span>{formatRelativeTime(pod.startedAt)}</span>}
+                      </div>
+                    </button>
+
+                    {/* Expanded: show tasks */}
+                    {isExpanded && (
+                      <div className="border-t border-border px-2.5 py-2 space-y-1">
+                        {podTasks.length > 0 ? (
+                          podTasks.map((t: any) => (
+                            <Link
+                              key={t.id}
+                              href={`/tasks/${t.id}`}
+                              className="flex items-center justify-between p-1.5 rounded hover:bg-bg-hover text-xs"
+                            >
+                              <span className="truncate">{t.title}</span>
+                              <StateBadge state={t.state} />
+                            </Link>
+                          ))
+                        ) : (
+                          <div className="text-[10px] text-text-muted py-1">No recent tasks</div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}

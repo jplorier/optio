@@ -16,6 +16,7 @@ import {
   ExternalLink,
   GitBranch,
   Clock,
+  Bot,
   Send,
   AlertCircle,
   Eye,
@@ -27,7 +28,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const { task, events, loading, error, refresh } = useTask(id);
   const [actionLoading, setActionLoading] = useState(false);
   const [resumePrompt, setResumePrompt] = useState("");
-  const [showEvents, setShowEvents] = useState(false);
+  const [showTimeline, setShowTimeline] = useState(true);
 
   // Auto-refresh task state periodically when active
   useEffect(() => {
@@ -109,15 +110,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 {repoName}
               </span>
               <span className="flex items-center gap-1 capitalize">
-                {task.agentType === "claude-code" ? (
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
-                  </svg>
-                ) : (
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
-                    <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073z" />
-                  </svg>
-                )}
+                <Bot className="w-3 h-3" />
                 {task.agentType.replace("-", " ")}
               </span>
               <span className="flex items-center gap-1">
@@ -329,13 +322,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           {/* Log viewer + events toggle */}
           <div className="shrink-0 flex items-center justify-end px-4 py-1 border-b border-border bg-bg">
             <button
-              onClick={() => setShowEvents(!showEvents)}
+              onClick={() => setShowTimeline(!showTimeline)}
               className={cn(
                 "px-2 py-0.5 rounded text-xs transition-colors",
-                showEvents ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
+                showTimeline ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
               )}
             >
-              Events
+              Timeline
             </button>
           </div>
 
@@ -393,10 +386,10 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           </div>
         </div>
 
-        {/* Events sidebar (togglable) */}
-        {showEvents && (
+        {/* Timeline sidebar */}
+        {showTimeline && (
           <div className="w-72 shrink-0 border-l border-border overflow-auto p-3 bg-bg-card">
-            <h3 className="text-xs font-medium text-text-muted mb-3">State Timeline</h3>
+            <h3 className="text-xs font-medium text-text-muted mb-3">Timeline</h3>
             <EventTimeline events={events} />
           </div>
         )}
