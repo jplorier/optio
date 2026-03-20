@@ -9,6 +9,16 @@ import { logger } from "./logger.js";
 const PORT = parseInt(process.env.API_PORT ?? "4000", 10);
 const HOST = process.env.API_HOST ?? "0.0.0.0";
 
+// Prevent Redis connection errors from crashing the process
+process.on("uncaughtException", (err) => {
+  if (err.message?.includes("Connection is closed") || err.message?.includes("ECONNREFUSED")) {
+    logger.warn({ err: err.message }, "Redis connection error (will reconnect)");
+    return;
+  }
+  logger.error(err, "Uncaught exception");
+  process.exit(1);
+});
+
 async function main() {
   const app = await buildServer();
 
