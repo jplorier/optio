@@ -213,4 +213,13 @@ export const api = {
     request<{
       subscription: { available: boolean; expiresAt?: string; error?: string };
     }>("/api/auth/refresh", { method: "POST" }),
+
+  // Bulk operations
+  bulkRetryFailed: () =>
+    request<{ retried: number; total: number }>("/api/tasks/bulk/retry-failed", { method: "POST" }),
+
+  bulkCancelActive: () =>
+    request<{ cancelled: number; total: number }>("/api/tasks/bulk/cancel-active", {
+      method: "POST",
+    }),
 };

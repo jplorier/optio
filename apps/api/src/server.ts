@@ -11,6 +11,7 @@ import { resumeRoutes } from "./routes/resume.js";
 import { promptTemplateRoutes } from "./routes/prompt-templates.js";
 import { repoRoutes } from "./routes/repos.js";
 import { clusterRoutes } from "./routes/cluster.js";
+import { bulkRoutes } from "./routes/bulk.js";
 import { logStreamWs } from "./ws/log-stream.js";
 import { eventsWs } from "./ws/events.js";
 import { logger } from "./logger.js";
@@ -41,6 +42,7 @@ export async function buildServer() {
   await app.register(promptTemplateRoutes);
   await app.register(repoRoutes);
   await app.register(clusterRoutes);
+  await app.register(bulkRoutes);
 
   // WebSocket routes
   await app.register(logStreamWs);

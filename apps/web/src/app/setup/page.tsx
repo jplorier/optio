@@ -536,27 +536,38 @@ export default function SetupPage() {
                     <div className="flex-1">
                       <span className="text-sm font-medium">Use Max/Pro subscription</span>
                       <p className="text-xs text-text-muted mt-0.5">
-                        Uses your host's Claude login. No API costs — uses your subscription.
+                        Reads your Claude login from this machine's Keychain. The OAuth token is
+                        passed to agent containers via{" "}
+                        <code className="text-primary">CLAUDE_CODE_OAUTH_TOKEN</code>. No API key
+                        costs — uses your existing subscription.
                       </p>
                       {claudeAuthMode === "max-subscription" && (
                         <div className="mt-2">
                           {subscriptionLoading ? (
                             <span className="text-xs text-text-muted flex items-center gap-1">
-                              <Loader2 className="w-3 h-3 animate-spin" /> Checking subscription...
+                              <Loader2 className="w-3 h-3 animate-spin" /> Checking local login...
                             </span>
                           ) : subscriptionAvailable ? (
                             <span className="text-xs text-success flex items-center gap-1">
-                              <CheckCircle className="w-3 h-3" /> Subscription detected on this host
+                              <CheckCircle className="w-3 h-3" /> Claude subscription detected on
+                              this machine
                             </span>
                           ) : (
-                            <div className="text-xs text-warning space-y-1">
-                              <span className="flex items-center gap-1">
-                                <AlertCircle className="w-3 h-3" /> No subscription found
+                            <div className="text-xs space-y-1.5">
+                              <span className="flex items-center gap-1 text-warning">
+                                <AlertCircle className="w-3 h-3" /> No subscription found on this
+                                machine
                               </span>
                               <p className="text-text-muted">
-                                Log in with{" "}
-                                <code className="px-1 py-0.5 bg-bg-card rounded">claude</code> on
-                                this machine first, then click Recheck.
+                                Run{" "}
+                                <code className="px-1 py-0.5 bg-bg-card rounded text-primary">
+                                  claude
+                                </code>{" "}
+                                in a terminal and log in first, or run{" "}
+                                <code className="px-1 py-0.5 bg-bg-card rounded text-primary">
+                                  claude setup-token
+                                </code>{" "}
+                                to generate a long-lived token (valid 1 year) for headless use.
                               </p>
                               <button
                                 onClick={checkSubscription}
