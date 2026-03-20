@@ -25,7 +25,7 @@ export function TaskCard({ task }: TaskCardProps) {
   return (
     <Link
       href={`/tasks/${task.id}`}
-      className="block p-4 rounded-lg border border-border bg-bg-card hover:bg-bg-hover transition-colors"
+      className="block p-4 rounded-lg border border-border bg-bg-card hover:bg-bg-hover transition-colors overflow-hidden"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
