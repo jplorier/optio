@@ -126,9 +126,7 @@
         "prompt_templates_name_unique": {
           "name": "prompt_templates_name_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "name"
-          ]
+          "columns": ["name"]
         }
       },
       "policies": {},
@@ -220,9 +218,7 @@
         "repo_pods_repo_url_unique": {
           "name": "repo_pods_repo_url_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "repo_url"
-          ]
+          "columns": ["repo_url"]
         }
       },
       "policies": {},
@@ -401,9 +397,7 @@
         "repos_repo_url_unique": {
           "name": "repos_repo_url_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "repo_url"
-          ]
+          "columns": ["repo_url"]
         }
       },
       "policies": {},
@@ -474,10 +468,7 @@
         "secrets_name_scope_key": {
           "name": "secrets_name_scope_key",
           "nullsNotDistinct": false,
-          "columns": [
-            "name",
-            "scope"
-          ]
+          "columns": ["name", "scope"]
         }
       },
       "policies": {},
@@ -541,12 +532,8 @@
           "name": "task_events_task_id_tasks_id_fk",
           "tableFrom": "task_events",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -613,12 +600,8 @@
           "name": "task_logs_task_id_tasks_id_fk",
           "tableFrom": "task_logs",
           "tableTo": "tasks",
-          "columnsFrom": [
-            "task_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["task_id"],
+          "columnsTo": ["id"],
           "onDelete": "no action",
           "onUpdate": "no action"
         }
@@ -904,12 +887,7 @@
     "public.repo_pod_state": {
       "name": "repo_pod_state",
       "schema": "public",
-      "values": [
-        "provisioning",
-        "ready",
-        "error",
-        "terminating"
-      ]
+      "values": ["provisioning", "ready", "error", "terminating"]
     },
     "public.task_state": {
       "name": "task_state",

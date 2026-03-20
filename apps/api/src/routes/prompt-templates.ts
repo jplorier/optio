@@ -61,9 +61,14 @@ export async function promptTemplateRoutes(app: FastifyInstance) {
         .from(promptTemplates)
         .where(and(eq(promptTemplates.name, "review-default"), isNull(promptTemplates.repoUrl)));
       if (existing) {
-        await db.update(promptTemplates).set({ template: body.template, updatedAt: new Date() }).where(eq(promptTemplates.id, existing.id));
+        await db
+          .update(promptTemplates)
+          .set({ template: body.template, updatedAt: new Date() })
+          .where(eq(promptTemplates.id, existing.id));
       } else {
-        await db.insert(promptTemplates).values({ name: "review-default", template: body.template, isDefault: false });
+        await db
+          .insert(promptTemplates)
+          .values({ name: "review-default", template: body.template, isDefault: false });
       }
     } else if (body.repoUrl) {
       await saveRepoPromptTemplate(body.repoUrl, body.template, body.autoMerge ?? false);

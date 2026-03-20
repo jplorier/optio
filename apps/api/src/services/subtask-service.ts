@@ -10,7 +10,7 @@ export interface SubtaskInput {
   parentTaskId: string;
   title: string;
   prompt: string;
-  taskType?: string;  // "review" | "step" | "child"
+  taskType?: string; // "review" | "step" | "child"
   blocksParent?: boolean;
   agentType?: string;
   priority?: number;
@@ -55,7 +55,12 @@ export async function createSubtask(input: SubtaskInput) {
     "Subtask created",
   );
 
-  return { ...subtask, parentTaskId: input.parentTaskId, taskType: input.taskType, subtaskOrder: nextOrder };
+  return {
+    ...subtask,
+    parentTaskId: input.parentTaskId,
+    taskType: input.taskType,
+    subtaskOrder: nextOrder,
+  };
 }
 
 /**
@@ -99,11 +104,14 @@ export async function checkBlockingSubtasks(parentTaskId: string) {
     .from(tasks)
     .where(and(eq(tasks.parentTaskId, parentTaskId), eq(tasks.blocksParent, true)));
 
-  if (subtasks.length === 0) return { allComplete: true, total: 0, pending: 0, running: 0, completed: 0, failed: 0 };
+  if (subtasks.length === 0)
+    return { allComplete: true, total: 0, pending: 0, running: 0, completed: 0, failed: 0 };
 
   const completed = subtasks.filter((s) => s.state === "completed").length;
   const failed = subtasks.filter((s) => s.state === "failed").length;
-  const running = subtasks.filter((s) => ["running", "provisioning", "queued"].includes(s.state)).length;
+  const running = subtasks.filter((s) =>
+    ["running", "provisioning", "queued"].includes(s.state),
+  ).length;
   const pending = subtasks.filter((s) => s.state === "pending").length;
 
   return {
@@ -135,12 +143,7 @@ export async function onSubtaskComplete(subtaskId: string) {
     const reviewSubtasks = await db
       .select()
       .from(tasks)
-      .where(
-        and(
-          eq(tasks.parentTaskId, parent.id),
-          eq(tasks.taskType, "review"),
-        ),
-      );
+      .where(and(eq(tasks.parentTaskId, parent.id), eq(tasks.taskType, "review")));
 
     const anyApproved = reviewSubtasks.some((r) => r.state === "completed");
     const anyFailed = reviewSubtasks.some((r) => r.state === "failed");
@@ -151,8 +154,5 @@ export async function onSubtaskComplete(subtaskId: string) {
     }
   }
 
-  logger.info(
-    { parentTaskId: parent.id, status },
-    "All blocking subtasks complete",
-  );
+  logger.info({ parentTaskId: parent.id, status }, "All blocking subtasks complete");
 }

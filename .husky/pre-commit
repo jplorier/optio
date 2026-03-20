@@ -1,1 +1,6 @@
+# Format all staged files
 npx lint-staged
+
+# Run the same checks as CI to catch issues before push
+pnpm format:check
+pnpm turbo typecheck

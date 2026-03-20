@@ -24,10 +24,7 @@ export async function detectRepoConfig(
   };
 
   try {
-    const res = await fetch(
-      `https://api.github.com/repos/${owner}/${repo}/contents/`,
-      { headers },
-    );
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/contents/`, { headers });
     if (!res.ok) return { imagePreset: "base", languages: [] };
 
     const files = (await res.json()) as Array<{ name: string; type: string }>;

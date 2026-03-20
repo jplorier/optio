@@ -299,9 +299,7 @@ export default function OverviewPage() {
                 const color = STATUS_COLORS[pod.status] ?? "text-text-muted";
                 const isExpanded = expandedPods.has(pod.name);
                 const podTasks = pod.isOptioManaged
-                  ? recentTasks.filter((t: any) =>
-                      t.containerId === pod.name
-                    )
+                  ? recentTasks.filter((t: any) => t.containerId === pod.name)
                   : [];
 
                 return (

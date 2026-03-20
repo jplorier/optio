@@ -69,18 +69,12 @@ export function TaskList() {
   }
 
   // Split into clear sections
-  const running = topLevelTasks.filter((t) =>
-    ["running", "provisioning"].includes(t.state),
-  );
-  const queued = topLevelTasks.filter((t) =>
-    ["queued", "pending"].includes(t.state),
-  );
+  const running = topLevelTasks.filter((t) => ["running", "provisioning"].includes(t.state));
+  const queued = topLevelTasks.filter((t) => ["queued", "pending"].includes(t.state));
   const awaitingAction = topLevelTasks.filter((t) =>
     ["pr_opened", "needs_attention"].includes(t.state),
   );
-  const done = topLevelTasks.filter((t) =>
-    ["completed", "failed", "cancelled"].includes(t.state),
-  );
+  const done = topLevelTasks.filter((t) => ["completed", "failed", "cancelled"].includes(t.state));
 
   const moveTask = async (index: number, direction: "up" | "down") => {
     const newIndex = direction === "up" ? index - 1 : index + 1;
@@ -112,9 +106,7 @@ export function TaskList() {
             href={`/tasks/${sub.id}`}
             className={cn(
               "flex items-center gap-2 p-2 rounded-md border text-xs transition-colors hover:bg-bg-hover",
-              sub.taskType === "review"
-                ? "border-info/20 bg-info/5"
-                : "border-border bg-bg-card",
+              sub.taskType === "review" ? "border-info/20 bg-info/5" : "border-border bg-bg-card",
             )}
           >
             {sub.taskType === "review" ? (
@@ -174,7 +166,12 @@ export function TaskList() {
 
           {/* Awaiting action (PR opened, needs attention) */}
           {awaitingAction.length > 0 && (
-            <Section icon={AlertTriangle} label="Awaiting Action" count={awaitingAction.length} color="text-warning">
+            <Section
+              icon={AlertTriangle}
+              label="Awaiting Action"
+              count={awaitingAction.length}
+              color="text-warning"
+            >
               {awaitingAction.map((task) => (
                 <div key={task.id}>
                   <TaskCard task={task} />
@@ -224,7 +221,12 @@ export function TaskList() {
 
           {/* Completed / Failed */}
           {done.length > 0 && (
-            <Section icon={CheckCircle2} label="Completed" count={done.length} color="text-text-muted">
+            <Section
+              icon={CheckCircle2}
+              label="Completed"
+              count={done.length}
+              color="text-text-muted"
+            >
               {done.map((task) => (
                 <div key={task.id}>
                   <TaskCard task={task} />

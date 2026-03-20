@@ -32,7 +32,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [showTimeline, setShowTimeline] = useState(true);
   const [subtasks, setSubtasks] = useState<any[]>([]);
   const [showCreateSubtask, setShowCreateSubtask] = useState(false);
-  const [newSubtask, setNewSubtask] = useState({ title: "", prompt: "", taskType: "child", blocksParent: false });
+  const [newSubtask, setNewSubtask] = useState({
+    title: "",
+    prompt: "",
+    taskType: "child",
+    blocksParent: false,
+  });
 
   // Auto-refresh task state periodically when active
   useEffect(() => {
@@ -45,7 +50,10 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
   useEffect(() => {
     if (task) {
-      api.getSubtasks(id).then((res) => setSubtasks(res.subtasks)).catch(() => {});
+      api
+        .getSubtasks(id)
+        .then((res) => setSubtasks(res.subtasks))
+        .catch(() => {});
     }
   }, [id, task?.state]);
 
@@ -354,7 +362,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           <div className="max-w-5xl mx-auto">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-xs font-medium text-text-muted">
-                Subtasks {subtasks.length > 0 && `(${subtasks.filter((s: any) => s.state === "completed").length}/${subtasks.length})`}
+                Subtasks{" "}
+                {subtasks.length > 0 &&
+                  `(${subtasks.filter((s: any) => s.state === "completed").length}/${subtasks.length})`}
               </h3>
               <button
                 onClick={() => setShowCreateSubtask(!showCreateSubtask)}
@@ -394,7 +404,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     <input
                       type="checkbox"
                       checked={newSubtask.blocksParent}
-                      onChange={(e) => setNewSubtask((s) => ({ ...s, blocksParent: e.target.checked }))}
+                      onChange={(e) =>
+                        setNewSubtask((s) => ({ ...s, blocksParent: e.target.checked }))
+                      }
                       className="w-3 h-3 rounded"
                     />
                     Blocks parent
@@ -429,7 +441,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                     {sub.taskType === "review" ? (
                       <Bot className="w-3.5 h-3.5 text-info shrink-0" />
                     ) : sub.blocksParent ? (
-                      <span className="w-3.5 h-3.5 text-warning shrink-0 text-center font-bold">!</span>
+                      <span className="w-3.5 h-3.5 text-warning shrink-0 text-center font-bold">
+                        !
+                      </span>
                     ) : (
                       <span className="w-3.5 h-3.5 text-text-muted shrink-0 text-center">•</span>
                     )}

@@ -131,10 +131,13 @@ function DefaultReviewEditor() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.getReviewDefault()
+    api
+      .getReviewDefault()
       .then((res) => setReviewPrompt(res.template))
       .catch(() => {
-        import("@optio/shared").then((m) => setReviewPrompt(m.DEFAULT_REVIEW_PROMPT_TEMPLATE)).catch(() => {});
+        import("@optio/shared")
+          .then((m) => setReviewPrompt(m.DEFAULT_REVIEW_PROMPT_TEMPLATE))
+          .catch(() => {});
       })
       .finally(() => setLoading(false));
   }, []);
@@ -220,7 +223,8 @@ function DefaultReviewEditor() {
       <div>
         <label className="block text-xs text-text-muted mb-1">Default Test Command</label>
         <p className="text-[10px] text-text-muted/60 mb-1.5">
-          Command to run tests locally. Leave empty if GitHub Actions handles testing — the reviewer will check CI status instead.
+          Command to run tests locally. Leave empty if GitHub Actions handles testing — the reviewer
+          will check CI status instead.
         </p>
         <input
           value={reviewTestCommand}

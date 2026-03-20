@@ -113,8 +113,7 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  getReviewDefault: () =>
-    request<{ template: string }>("/api/prompt-templates/review-default"),
+  getReviewDefault: () => request<{ template: string }>("/api/prompt-templates/review-default"),
 
   saveReviewDefault: (template: string) =>
     request<{ ok: boolean }>("/api/prompt-templates", {
@@ -258,25 +257,32 @@ export const api = {
     request<{ reviewTaskId: string }>(`/api/tasks/${taskId}/review`, { method: "POST" }),
 
   // Subtasks
-  getSubtasks: (taskId: string) =>
-    request<{ subtasks: any[] }>(`/api/tasks/${taskId}/subtasks`),
+  getSubtasks: (taskId: string) => request<{ subtasks: any[] }>(`/api/tasks/${taskId}/subtasks`),
 
-  createSubtask: (taskId: string, data: {
-    title: string;
-    prompt: string;
-    taskType?: string;
-    blocksParent?: boolean;
-    autoQueue?: boolean;
-  }) =>
+  createSubtask: (
+    taskId: string,
+    data: {
+      title: string;
+      prompt: string;
+      taskType?: string;
+      blocksParent?: boolean;
+      autoQueue?: boolean;
+    },
+  ) =>
     request<{ subtask: any }>(`/api/tasks/${taskId}/subtasks`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
   getSubtaskStatus: (taskId: string) =>
-    request<{ allComplete: boolean; total: number; pending: number; running: number; completed: number; failed: number }>(
-      `/api/tasks/${taskId}/subtasks/status`,
-    ),
+    request<{
+      allComplete: boolean;
+      total: number;
+      pending: number;
+      running: number;
+      completed: number;
+      failed: number;
+    }>(`/api/tasks/${taskId}/subtasks/status`),
 
   assignIssue: (data: {
     issueNumber: number;
