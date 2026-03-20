@@ -1,8 +1,8 @@
 "use client";
 
-import { use, useState, useEffect, useRef, useCallback } from "react";
+import { use, useState, useEffect } from "react";
 import { useTask } from "@/hooks/use-task";
-import { useLogs, type LogEntry } from "@/hooks/use-logs";
+import { LogViewer } from "@/components/log-viewer";
 import { EventTimeline } from "@/components/event-timeline";
 import { StateBadge } from "@/components/state-badge";
 import { api } from "@/lib/api-client";
@@ -15,51 +15,17 @@ import {
   RotateCcw,
   ExternalLink,
   GitBranch,
-  Terminal,
-  FileEdit,
-  Search,
   Clock,
   Send,
   AlertCircle,
-  Info,
-  Wrench,
-  ArrowDown,
-  ChevronRight,
 } from "lucide-react";
-
-const TYPE_CONFIG: Record<string, { icon: typeof Terminal; color: string }> = {
-  text: { icon: Terminal, color: "text-text/80" },
-  tool_use: { icon: Wrench, color: "text-primary" },
-  tool_result: { icon: FileEdit, color: "text-text-muted" },
-  thinking: { icon: Search, color: "text-text-muted/50" },
-  system: { icon: Info, color: "text-info" },
-  error: { icon: AlertCircle, color: "text-error" },
-  info: { icon: Info, color: "text-success" },
-};
 
 export default function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { task, events, loading, error, refresh } = useTask(id);
-  const { logs, connected } = useLogs(id);
   const [actionLoading, setActionLoading] = useState(false);
   const [resumePrompt, setResumePrompt] = useState("");
   const [showEvents, setShowEvents] = useState(false);
-  const [showTools, setShowTools] = useState(true);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const logRef = useRef<HTMLDivElement>(null);
-
-  // Auto-scroll logs
-  useEffect(() => {
-    if (autoScroll && logRef.current) {
-      logRef.current.scrollTop = logRef.current.scrollHeight;
-    }
-  }, [logs, autoScroll]);
-
-  const handleScroll = useCallback(() => {
-    if (!logRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = logRef.current;
-    setAutoScroll(scrollHeight - scrollTop - clientHeight < 50);
-  }, []);
 
   // Auto-refresh task state periodically when active
   useEffect(() => {
@@ -123,9 +89,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const canRetry = ["failed", "cancelled"].includes(task.state);
   const canResume = ["needs_attention", "failed"].includes(task.state) && !!task.sessionId;
 
-  const filteredLogs = showTools
-    ? logs
-    : logs.filter((l) => l.logType !== "tool_use" && l.logType !== "tool_result");
+  // (log filtering is handled by LogViewer component)
 
   return (
     <div className="flex flex-col h-full">
@@ -252,142 +216,22 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       <div className="flex-1 flex overflow-hidden">
         {/* Log panel */}
         <div className="flex-1 flex flex-col">
-          {/* Log toolbar */}
-          <div className="shrink-0 flex items-center justify-between px-4 py-1.5 border-b border-border bg-bg">
-            <div className="flex items-center gap-3 text-xs text-text-muted">
-              <span className="flex items-center gap-1.5">
-                <span
-                  className={cn(
-                    "w-2 h-2 rounded-full",
-                    isActive && connected ? "bg-success" : "bg-text-muted/30",
-                  )}
-                />
-                {isActive ? (connected ? "Live" : "Connecting...") : "Ended"}
-              </span>
-              <span>{logs.length} events</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <button
-                onClick={() => setShowTools(!showTools)}
-                className={cn(
-                  "px-2 py-0.5 rounded text-xs transition-colors",
-                  showTools ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
-                )}
-              >
-                Tools
-              </button>
-              <button
-                onClick={() => setShowEvents(!showEvents)}
-                className={cn(
-                  "px-2 py-0.5 rounded text-xs transition-colors",
-                  showEvents ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
-                )}
-              >
-                Events
-              </button>
-              {!autoScroll && (
-                <button
-                  onClick={() => {
-                    setAutoScroll(true);
-                    logRef.current?.scrollTo({
-                      top: logRef.current.scrollHeight,
-                      behavior: "smooth",
-                    });
-                  }}
-                  className="p-1 rounded hover:bg-bg-hover text-text-muted"
-                >
-                  <ArrowDown className="w-3.5 h-3.5" />
-                </button>
+          {/* Log viewer + events toggle */}
+          <div className="shrink-0 flex items-center justify-end px-4 py-1 border-b border-border bg-bg">
+            <button
+              onClick={() => setShowEvents(!showEvents)}
+              className={cn(
+                "px-2 py-0.5 rounded text-xs transition-colors",
+                showEvents ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
               )}
-            </div>
+            >
+              Events
+            </button>
           </div>
 
-          {/* Log content */}
-          <div
-            ref={logRef}
-            onScroll={handleScroll}
-            className="flex-1 overflow-auto px-4 py-2 font-mono text-xs leading-relaxed"
-          >
-            {filteredLogs.length === 0 ? (
-              <div className="py-6 space-y-4">
-                {isActive && (
-                  <div className="flex items-center justify-center gap-2 text-text-muted text-sm">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Waiting for agent output...</span>
-                  </div>
-                )}
-                {!isActive && !task.errorMessage && (
-                  <div className="text-center text-text-muted text-sm">No output captured.</div>
-                )}
-                {/* Show task context */}
-                <div className="space-y-3 max-w-2xl mx-auto">
-                  <div className="p-3 rounded-md border border-border bg-bg-card">
-                    <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">
-                      Task Prompt
-                    </div>
-                    <pre className="text-xs text-text/70 whitespace-pre-wrap">{task.prompt}</pre>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-3 rounded-md border border-border bg-bg-card">
-                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-                        Agent
-                      </div>
-                      <div className="text-xs">
-                        {task.agentType === "claude-code" ? "Claude Code" : "OpenAI Codex"}
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-md border border-border bg-bg-card">
-                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-                        Branch
-                      </div>
-                      <div className="text-xs font-mono">optio/task-{task.id.slice(0, 8)}</div>
-                    </div>
-                    <div className="p-3 rounded-md border border-border bg-bg-card">
-                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-                        Container
-                      </div>
-                      <div className="text-xs font-mono">
-                        {task.containerId ? task.containerId.slice(0, 20) : "pending"}
-                      </div>
-                    </div>
-                    <div className="p-3 rounded-md border border-border bg-bg-card">
-                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-                        State
-                      </div>
-                      <div className="text-xs capitalize">{task.state.replace("_", " ")}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              filteredLogs.map((log, i) => {
-                const config = TYPE_CONFIG[log.logType ?? "text"] ?? TYPE_CONFIG.text;
-                const Icon = config.icon;
-                return (
-                  <div key={i} className={cn("flex gap-2 py-0.5", config.color)}>
-                    <Icon className="w-3 h-3 mt-0.5 shrink-0 opacity-50" />
-                    <div className="min-w-0 flex-1">
-                      {log.logType === "tool_use" && log.metadata?.toolName ? (
-                        <div>
-                          <span className="font-medium">{log.metadata.toolName as string}</span>
-                          {log.metadata.toolInput ? (
-                            <pre className="text-text-muted/50 mt-0.5 whitespace-pre-wrap break-all text-[10px]">
-                              {JSON.stringify(
-                                log.metadata.toolInput as Record<string, unknown>,
-                                null,
-                                2,
-                              ).slice(0, 200)}
-                            </pre>
-                          ) : null}
-                        </div>
-                      ) : (
-                        <span className="whitespace-pre-wrap break-all">{log.content}</span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })
-            )}
+          {/* Log content via LogViewer */}
+          <div className="flex-1 overflow-hidden">
+            <LogViewer taskId={id} />
           </div>
 
           {/* Resume / interact bar */}
