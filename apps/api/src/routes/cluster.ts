@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
 import { db } from "../db/client.js";
-import { repoPods, tasks } from "../db/schema.js";
+import { repoPods, tasks, podHealthEvents } from "../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 
 function getK8sConfig() {
@@ -275,5 +275,46 @@ export async function clusterRoutes(app: FastifyInstance) {
     }
 
     reply.send({ pod: { ...pod, tasks: podTasks, k8sPod } });
+  });
+
+  // Pod health events
+  app.get("/api/cluster/health-events", async (req, reply) => {
+    const query = req.query as { limit?: string };
+    const limit = query.limit ? parseInt(query.limit, 10) : 50;
+    const events = await db
+      .select()
+      .from(podHealthEvents)
+      .orderBy(desc(podHealthEvents.createdAt))
+      .limit(limit);
+    reply.send({ events });
+  });
+
+  // Force restart a repo pod
+  app.post("/api/cluster/pods/:id/restart", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const [pod] = await db.select().from(repoPods).where(eq(repoPods.id, id));
+    if (!pod) return reply.status(404).send({ error: "Pod not found" });
+
+    // Destroy the pod
+    if (pod.podName) {
+      try {
+        const { getRuntime } = await import("../services/container-service.js");
+        const runtime = getRuntime();
+        await runtime.destroy({ id: pod.podId ?? pod.podName, name: pod.podName });
+      } catch {}
+    }
+
+    // Clear the record — next task will recreate it
+    await db.delete(repoPods).where(eq(repoPods.id, id));
+
+    await db.insert(podHealthEvents).values({
+      repoPodId: id,
+      repoUrl: pod.repoUrl,
+      eventType: "restarted",
+      podName: pod.podName,
+      message: "Manual restart via API",
+    });
+
+    reply.send({ ok: true });
   });
 }

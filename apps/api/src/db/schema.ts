@@ -151,6 +151,16 @@ export const repoPods = pgTable("repo_pods", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const podHealthEvents = pgTable("pod_health_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoPodId: uuid("repo_pod_id").notNull(),
+  repoUrl: text("repo_url").notNull(),
+  eventType: text("event_type").notNull(), // "crashed" | "oom_killed" | "restarted" | "healthy" | "orphan_cleaned"
+  podName: text("pod_name"),
+  message: text("message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const promptTemplates = pgTable("prompt_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),

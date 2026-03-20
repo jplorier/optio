@@ -152,6 +152,12 @@ export const api = {
 
   getClusterPod: (id: string) => request<{ pod: any }>(`/api/cluster/pods/${id}`),
 
+  getHealthEvents: (limit?: number) =>
+    request<{ events: any[] }>(`/api/cluster/health-events${limit ? `?limit=${limit}` : ""}`),
+
+  restartPod: (id: string) =>
+    request<{ ok: boolean }>(`/api/cluster/pods/${id}/restart`, { method: "POST" }),
+
   // Setup
   getSetupStatus: () =>
     request<{

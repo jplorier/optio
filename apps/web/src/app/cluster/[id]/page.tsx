@@ -3,8 +3,10 @@
 import { use, useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { StateBadge } from "@/components/state-badge";
+import { toast } from "sonner";
 import {
   Loader2,
   ArrowLeft,
@@ -14,20 +16,45 @@ import {
   Clock,
   Activity,
   ExternalLink,
+  RotateCcw,
 } from "lucide-react";
 
 export default function PodDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const [pod, setPod] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [healthEvents, setHealthEvents] = useState<any[]>([]);
+  const [restarting, setRestarting] = useState(false);
 
   useEffect(() => {
     api
       .getClusterPod(id)
-      .then((res) => setPod(res.pod))
+      .then((res) => {
+        setPod(res.pod);
+        api
+          .getHealthEvents(20)
+          .then((evRes) => {
+            setHealthEvents(evRes.events.filter((e: any) => e.repoPodId === id));
+          })
+          .catch(() => {});
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleRestart = async () => {
+    if (!confirm("Restart this pod? Active tasks will be failed.")) return;
+    setRestarting(true);
+    try {
+      await api.restartPod(id);
+      toast.success("Pod restart initiated");
+      router.push("/cluster");
+    } catch {
+      toast.error("Failed to restart pod");
+    }
+    setRestarting(false);
+  };
 
   if (loading) {
     return (
@@ -63,6 +90,14 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
                 : "text-text-muted",
           )}
         />
+        <button
+          onClick={handleRestart}
+          disabled={restarting}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-error/10 text-error text-xs hover:bg-error/20 disabled:opacity-50"
+        >
+          <RotateCcw className="w-3 h-3" />
+          {restarting ? "Restarting..." : "Restart Pod"}
+        </button>
       </div>
 
       {/* Pod info */}
@@ -150,6 +185,41 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
           </div>
         )}
       </div>
+
+      {/* Health Events */}
+      {healthEvents.length > 0 && (
+        <div>
+          <h2 className="text-sm font-medium text-text-muted mb-3">Health Events</h2>
+          <div className="space-y-1.5">
+            {healthEvents.map((event: any) => (
+              <div
+                key={event.id}
+                className="p-2.5 rounded-md border border-border bg-bg-card text-xs"
+              >
+                <div className="flex items-center gap-2">
+                  <span
+                    className={cn(
+                      "w-2 h-2 rounded-full",
+                      event.eventType === "healthy" || event.eventType === "orphan_cleaned"
+                        ? "bg-success"
+                        : event.eventType === "restarted"
+                          ? "bg-warning"
+                          : "bg-error",
+                    )}
+                  />
+                  <span className="font-medium capitalize">
+                    {event.eventType.replace("_", " ")}
+                  </span>
+                  <span className="text-text-muted ml-auto">
+                    {formatRelativeTime(event.createdAt)}
+                  </span>
+                </div>
+                {event.message && <p className="text-text-muted mt-1 ml-4">{event.message}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

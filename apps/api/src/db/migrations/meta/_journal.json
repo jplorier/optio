@@ -64,6 +64,13 @@
       "when": 1774015768205,
       "tag": "0008_mighty_zarda",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1774016156301,
+      "tag": "0009_burly_moon_knight",
+      "breakpoints": true
     }
   ]
 }
