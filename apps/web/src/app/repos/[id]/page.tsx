@@ -252,20 +252,35 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
       {/* Code Review */}
       <section className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
         <h2 className="text-sm font-medium">Code Review Agent</h2>
-        <p className="text-xs text-text-muted">Automatically review PRs opened by coding agents.</p>
-
         <label className="flex items-center gap-2 cursor-pointer">
           <input
             type="checkbox"
             checked={reviewEnabled}
-            onChange={(e) => setReviewEnabled(e.target.checked)}
+            onChange={(e) => {
+              setReviewEnabled(e.target.checked);
+              if (e.target.checked && !reviewPromptTemplate) {
+                api.getBuiltinDefault().catch(() => {});
+                // Fetch the default review prompt - use the shared constant
+                import("@optio/shared")
+                  .then((m) => {
+                    if (!reviewPromptTemplate)
+                      setReviewPromptTemplate(m.DEFAULT_REVIEW_PROMPT_TEMPLATE);
+                  })
+                  .catch(() => {});
+              }
+            }}
             className="w-4 h-4 rounded"
           />
-          <span className="text-sm">Enable automated code reviews</span>
+          <div>
+            <span className="text-sm">Override global code review settings for this repo</span>
+            <p className="text-xs text-text-muted">
+              When disabled, the global defaults from Settings apply.
+            </p>
+          </div>
         </label>
 
         {reviewEnabled && (
-          <div className="space-y-3 pt-2 border-t border-border">
+          <div className="space-y-4 pt-2 border-t border-border">
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs text-text-muted mb-1">Trigger</label>
@@ -280,56 +295,87 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-text-muted mb-1">Review model</label>
+                <label className="block text-xs text-text-muted mb-1">Test command</label>
+                <input
+                  value={testCommand}
+                  onChange={(e) => setTestCommand(e.target.value)}
+                  placeholder="npm test, cargo test, pytest"
+                  className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Review Model</label>
                 <select
                   value={reviewModel}
                   onChange={(e) => setReviewModel(e.target.value)}
                   className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
                 >
-                  <option value="sonnet">Sonnet 4.6 (faster, cheaper)</option>
-                  <option value="opus">Opus 4.6 (more thorough)</option>
-                  <option value="haiku">Haiku 4.5 (fastest)</option>
+                  <option value="sonnet">Sonnet 4.6</option>
+                  <option value="opus">Opus 4.6</option>
+                  <option value="haiku">Haiku 4.5</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Context Window</label>
+                <select
+                  value="200k"
+                  className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                >
+                  <option value="200k">200K tokens</option>
+                  <option value="1m">1M tokens</option>
                 </select>
               </div>
             </div>
 
             <div>
-              <label className="block text-xs text-text-muted mb-1">Test command</label>
-              <p className="text-[10px] text-text-muted/60 mb-1.5">
-                The reviewer will run this to verify the PR doesn't break tests.
-              </p>
-              <input
-                value={testCommand}
-                onChange={(e) => setTestCommand(e.target.value)}
-                placeholder="npm test, cargo test, pytest, etc."
-                className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
-              />
-            </div>
-
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showReviewPrompt}
-                onChange={(e) => {
-                  setShowReviewPrompt(e.target.checked);
-                  if (e.target.checked && !reviewPromptTemplate) {
-                    setReviewPromptTemplate("");
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-text-muted">Review Prompt Template</label>
+                <button
+                  onClick={() =>
+                    import("@optio/shared")
+                      .then((m) => setReviewPromptTemplate(m.DEFAULT_REVIEW_PROMPT_TEMPLATE))
+                      .catch(() => {})
                   }
-                }}
-                className="w-4 h-4 rounded"
-              />
-              <span className="text-sm">Custom review prompt</span>
-            </label>
-
-            {showReviewPrompt && (
+                  className="text-xs text-primary hover:underline"
+                >
+                  Reset to default
+                </button>
+              </div>
+              <div className="p-3 rounded-md bg-bg border border-border mb-2">
+                <p className="text-xs text-text-muted mb-2">Available template variables:</p>
+                <ul className="text-xs space-y-1.5">
+                  <li className="flex items-start gap-2">
+                    <code className="text-primary shrink-0">{"{{PR_NUMBER}}"}</code>
+                    <span className="text-text-muted">Pull request number</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <code className="text-primary shrink-0">{"{{TASK_FILE}}"}</code>
+                    <span className="text-text-muted">Path to the review context file</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <code className="text-primary shrink-0">{"{{REPO_NAME}}"}</code>
+                    <span className="text-text-muted">Repository name (e.g. owner/repo)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <code className="text-primary shrink-0">{"{{TASK_TITLE}}"}</code>
+                    <span className="text-text-muted">Original task title</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <code className="text-primary shrink-0">{"{{TEST_COMMAND}}"}</code>
+                    <span className="text-text-muted">Test command configured above</span>
+                  </li>
+                </ul>
+              </div>
               <textarea
                 value={reviewPromptTemplate}
                 onChange={(e) => setReviewPromptTemplate(e.target.value)}
-                rows={8}
-                placeholder="Custom review prompt template..."
+                rows={10}
                 className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
               />
-            )}
+            </div>
           </div>
         )}
       </section>

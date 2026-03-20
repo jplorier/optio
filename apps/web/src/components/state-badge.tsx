@@ -12,7 +12,7 @@ const STATE_CONFIG: Record<string, { label: string; color: string; bg: string }>
   cancelled: { label: "Cancelled", color: "text-text-muted", bg: "bg-text-muted/10" },
 };
 
-export function StateBadge({ state }: { state: string }) {
+export function StateBadge({ state, showDot = true }: { state: string; showDot?: boolean }) {
   const config = STATE_CONFIG[state] ?? {
     label: state,
     color: "text-text-muted",
@@ -26,7 +26,9 @@ export function StateBadge({ state }: { state: string }) {
         config.bg,
       )}
     >
-      <span className={cn("w-1.5 h-1.5 rounded-full", config.color.replace("text-", "bg-"))} />
+      {showDot && (
+        <span className={cn("w-1.5 h-1.5 rounded-full", config.color.replace("text-", "bg-"))} />
+      )}
       {config.label}
     </span>
   );

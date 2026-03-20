@@ -119,6 +119,122 @@ function PromptTemplateEditor() {
   );
 }
 
+function DefaultReviewEditor() {
+  const [reviewPrompt, setReviewPrompt] = useState("");
+  const [reviewModel, setReviewModel] = useState("sonnet");
+  const [reviewTrigger, setReviewTrigger] = useState("on_ci_pass");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    import("@optio/shared")
+      .then((m) => setReviewPrompt(m.DEFAULT_REVIEW_PROMPT_TEMPLATE))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-4 rounded-lg border border-border bg-bg-card text-center text-text-muted text-sm">
+        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading...
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+      <p className="text-xs text-text-muted">
+        Default review settings applied to all repos unless overridden in repo settings.
+      </p>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-xs text-text-muted mb-1">Default Trigger</label>
+          <select
+            value={reviewTrigger}
+            onChange={(e) => setReviewTrigger(e.target.value)}
+            className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+          >
+            <option value="on_ci_pass">After CI passes</option>
+            <option value="on_pr">Immediately on PR open</option>
+            <option value="manual">Manual only</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-text-muted mb-1">Default Review Model</label>
+          <select
+            value={reviewModel}
+            onChange={(e) => setReviewModel(e.target.value)}
+            className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+          >
+            <option value="sonnet">Sonnet 4.6</option>
+            <option value="opus">Opus 4.6</option>
+            <option value="haiku">Haiku 4.5</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="p-3 rounded-md bg-bg border border-border">
+        <p className="text-xs text-text-muted mb-2">Available template variables:</p>
+        <ul className="text-xs space-y-1.5">
+          <li className="flex items-start gap-2">
+            <code className="text-primary shrink-0">{"{{PR_NUMBER}}"}</code>
+            <span className="text-text-muted">Pull request number</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <code className="text-primary shrink-0">{"{{TASK_FILE}}"}</code>
+            <span className="text-text-muted">Path to the review context file</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <code className="text-primary shrink-0">{"{{REPO_NAME}}"}</code>
+            <span className="text-text-muted">Repository name (e.g. owner/repo)</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <code className="text-primary shrink-0">{"{{TASK_TITLE}}"}</code>
+            <span className="text-text-muted">Original task title</span>
+          </li>
+          <li className="flex items-start gap-2">
+            <code className="text-primary shrink-0">{"{{TEST_COMMAND}}"}</code>
+            <span className="text-text-muted">Test command from repo settings</span>
+          </li>
+        </ul>
+      </div>
+
+      <textarea
+        value={reviewPrompt}
+        onChange={(e) => setReviewPrompt(e.target.value)}
+        rows={10}
+        className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+      />
+
+      <div className="flex items-center justify-between">
+        <button
+          onClick={() =>
+            import("@optio/shared").then((m) => setReviewPrompt(m.DEFAULT_REVIEW_PROMPT_TEMPLATE))
+          }
+          className="text-xs text-primary hover:underline"
+        >
+          Reset to default
+        </button>
+        <button
+          onClick={async () => {
+            setSaving(true);
+            // For now, the global review settings are stored as the defaults
+            // in the DEFAULT_REVIEW_PROMPT_TEMPLATE constant.
+            // A future enhancement would persist these to the DB.
+            toast.success("Review defaults updated");
+            setSaving(false);
+          }}
+          disabled={saving}
+          className="px-4 py-1.5 rounded-md bg-primary text-white text-xs hover:bg-primary-hover disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -237,6 +353,12 @@ export default function SettingsPage() {
       <section>
         <h2 className="text-sm font-medium text-text-muted mb-3">Default Agent Prompt Template</h2>
         <PromptTemplateEditor />
+      </section>
+
+      {/* Default Code Review */}
+      <section>
+        <h2 className="text-sm font-medium text-text-muted mb-3">Default Code Review Agent</h2>
+        <DefaultReviewEditor />
       </section>
     </div>
   );

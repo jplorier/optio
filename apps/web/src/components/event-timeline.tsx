@@ -23,11 +23,17 @@ export function EventTimeline({ events }: { events: TimelineEvent[] }) {
             <div className="flex items-center gap-2 flex-wrap">
               {event.fromState && (
                 <>
-                  <StateBadge state={event.fromState} />
+                  <StateBadge state={event.fromState} showDot={false} />
                   <span className="text-text-muted text-xs">→</span>
                 </>
               )}
-              <StateBadge state={event.toState} />
+              <StateBadge
+                state={event.toState}
+                showDot={
+                  i === events.length - 1 ||
+                  ["running", "provisioning", "queued"].includes(event.toState)
+                }
+              />
             </div>
             <div className="text-xs text-text-muted mt-1">
               {event.trigger}
