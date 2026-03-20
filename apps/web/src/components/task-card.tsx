@@ -60,10 +60,20 @@ export function TaskCard({ task }: TaskCardProps) {
             onClick={async (e) => {
               e.preventDefault();
               e.stopPropagation();
+              const btn = e.currentTarget;
+              btn.textContent = "Retrying...";
+              btn.setAttribute("disabled", "true");
               try {
                 await api.retryTask(task.id);
-                window.location.reload();
-              } catch {}
+                // Force refresh the task list
+                window.location.href = window.location.href;
+              } catch (err) {
+                btn.textContent = "Failed";
+                setTimeout(() => {
+                  btn.textContent = "Retry";
+                  btn.removeAttribute("disabled");
+                }, 2000);
+              }
             }}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-primary/10 text-primary hover:bg-primary/20 shrink-0 ml-2"
           >
@@ -78,10 +88,16 @@ export function TaskCard({ task }: TaskCardProps) {
           <span className="text-text-muted">${parseFloat(task.costUsd).toFixed(4)}</span>
         )}
         {task.prUrl && (
-          <span className="flex items-center gap-1 text-success">
+          <a
+            href={task.prUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 px-2 py-0.5 rounded bg-success/10 text-success hover:bg-success/20 transition-colors"
+          >
             <ExternalLink className="w-3 h-3" />
-            PR
-          </span>
+            View PR
+          </a>
         )}
       </div>
     </Link>
