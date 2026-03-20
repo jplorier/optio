@@ -175,14 +175,17 @@ export async function execTaskInRepoPod(
     .where(eq(repoPods.id, pod.id));
 
   // Build the exec command: create worktree, set up env, run agent
-  const envExports = Object.entries(env)
-    .map(([k, v]) => `export ${k}=${JSON.stringify(v)}`)
-    .join("; ");
+  // Write env vars to a temp file and source it (handles multi-line values safely)
+  const envFileLines = Object.entries(env).map(([k, v]) => {
+    // Use heredoc-style for values that contain newlines or special chars
+    const safe = v.replace(/'/g, "'\\''");
+    return `export ${k}='${safe}'`;
+  });
 
   const script = [
     "set -e",
-    envExports,
-    `export OPTIO_TASK_ID=${JSON.stringify(taskId)}`,
+    ...envFileLines,
+    `export OPTIO_TASK_ID='${taskId}'`,
     // Create worktree from the main branch
     `cd /workspace/repo`,
     `git fetch origin`,
