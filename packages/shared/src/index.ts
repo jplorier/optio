@@ -9,3 +9,4 @@ export * from "./utils/state-machine.js";
 export * from "./constants.js";
 export * from "./prompt-template.js";
 export * from "./types/image.js";
+export * from "./error-classifier.js";

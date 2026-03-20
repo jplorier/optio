@@ -7,6 +7,7 @@ export interface TaskSummary {
   agentType: string;
   repoUrl: string;
   prUrl?: string;
+  errorMessage?: string;
   createdAt: string;
   updatedAt: string;
 }

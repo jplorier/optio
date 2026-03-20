@@ -73,6 +73,7 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
     const container = new V1Container();
     container.name = CONTAINER_NAME;
     container.image = spec.image;
+    container.imagePullPolicy = spec.imagePullPolicy ?? "IfNotPresent";
     container.command = spec.command;
     container.env = env;
     container.workingDir = spec.workDir;

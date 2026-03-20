@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { StateBadge } from "./state-badge";
+import { classifyError } from "@optio/shared";
 import { formatRelativeTime, truncate } from "@/lib/utils";
 import { GitBranch, ExternalLink } from "lucide-react";
 
@@ -11,6 +12,7 @@ interface TaskCardProps {
     agentType: string;
     repoUrl: string;
     prUrl?: string;
+    errorMessage?: string;
     createdAt: string;
     updatedAt: string;
   };
@@ -36,6 +38,11 @@ export function TaskCard({ task }: TaskCardProps) {
         </div>
         <StateBadge state={task.state} />
       </div>
+      {task.state === "failed" && task.errorMessage && (
+        <div className="mt-2 text-xs text-error/70 truncate">
+          {classifyError(task.errorMessage).title}
+        </div>
+      )}
       <div className="flex items-center justify-between mt-3 text-xs text-text-muted">
         <span>{formatRelativeTime(task.createdAt)}</span>
         {task.prUrl && (

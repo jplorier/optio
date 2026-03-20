@@ -6,6 +6,7 @@ import { useLogs, type LogEntry } from "@/hooks/use-logs";
 import { EventTimeline } from "@/components/event-timeline";
 import { StateBadge } from "@/components/state-badge";
 import { api } from "@/lib/api-client";
+import { classifyError } from "@optio/shared";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import {
   Loader2,
@@ -190,18 +191,42 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      {/* Error banner */}
-      {task.errorMessage && isTerminal && (
-        <div className="shrink-0 px-4 py-2.5 border-b border-error/20 bg-error/5">
-          <div className="flex items-start gap-2 max-w-5xl mx-auto text-sm">
-            <AlertCircle className="w-4 h-4 text-error shrink-0 mt-0.5" />
-            <div className="min-w-0">
-              <span className="text-error font-medium">Task failed: </span>
-              <span className="text-error/80">{task.errorMessage}</span>
+      {/* Error panel */}
+      {task.errorMessage && isTerminal && (() => {
+        const classified = classifyError(task.errorMessage);
+        return (
+          <div className="shrink-0 border-b border-error/20 bg-error/5">
+            <div className="max-w-5xl mx-auto px-4 py-3">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-error shrink-0 mt-0.5" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div>
+                    <h3 className="text-sm font-medium text-error">{classified.title}</h3>
+                    <p className="text-xs text-error/70 mt-0.5">{classified.description}</p>
+                  </div>
+                  <div className="p-2.5 rounded-md bg-bg/50 border border-border">
+                    <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Suggested fix</div>
+                    <pre className="text-xs text-text/80 whitespace-pre-wrap font-mono">{classified.remedy}</pre>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {classified.retryable && canRetry && (
+                      <button
+                        onClick={handleRetry}
+                        disabled={actionLoading}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-white text-xs hover:bg-primary-hover disabled:opacity-50"
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        Retry Task
+                      </button>
+                    )}
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-error/10 text-error">{classified.category}</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Main content: logs + sidebar */}
       <div className="flex-1 flex overflow-hidden">

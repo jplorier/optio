@@ -8,6 +8,7 @@ export interface ContainerSpec {
   labels: Record<string, string>;
   volumes?: VolumeMount[];
   networkMode?: string;
+  imagePullPolicy?: "Always" | "Never" | "IfNotPresent";
 }
 
 export interface VolumeMount {

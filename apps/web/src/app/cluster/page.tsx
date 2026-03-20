@@ -101,8 +101,14 @@ export default function ClusterPage() {
               <Circle className={cn("w-2 h-2 fill-current", node.status === "Ready" ? "text-success" : "text-error")} />
               <span className="font-mono font-medium">{node.name}</span>
               <span className="text-text-muted">{node.kubeletVersion}</span>
-              <span className="text-text-muted flex items-center gap-1"><Cpu className="w-3 h-3" />{node.cpu} cores</span>
-              <span className="text-text-muted flex items-center gap-1"><HardDrive className="w-3 h-3" />{formatK8sResource(node.memory)}</span>
+              <span className="text-text-muted flex items-center gap-1">
+                <Cpu className="w-3 h-3" />
+                {node.cpuPercent != null ? <><span className="font-medium text-text">{node.cpuPercent}%</span> of {node.cpu} cores</> : <>{node.cpu} cores</>}
+              </span>
+              <span className="text-text-muted flex items-center gap-1">
+                <HardDrive className="w-3 h-3" />
+                {node.memoryUsedGi != null ? <><span className="font-medium text-text">{node.memoryUsedGi}</span> / {node.memoryTotalGi} Gi</> : formatK8sResource(node.memory)}
+              </span>
               <span className="text-text-muted">{node.containerRuntime}</span>
             </div>
           ))}
@@ -153,6 +159,8 @@ export default function ClusterPage() {
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-text-muted mt-0.5">
                       <span className={color}>{pod.status}</span>
+                      {pod.cpuMillicores != null && <span>{pod.cpuMillicores}m CPU</span>}
+                      {pod.memoryMi != null && <span>{pod.memoryMi} Mi RAM</span>}
                       {pod.restarts > 0 && <span className="text-warning">{pod.restarts} restarts</span>}
                       <span className="font-mono">{pod.image?.split("/").pop()}</span>
                       {pod.ip && <span>{pod.ip}</span>}

@@ -4,13 +4,58 @@ import { db } from "../db/client.js";
 import { repoPods, tasks } from "../db/schema.js";
 import { eq, desc } from "drizzle-orm";
 
-function getK8sApi() {
+function getK8sConfig() {
   const kc = new KubeConfig();
   kc.loadFromDefault();
-  return kc.makeApiClient(CoreV1Api);
+  return kc;
+}
+
+function getK8sApi() {
+  return getK8sConfig().makeApiClient(CoreV1Api);
 }
 
 const NAMESPACE = "optio";
+
+/** Fetch metrics from the K8s Metrics API using kubectl proxy approach */
+async function fetchMetrics<T>(path: string): Promise<T | null> {
+  try {
+    const { execSync } = await import("node:child_process");
+    const raw = execSync(`kubectl get --raw "${path}" 2>/dev/null`, {
+      encoding: "utf-8",
+      timeout: 5000,
+    });
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+interface MetricsUsage { cpu: string; memory: string }
+interface NodeMetrics { metadata: { name: string }; usage: MetricsUsage }
+interface PodMetrics { metadata: { name: string }; containers: Array<{ name: string; usage: MetricsUsage }> }
+
+function parseCpuNano(cpu: string): number {
+  // "183270758n" -> nanocores, "100m" -> millicores, "1" -> cores
+  if (cpu.endsWith("n")) return parseInt(cpu, 10);
+  if (cpu.endsWith("m")) return parseInt(cpu, 10) * 1_000_000;
+  return parseInt(cpu, 10) * 1_000_000_000;
+}
+
+function parseMemoryKi(mem: string): number {
+  // "1414112Ki" -> Ki
+  if (mem.endsWith("Ki")) return parseInt(mem, 10);
+  if (mem.endsWith("Mi")) return parseInt(mem, 10) * 1024;
+  if (mem.endsWith("Gi")) return parseInt(mem, 10) * 1048576;
+  return parseInt(mem, 10) / 1024; // assume bytes
+}
+
+function formatCpuPercent(usageNano: number, capacityCores: number): number {
+  return Math.round((usageNano / (capacityCores * 1_000_000_000)) * 100);
+}
+
+function formatMemoryGi(ki: number): string {
+  return (ki / 1048576).toFixed(1);
+}
 
 export async function clusterRoutes(app: FastifyInstance) {
   // Cluster overview: nodes, all pods, services, resource summary
@@ -25,25 +70,62 @@ export async function clusterRoutes(app: FastifyInstance) {
         api.listNamespacedEvent({ namespace: NAMESPACE, limit: 30 }),
       ]);
 
-      const nodes = (nodeList.items ?? []).map((n) => ({
-        name: n.metadata?.name,
-        status: n.status?.conditions?.find((c) => c.type === "Ready")?.status === "True" ? "Ready" : "NotReady",
-        kubeletVersion: n.status?.nodeInfo?.kubeletVersion,
-        os: n.status?.nodeInfo?.osImage,
-        arch: n.status?.nodeInfo?.architecture,
-        cpu: n.status?.capacity?.["cpu"],
-        memory: n.status?.capacity?.["memory"],
-        containerRuntime: n.status?.nodeInfo?.containerRuntimeVersion,
-      }));
+      // Fetch metrics (gracefully fail if metrics-server not installed)
+      const [nodeMetricsList, podMetricsList] = await Promise.all([
+        fetchMetrics<{ items: NodeMetrics[] }>("/apis/metrics.k8s.io/v1beta1/nodes"),
+        fetchMetrics<{ items: PodMetrics[] }>(`/apis/metrics.k8s.io/v1beta1/namespaces/${NAMESPACE}/pods`),
+      ]);
+
+      const nodeMetricsMap = new Map(
+        (nodeMetricsList?.items ?? []).map((m) => [m.metadata.name, m.usage]),
+      );
+      const podMetricsMap = new Map(
+        (podMetricsList?.items ?? []).map((m) => [
+          m.metadata.name,
+          m.containers.reduce(
+            (acc, c) => ({
+              cpu: acc.cpu + parseCpuNano(c.usage.cpu),
+              memoryKi: acc.memoryKi + parseMemoryKi(c.usage.memory),
+            }),
+            { cpu: 0, memoryKi: 0 },
+          ),
+        ]),
+      );
+
+      const nodes = (nodeList.items ?? []).map((n) => {
+        const name = n.metadata?.name ?? "";
+        const capacityCpu = parseInt(n.status?.capacity?.["cpu"] ?? "0", 10);
+        const capacityMemKi = parseMemoryKi(n.status?.capacity?.["memory"] ?? "0");
+        const usage = nodeMetricsMap.get(name);
+        const usageCpuNano = usage ? parseCpuNano(usage.cpu) : null;
+        const usageMemKi = usage ? parseMemoryKi(usage.memory) : null;
+
+        return {
+          name,
+          status: n.status?.conditions?.find((c) => c.type === "Ready")?.status === "True" ? "Ready" : "NotReady",
+          kubeletVersion: n.status?.nodeInfo?.kubeletVersion,
+          os: n.status?.nodeInfo?.osImage,
+          arch: n.status?.nodeInfo?.architecture,
+          cpu: n.status?.capacity?.["cpu"],
+          memory: n.status?.capacity?.["memory"],
+          containerRuntime: n.status?.nodeInfo?.containerRuntimeVersion,
+          // Resource usage
+          cpuPercent: usageCpuNano !== null ? formatCpuPercent(usageCpuNano, capacityCpu) : null,
+          memoryUsedGi: usageMemKi !== null ? formatMemoryGi(usageMemKi) : null,
+          memoryTotalGi: formatMemoryGi(capacityMemKi),
+        };
+      });
 
       const pods = (podList.items ?? []).map((p) => {
         const containerStatus = p.status?.containerStatuses?.[0];
         const waiting = containerStatus?.state?.waiting;
         const running = containerStatus?.state?.running;
         const terminated = containerStatus?.state?.terminated;
+        const podName = p.metadata?.name ?? "";
+        const metrics = podMetricsMap.get(podName);
 
         return {
-          name: p.metadata?.name,
+          name: podName,
           phase: p.status?.phase,
           status: waiting?.reason ?? (running ? "Running" : terminated?.reason ?? p.status?.phase ?? "Unknown"),
           ready: containerStatus?.ready ?? false,
@@ -55,6 +137,9 @@ export async function clusterRoutes(app: FastifyInstance) {
           labels: p.metadata?.labels ?? {},
           isOptioManaged: p.metadata?.labels?.["managed-by"] === "optio",
           isInfra: !!(p.metadata?.labels?.["app"] && ["postgres", "redis"].includes(p.metadata.labels["app"])),
+          // Resource usage
+          cpuMillicores: metrics ? Math.round(metrics.cpu / 1_000_000) : null,
+          memoryMi: metrics ? Math.round(metrics.memoryKi / 1024) : null,
         };
       });
 

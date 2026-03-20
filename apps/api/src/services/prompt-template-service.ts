@@ -1,32 +1,50 @@
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { promptTemplates } from "../db/schema.js";
+import { promptTemplates, repos } from "../db/schema.js";
 import { DEFAULT_PROMPT_TEMPLATE } from "@optio/shared";
 
 /**
- * Get the prompt template for a repo. Falls back to the global default.
+ * Get the prompt template for a repo. Priority:
+ * 1. Repo-level override (repos.promptTemplateOverride)
+ * 2. Global default (prompt_templates table)
+ * 3. Hardcoded default
  */
 export async function getPromptTemplate(repoUrl?: string): Promise<{
   id: string;
   template: string;
   autoMerge: boolean;
 }> {
-  // Try repo-specific first
+  // Check repo-level override first
   if (repoUrl) {
-    const [repoTemplate] = await db
+    const [repo] = await db
       .select()
-      .from(promptTemplates)
-      .where(eq(promptTemplates.repoUrl, repoUrl));
-    if (repoTemplate) {
+      .from(repos)
+      .where(eq(repos.repoUrl, repoUrl));
+    if (repo?.promptTemplateOverride) {
       return {
-        id: repoTemplate.id,
-        template: repoTemplate.template,
-        autoMerge: repoTemplate.autoMerge,
+        id: repo.id,
+        template: repo.promptTemplateOverride,
+        autoMerge: repo.autoMerge,
+      };
+    }
+    // Also use the repo's autoMerge setting even if no prompt override
+    if (repo) {
+      const globalTemplate = await getGlobalDefault();
+      return {
+        ...globalTemplate,
+        autoMerge: repo.autoMerge,
       };
     }
   }
 
-  // Fall back to global default
+  return getGlobalDefault();
+}
+
+async function getGlobalDefault(): Promise<{
+  id: string;
+  template: string;
+  autoMerge: boolean;
+}> {
   const [defaultTemplate] = await db
     .select()
     .from(promptTemplates)
@@ -40,7 +58,6 @@ export async function getPromptTemplate(repoUrl?: string): Promise<{
     };
   }
 
-  // No template in DB — use hardcoded default
   return {
     id: "builtin",
     template: DEFAULT_PROMPT_TEMPLATE,

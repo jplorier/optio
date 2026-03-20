@@ -1,0 +1,128 @@
+export interface ClassifiedError {
+  category: "image" | "auth" | "network" | "timeout" | "agent" | "state" | "resource" | "unknown";
+  title: string;
+  description: string;
+  remedy: string;
+  retryable: boolean;
+}
+
+const ERROR_PATTERNS: Array<{
+  pattern: RegExp;
+  classify: (match: RegExpMatchArray) => ClassifiedError;
+}> = [
+  {
+    pattern: /ImagePullBackOff|ErrImagePull|failed to pull.*image/i,
+    classify: () => ({
+      category: "image",
+      title: "Container image not found",
+      description: "Kubernetes could not pull the agent container image. This usually means the image hasn't been built locally or isn't accessible from the cluster.",
+      remedy: "Run: docker build -t optio-agent:latest -f Dockerfile.agent .\nThen ensure OPTIO_IMAGE_PULL_POLICY=Never is set in your .env file.",
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /Timed out waiting for pod.*Running.*after (\d+)s/i,
+    classify: (match) => ({
+      category: "timeout",
+      title: "Pod startup timed out",
+      description: `The agent pod did not reach Running state within ${match[1]}s. This could be caused by image pull issues, resource constraints, or scheduling problems.`,
+      remedy: "Check the Cluster page for pod status and events. Common causes:\n- Image not built (run docker build)\n- Insufficient cluster resources\n- Node scheduling issues",
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /Secret not found: (\w+)/i,
+    classify: (match) => ({
+      category: "auth",
+      title: `Missing secret: ${match[1]}`,
+      description: `The required secret "${match[1]}" is not configured. The agent needs this credential to run.`,
+      remedy: `Go to Secrets and add "${match[1]}", or re-run the setup wizard.`,
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /ANTHROPIC_API_KEY/i,
+    classify: () => ({
+      category: "auth",
+      title: "Anthropic API key missing",
+      description: "No Anthropic API key is configured and Claude Code cannot authenticate.",
+      remedy: "Go to Secrets and add ANTHROPIC_API_KEY, or switch to Max subscription auth in Settings.",
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /InvalidTransitionError.*(\w+) -> (\w+)/i,
+    classify: (match) => ({
+      category: "state",
+      title: "Invalid state transition",
+      description: `The task tried to move from "${match[1]}" to "${match[2]}" which is not allowed. This usually indicates a stale job retry from BullMQ.`,
+      remedy: "This is typically self-resolving. Click Retry to re-queue the task cleanly.",
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /OOMKilled|out of memory/i,
+    classify: () => ({
+      category: "resource",
+      title: "Out of memory",
+      description: "The agent container was killed because it exceeded its memory limit.",
+      remedy: "Increase the memory limit in the repo's container settings, or use a larger image preset.",
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /rate.?limit|429|too many requests/i,
+    classify: () => ({
+      category: "auth",
+      title: "API rate limit exceeded",
+      description: "The agent hit an API rate limit. This can happen with heavy usage on subscription plans.",
+      remedy: "Wait a few minutes before retrying, or switch to API key auth with higher rate limits.",
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /ECONNREFUSED|ENOTFOUND|network|connection refused/i,
+    classify: () => ({
+      category: "network",
+      title: "Network error",
+      description: "The agent could not connect to a required service. This could be the GitHub API, Anthropic API, or an internal service.",
+      remedy: "Check that port-forwards are running (kubectl port-forward) and external APIs are reachable.",
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /exit code: (\d+)/i,
+    classify: (match) => ({
+      category: "agent",
+      title: `Agent exited with code ${match[1]}`,
+      description: "The coding agent process exited with a non-zero exit code. Check the logs for details about what went wrong.",
+      remedy: "Review the task logs for error messages. The agent may have encountered an issue it couldn't resolve.",
+      retryable: true,
+    }),
+  },
+];
+
+export function classifyError(errorMessage: string | null | undefined): ClassifiedError {
+  if (!errorMessage) {
+    return {
+      category: "unknown",
+      title: "Unknown error",
+      description: "The task failed but no error details were captured.",
+      remedy: "Try retrying the task. If it fails again, check the API server logs.",
+      retryable: true,
+    };
+  }
+
+  for (const { pattern, classify } of ERROR_PATTERNS) {
+    const match = errorMessage.match(pattern);
+    if (match) return classify(match);
+  }
+
+  return {
+    category: "unknown",
+    title: "Task failed",
+    description: errorMessage,
+    remedy: "Review the error message and task logs for more details.",
+    retryable: true,
+  };
+}

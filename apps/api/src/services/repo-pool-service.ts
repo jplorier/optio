@@ -97,6 +97,7 @@ async function createRepoPod(
         OPTIO_REPO_BRANCH: repoBranch,
       },
       workDir: "/workspace",
+      imagePullPolicy: process.env.OPTIO_IMAGE_PULL_POLICY as any ?? "Never",
       labels: {
         "optio.repo-url": repoUrl.replace(/[^a-zA-Z0-9-_.]/g, "_").slice(0, 63),
         "optio.type": "repo-pod",

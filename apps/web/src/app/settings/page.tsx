@@ -50,7 +50,7 @@ function PromptTemplateEditor() {
     <div className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-text-muted">
-          This system prompt is sent to every agent along with a task file.
+          Default prompt used for all repos unless overridden in repo settings.
         </p>
         <button onClick={handleReset} className="text-xs text-primary hover:underline">Reset to default</button>
       </div>
@@ -212,7 +212,7 @@ export default function SettingsPage() {
 
       {/* Prompt Template */}
       <section>
-        <h2 className="text-sm font-medium text-text-muted mb-3">Agent Prompt Template</h2>
+        <h2 className="text-sm font-medium text-text-muted mb-3">Default Agent Prompt Template</h2>
         <PromptTemplateEditor />
       </section>
     </div>

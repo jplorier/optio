@@ -20,6 +20,7 @@ import {
   Database,
   Network,
   ChevronRight,
+  X,
   Plus,
 } from "lucide-react";
 import { StateBadge } from "@/components/state-badge";
@@ -71,6 +72,7 @@ export default function OverviewPage() {
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const [cluster, setCluster] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [dismissedEvents, setDismissedEvents] = useState<Set<number>>(new Set());
 
   const refresh = () => {
     Promise.all([
@@ -131,6 +133,11 @@ export default function OverviewPage() {
       <div className="p-3 rounded-lg border border-border bg-bg-card">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4 text-xs">
+            {nodes[0] && (
+              <span className="flex items-center gap-1.5 text-text-muted font-mono border-r border-border pr-4 mr-1">
+                {nodes[0].name} <span className="text-text-muted/50">/ optio</span>
+              </span>
+            )}
             <span className="flex items-center gap-1.5">
               <Circle className={cn("w-2 h-2 fill-current", summary.readyNodes > 0 ? "text-success" : "text-error")} />
               <span className="text-text-muted">Nodes</span>
@@ -154,9 +161,22 @@ export default function OverviewPage() {
           </div>
           {nodes[0] && (
             <div className="flex items-center gap-3 text-[11px] text-text-muted">
-              <span className="font-mono">{nodes[0].name}</span>
-              <span className="flex items-center gap-1"><Cpu className="w-3 h-3" />{nodes[0].cpu} cores</span>
-              <span className="flex items-center gap-1"><HardDrive className="w-3 h-3" />{formatK8sResource(nodes[0].memory)}</span>
+              <span className="flex items-center gap-1">
+                <Cpu className="w-3 h-3" />
+                {nodes[0].cpuPercent != null ? (
+                  <><span className="font-medium text-text">{nodes[0].cpuPercent}%</span> of {nodes[0].cpu} cores</>
+                ) : (
+                  <>{nodes[0].cpu} cores</>
+                )}
+              </span>
+              <span className="flex items-center gap-1">
+                <HardDrive className="w-3 h-3" />
+                {nodes[0].memoryUsedGi != null ? (
+                  <><span className="font-medium text-text">{nodes[0].memoryUsedGi}</span> / {nodes[0].memoryTotalGi} Gi</>
+                ) : (
+                  <>{formatK8sResource(nodes[0].memory)}</>
+                )}
+              </span>
             </div>
           )}
         </div>
@@ -215,6 +235,12 @@ export default function OverviewPage() {
                     </div>
                     <div className="flex items-center gap-2 text-[10px] text-text-muted mt-1 ml-4">
                       <span className={color}>{pod.status}</span>
+                      {pod.cpuMillicores != null && (
+                        <span className="flex items-center gap-0.5"><Cpu className="w-2.5 h-2.5" />{pod.cpuMillicores}m</span>
+                      )}
+                      {pod.memoryMi != null && (
+                        <span className="flex items-center gap-0.5"><HardDrive className="w-2.5 h-2.5" />{pod.memoryMi} Mi</span>
+                      )}
                       {pod.restarts > 0 && <span className="text-warning">{pod.restarts} restarts</span>}
                       <span className="font-mono">{pod.image?.split("/").pop()}</span>
                       {pod.startedAt && <span>{formatRelativeTime(pod.startedAt)}</span>}
@@ -225,20 +251,45 @@ export default function OverviewPage() {
             </div>
           )}
 
-          {/* Recent events (compact) */}
-          {events.length > 0 && (
+          {/* Recent events */}
+          {events.filter((_: any, i: number) => !dismissedEvents.has(i)).length > 0 && (
             <div className="mt-4">
-              <h3 className="text-xs font-medium text-text-muted mb-2">Recent Events</h3>
-              <div className="space-y-1">
-                {events.slice(0, 5).map((event: any, i: number) => (
-                  <div key={i} className="flex items-start gap-2 text-[10px] text-text-muted">
-                    <AlertTriangle className={cn("w-3 h-3 shrink-0 mt-0.5", event.type === "Warning" ? "text-warning" : "text-info")} />
-                    <div className="min-w-0">
-                      <span className="font-medium text-text/70">{event.reason}</span>
-                      <span className="ml-1">{event.message?.slice(0, 80)}</span>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-xs font-medium text-text-muted">Recent Events</h3>
+                {dismissedEvents.size < events.length && (
+                  <button
+                    onClick={() => setDismissedEvents(new Set(events.map((_: any, i: number) => i)))}
+                    className="text-[10px] text-text-muted hover:text-text"
+                  >
+                    Dismiss all
+                  </button>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                {events.slice(0, 8).map((event: any, i: number) => {
+                  if (dismissedEvents.has(i)) return null;
+                  return (
+                    <div key={i} className="p-2.5 rounded-md border border-border bg-bg-card group">
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className={cn("w-3 h-3 shrink-0", event.type === "Warning" ? "text-warning" : "text-info")} />
+                        <span className="text-xs font-medium">{event.reason}</span>
+                        <span className="text-[10px] text-text-muted font-mono">{event.involvedObject}</span>
+                        {event.count > 1 && <span className="text-[10px] text-text-muted">x{event.count}</span>}
+                        <span className="flex-1" />
+                        {event.lastTimestamp && (
+                          <span className="text-[10px] text-text-muted/50">{formatRelativeTime(event.lastTimestamp)}</span>
+                        )}
+                        <button
+                          onClick={() => setDismissedEvents((prev) => new Set([...prev, i]))}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-bg-hover text-text-muted transition-opacity"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-text-muted mt-1 ml-5 truncate">{event.message}</p>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

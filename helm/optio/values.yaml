@@ -1,0 +1,119 @@
+# Optio Helm Chart Values
+
+# API Server
+api:
+  image:
+    repository: optio-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 4000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  env:
+    LOG_LEVEL: info
+
+# Web UI
+web:
+  image:
+    repository: optio-web
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicas: 1
+  port: 3000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Agent containers
+agent:
+  image:
+    repository: optio-agent
+    tag: latest
+    pullPolicy: Never  # Use "IfNotPresent" or "Always" for registry images
+  imagePullPolicy: Never
+
+# PostgreSQL
+postgresql:
+  # Set to false to use an external database
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  storage:
+    size: 5Gi
+  auth:
+    database: optio
+    username: optio
+    password: optio-prod-change-me
+
+# Redis
+redis:
+  # Set to false to use an external Redis
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# External database (used when postgresql.enabled=false)
+externalDatabase:
+  url: ""  # e.g., postgres://user:pass@host:5432/optio
+
+# External Redis (used when redis.enabled=false)
+externalRedis:
+  url: ""  # e.g., redis://host:6379
+
+# Secrets encryption
+encryption:
+  key: ""  # Generate with: openssl rand -hex 32. Required.
+
+# Ingress
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: optio.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: web
+        - path: /api
+          pathType: Prefix
+          service: api
+        - path: /ws
+          pathType: Prefix
+          service: api
+  tls: []
+
+# Namespace
+namespace: optio
+
+# Service account
+serviceAccount:
+  create: true
+  name: optio
+  annotations: {}
