@@ -27,6 +27,11 @@ Read your task file at: {{TASK_FILE}}
 7. Once all checks pass, comment on the PR that it is ready for review.
 {{/if}}
 
+## Environment Note
+If this is the first task on this repo, you may need to install project dependencies
+and build tools. Check if they're available before installing. Once installed, tools
+persist for future tasks on this repo.
+
 ## Guidelines
 
 - Work only on what the task file describes. Do not refactor unrelated code.

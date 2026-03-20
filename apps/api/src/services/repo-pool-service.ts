@@ -86,6 +86,40 @@ async function createRepoPod(
   const rt = getRuntime();
   const image = resolveImage(imageConfig);
 
+  // Create a PVC for persistent home directory (tools, caches)
+  const pvcName = `optio-home-${repoUrl.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 40)}`;
+  try {
+    const { execSync } = await import("node:child_process");
+    // Check if PVC already exists
+    const exists = execSync(
+      `kubectl get pvc ${pvcName} -n optio 2>/dev/null && echo "yes" || echo "no"`,
+      { encoding: "utf-8" },
+    ).trim();
+    if (exists !== "yes") {
+      execSync(
+        `kubectl apply -f - <<EOF
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${pvcName}
+  namespace: optio
+  labels:
+    managed-by: optio
+    optio.type: home-pvc
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+EOF`,
+        { encoding: "utf-8" },
+      );
+      logger.info({ pvcName }, "Created PVC for repo pod home directory");
+    }
+  } catch (err) {
+    logger.warn({ err, pvcName }, "Failed to create PVC, pod will use ephemeral storage");
+  }
+
   try {
     // Launch a pod that clones the repo then sleeps forever
     const spec: ContainerSpec = {
@@ -98,6 +132,12 @@ async function createRepoPod(
       },
       workDir: "/workspace",
       imagePullPolicy: (process.env.OPTIO_IMAGE_PULL_POLICY as any) ?? "Never",
+      volumes: [
+        {
+          persistentVolumeClaim: pvcName,
+          mountPath: "/home/agent",
+        },
+      ],
       labels: {
         "optio.repo-url": repoUrl.replace(/[^a-zA-Z0-9-_.]/g, "_").slice(0, 63),
         "optio.type": "repo-pod",
@@ -193,6 +233,11 @@ export async function execTaskInRepoPod(
     `for i in $(seq 1 120); do [ -f /workspace/.ready ] && break; sleep 1; done`,
     `[ -f /workspace/.ready ] || { echo "[optio] ERROR: repo not ready after 120s"; exit 1; }`,
     `echo "[optio] Repo ready"`,
+    // Check if the environment has been set up before
+    `ENV_FRESH="true"`,
+    `[ -f /home/agent/.optio-env-ready ] && ENV_FRESH="false"`,
+    `export ENV_FRESH`,
+    `if [ "$ENV_FRESH" = "true" ]; then echo "[optio] Fresh environment — tools may need to be installed"; else echo "[optio] Warm environment — tools from previous tasks should be available"; fi`,
     // Create worktree from the main branch (clean up stale branch/worktree from previous attempts)
     `cd /workspace/repo`,
     `git fetch origin`,
@@ -227,6 +272,8 @@ export async function execTaskInRepoPod(
     `fi`,
     // Run the agent command
     ...agentCommand,
+    // Mark environment as set up for future tasks
+    `touch /home/agent/.optio-env-ready`,
     // Cleanup worktree on exit (best-effort)
     `EXIT_CODE=$?`,
     `cd /workspace/repo`,

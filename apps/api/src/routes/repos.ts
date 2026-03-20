@@ -46,6 +46,23 @@ export async function repoRoutes(app: FastifyInstance) {
   app.post("/api/repos", async (req, reply) => {
     const body = createRepoSchema.parse(req.body);
     const repo = await repoService.createRepo(body);
+
+    // Auto-detect image preset and test command
+    try {
+      const { retrieveSecret } = await import("../services/secret-service.js");
+      const { detectRepoConfig } = await import("../services/repo-detect-service.js");
+      const githubToken = await retrieveSecret("GITHUB_TOKEN").catch(() => null);
+      if (githubToken) {
+        const detected = await detectRepoConfig(body.repoUrl, githubToken);
+        if (detected.imagePreset !== "base" || detected.testCommand) {
+          await repoService.updateRepo(repo.id, {
+            imagePreset: detected.imagePreset,
+            testCommand: detected.testCommand,
+          });
+        }
+      }
+    } catch {}
+
     reply.status(201).send({ repo });
   });
 
@@ -61,5 +78,26 @@ export async function repoRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     await repoService.deleteRepo(id);
     reply.status(204).send();
+  });
+
+  // Auto-detect repo configuration
+  app.post("/api/repos/:id/detect", async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const repo = await repoService.getRepo(id);
+    if (!repo) return reply.status(404).send({ error: "Repo not found" });
+
+    try {
+      const { retrieveSecret } = await import("../services/secret-service.js");
+      const { detectRepoConfig } = await import("../services/repo-detect-service.js");
+      const githubToken = await retrieveSecret("GITHUB_TOKEN");
+      const detected = await detectRepoConfig(repo.repoUrl, githubToken);
+      await repoService.updateRepo(id, {
+        imagePreset: detected.imagePreset,
+        testCommand: detected.testCommand ?? undefined,
+      });
+      reply.send({ detected });
+    } catch (err) {
+      reply.status(500).send({ error: String(err) });
+    }
   });
 }
