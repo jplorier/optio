@@ -239,7 +239,7 @@ export default function OverviewPage() {
       {/* Two-column: Recent tasks + Pods */}
       <div className="grid md:grid-cols-2 gap-6">
         {/* Recent tasks */}
-        <div>
+        <div className="min-w-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-text-muted">Recent Tasks</h2>
             <div className="flex items-center gap-2">
@@ -271,7 +271,7 @@ export default function OverviewPage() {
         </div>
 
         {/* Pods */}
-        <div>
+        <div className="min-w-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-medium text-text-muted">Pods</h2>
           </div>
