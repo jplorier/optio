@@ -18,7 +18,6 @@ import {
   AlertCircle,
   Check,
   Plus,
-  Trash2,
   ExternalLink,
   FileText,
 } from "lucide-react";

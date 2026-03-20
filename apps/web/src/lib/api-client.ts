@@ -1,12 +1,13 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { ...(opts?.headers as Record<string, string>) };
+  if (opts?.body) {
+    headers["Content-Type"] = "application/json";
+  }
   const res = await fetch(`${API_URL}${path}`, {
     ...opts,
-    headers: {
-      "Content-Type": "application/json",
-      ...opts?.headers,
-    },
+    headers,
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

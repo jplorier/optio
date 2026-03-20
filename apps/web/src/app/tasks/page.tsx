@@ -6,18 +6,7 @@ import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import Link from "next/link";
 import { cn, formatRelativeTime } from "@/lib/utils";
-import {
-  Plus,
-  RotateCcw,
-  XCircle,
-  Loader2,
-  ExternalLink,
-  Zap,
-  Tag,
-  GitBranch,
-  CircleDot,
-  Check,
-} from "lucide-react";
+import { Plus, RotateCcw, XCircle, Loader2, Zap, GitBranch, CircleDot, Check } from "lucide-react";
 
 export default function TasksPage() {
   const [tab, setTab] = useState<"tasks" | "issues">("tasks");

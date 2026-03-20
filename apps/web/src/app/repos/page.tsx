@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import Link from "next/link";
 import { Loader2, FolderGit2, Lock, Globe, ChevronRight, Settings2 } from "lucide-react";
-import { formatRelativeTime } from "@/lib/utils";
 
 export default function ReposPage() {
   const [repos, setRepos] = useState<any[]>([]);

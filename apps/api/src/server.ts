@@ -17,7 +17,6 @@ import { issueRoutes } from "./routes/issues.js";
 import { subtaskRoutes } from "./routes/subtasks.js";
 import { logStreamWs } from "./ws/log-stream.js";
 import { eventsWs } from "./ws/events.js";
-import { logger } from "./logger.js";
 
 const loggerConfig =
   process.env.NODE_ENV !== "production"
@@ -31,7 +30,10 @@ export async function buildServer() {
   const app = Fastify({ logger: loggerConfig });
 
   // Plugins
-  await app.register(cors, { origin: true });
+  await app.register(cors, {
+    origin: true,
+    methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  });
   await app.register(rateLimit, {
     max: 100,
     timeWindow: "1 minute",

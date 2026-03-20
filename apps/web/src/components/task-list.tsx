@@ -16,6 +16,7 @@ import {
   Play,
   CheckCircle2,
   AlertTriangle,
+  XCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -100,7 +101,8 @@ export function TaskList() {
       (t.state === "pr_opened" && subtaskStatus(t.id).allDone) ||
       (t.state === "pr_opened" && !subtaskStatus(t.id).hasAny),
   );
-  const done = topLevelTasks.filter((t) => ["completed", "failed", "cancelled"].includes(t.state));
+  const failed = topLevelTasks.filter((t) => ["failed"].includes(t.state));
+  const completed = topLevelTasks.filter((t) => ["completed", "cancelled"].includes(t.state));
 
   const moveTask = async (index: number, direction: "up" | "down") => {
     const newIndex = direction === "up" ? index - 1 : index + 1;
@@ -110,7 +112,7 @@ export function TaskList() {
     const [moved] = reordered.splice(index, 1);
     reordered.splice(newIndex, 0, moved);
 
-    const newTasks = [...running, ...reordered, ...awaitingAction, ...done];
+    const newTasks = [...running, ...reordered, ...awaitingAction, ...failed, ...completed];
     setTasks(newTasks);
 
     try {
@@ -245,15 +247,27 @@ export function TaskList() {
             </Section>
           )}
 
-          {/* Completed / Failed */}
-          {done.length > 0 && (
+          {/* Failed */}
+          {failed.length > 0 && (
+            <Section icon={XCircle} label="Failed" count={failed.length} color="text-error">
+              {failed.map((task) => (
+                <div key={task.id}>
+                  <TaskCard task={task} />
+                  {renderSubtasks(task.id)}
+                </div>
+              ))}
+            </Section>
+          )}
+
+          {/* Completed */}
+          {completed.length > 0 && (
             <Section
               icon={CheckCircle2}
               label="Completed"
-              count={done.length}
+              count={completed.length}
               color="text-text-muted"
             >
-              {done.map((task) => (
+              {completed.map((task) => (
                 <div key={task.id}>
                   <TaskCard task={task} />
                   {renderSubtasks(task.id)}

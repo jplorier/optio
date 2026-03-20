@@ -19,6 +19,14 @@ describe("state-machine", () => {
       expect(canTransition(TaskState.FAILED, TaskState.QUEUED)).toBe(true);
     });
 
+    it("allows cancelling queued tasks", () => {
+      expect(canTransition(TaskState.QUEUED, TaskState.CANCELLED)).toBe(true);
+    });
+
+    it("allows failing queued tasks", () => {
+      expect(canTransition(TaskState.QUEUED, TaskState.FAILED)).toBe(true);
+    });
+
     it("rejects invalid transitions", () => {
       expect(canTransition(TaskState.PENDING, TaskState.RUNNING)).toBe(false);
       expect(canTransition(TaskState.COMPLETED, TaskState.RUNNING)).toBe(false);
@@ -63,6 +71,58 @@ describe("state-machine", () => {
 
     it("returns empty array for terminal state", () => {
       expect(getValidTransitions(TaskState.COMPLETED)).toEqual([]);
+    });
+
+    it("includes cancelled and failed for queued state", () => {
+      const valid = getValidTransitions(TaskState.QUEUED);
+      expect(valid).toContain(TaskState.PROVISIONING);
+      expect(valid).toContain(TaskState.CANCELLED);
+      expect(valid).toContain(TaskState.FAILED);
+    });
+  });
+
+  describe("retry lifecycle", () => {
+    it("supports failed → queued retry path", () => {
+      let state = TaskState.RUNNING;
+      state = transition(state, TaskState.FAILED);
+      state = transition(state, TaskState.QUEUED);
+      expect(state).toBe(TaskState.QUEUED);
+    });
+
+    it("supports cancelled → queued retry path", () => {
+      let state = TaskState.QUEUED;
+      state = transition(state, TaskState.CANCELLED);
+      state = transition(state, TaskState.QUEUED);
+      expect(state).toBe(TaskState.QUEUED);
+    });
+  });
+
+  describe("startup reconciliation paths", () => {
+    it("can reconcile orphaned queued tasks (queued stays queued-compatible)", () => {
+      // Queued tasks just need to be re-added to BullMQ — no state change needed
+      expect(canTransition(TaskState.QUEUED, TaskState.PROVISIONING)).toBe(true);
+    });
+
+    it("can reconcile orphaned provisioning tasks via fail-then-requeue", () => {
+      let state = TaskState.PROVISIONING;
+      state = transition(state, TaskState.FAILED);
+      state = transition(state, TaskState.QUEUED);
+      expect(state).toBe(TaskState.QUEUED);
+    });
+
+    it("can reconcile orphaned running tasks via fail-then-requeue", () => {
+      let state = TaskState.RUNNING;
+      state = transition(state, TaskState.FAILED);
+      state = transition(state, TaskState.QUEUED);
+      expect(state).toBe(TaskState.QUEUED);
+    });
+
+    it("rejects direct running → queued (must go through failed)", () => {
+      expect(canTransition(TaskState.RUNNING, TaskState.QUEUED)).toBe(false);
+    });
+
+    it("rejects direct provisioning → queued (must go through failed)", () => {
+      expect(canTransition(TaskState.PROVISIONING, TaskState.QUEUED)).toBe(false);
     });
   });
 });

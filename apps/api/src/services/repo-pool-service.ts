@@ -59,8 +59,21 @@ export async function getOrCreateRepoPod(
     }
   }
 
-  // Create new repo pod
-  return createRepoPod(repoUrl, repoBranch, env, imageConfig);
+  // Create new repo pod — use upsert to handle concurrent callers
+  try {
+    return await createRepoPod(repoUrl, repoBranch, env, imageConfig);
+  } catch (err: any) {
+    // If another caller just inserted for the same repoUrl, retry the lookup
+    if (err?.message?.includes("unique") || err?.code === "23505") {
+      logger.info({ repoUrl }, "Concurrent pod creation detected, waiting for existing pod");
+      const [retry] = await db.select().from(repoPods).where(eq(repoPods.repoUrl, repoUrl));
+      if (retry) {
+        if (retry.state === "ready" && retry.podName) return retry as RepoPod;
+        if (retry.state === "provisioning") return waitForPodReady(retry.id);
+      }
+    }
+    throw err;
+  }
 }
 
 function resolveImage(imageConfig?: RepoImageConfig): string {

@@ -1,4 +1,4 @@
-import { eq, and, sql, desc } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks, repos } from "../db/schema.js";
 import { TaskState } from "@optio/shared";

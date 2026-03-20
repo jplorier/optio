@@ -330,6 +330,75 @@ export function startTaskWorker() {
   return worker;
 }
 
+/**
+ * Re-enqueue orphaned tasks on startup.
+ * After a Redis restart, BullMQ jobs are lost but tasks remain in
+ * "queued" or "provisioning" state in the database. This function
+ * detects those orphans and re-adds them to the queue.
+ */
+export async function reconcileOrphanedTasks() {
+  const orphanedQueued = await db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.state, "queued" as any));
+
+  const orphanedProvisioning = await db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.state, "provisioning" as any));
+
+  const orphanedRunning = await db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.state, "running" as any));
+
+  // Provisioning/running tasks lost their exec session — fail then re-queue
+  for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
+    await taskService.transitionTask(
+      task.id,
+      TaskState.FAILED,
+      "startup_reconcile",
+      "Server restarted during execution",
+    );
+    await taskService.transitionTask(
+      task.id,
+      TaskState.QUEUED,
+      "startup_reconcile",
+      "Re-queued after server restart",
+    );
+  }
+
+  // Re-query queued tasks (provisioning/running were just transitioned to queued above)
+  const toEnqueue = await db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.state, "queued" as any));
+
+  if (toEnqueue.length === 0) return;
+
+  // Check existing BullMQ jobs to avoid duplicates
+  const waiting = await taskQueue.getJobs(["waiting", "delayed", "active", "prioritized"]);
+  const existingTaskIds = new Set(waiting.map((j) => j.data?.taskId).filter(Boolean));
+
+  let enqueued = 0;
+  for (const task of toEnqueue) {
+    if (existingTaskIds.has(task.id)) continue;
+    await taskQueue.add(
+      "process-task",
+      { taskId: task.id },
+      {
+        jobId: `${task.id}-reconcile-${Date.now()}`,
+        priority: task.priority ?? 100,
+      },
+    );
+    enqueued++;
+  }
+
+  if (enqueued > 0) {
+    logger.info({ count: enqueued }, "Reconciled orphaned tasks after startup");
+  }
+}
+
 function buildAgentCommand(
   agentType: string,
   env: Record<string, string>,

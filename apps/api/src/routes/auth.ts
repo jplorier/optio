@@ -1,9 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import {
-  getClaudeAuthToken,
-  isSubscriptionAvailable,
-  invalidateCredentialsCache,
-} from "../services/auth-service.js";
+import { getClaudeAuthToken, invalidateCredentialsCache } from "../services/auth-service.js";
 
 export async function authRoutes(app: FastifyInstance) {
   // Get the current Claude auth token (called by agent containers via apiKeyHelper)

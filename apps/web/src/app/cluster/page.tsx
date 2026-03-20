@@ -8,7 +8,6 @@ import {
   Loader2,
   Server,
   Circle,
-  GitBranch,
   ChevronRight,
   Activity,
   Cpu,
@@ -19,7 +18,6 @@ import {
   Container,
   Database,
 } from "lucide-react";
-import { StateBadge } from "@/components/state-badge";
 
 const STATUS_COLORS: Record<string, string> = {
   Running: "text-success",

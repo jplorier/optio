@@ -7,8 +7,6 @@ import {
   ArrowDown,
   Trash2,
   Terminal,
-  FileEdit,
-  Brain,
   AlertCircle,
   Info,
   Wrench,

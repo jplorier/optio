@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
-import { Loader2, Plus, Trash2, KeyRound, Eye, EyeOff } from "lucide-react";
+import { Loader2, Plus, Trash2, KeyRound } from "lucide-react";
 
 export default function SecretsPage() {
   const [secrets, setSecrets] = useState<any[]>([]);

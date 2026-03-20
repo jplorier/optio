@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { buildServer } from "./server.js";
-import { startTaskWorker } from "./workers/task-worker.js";
+import { startTaskWorker, reconcileOrphanedTasks } from "./workers/task-worker.js";
 import { startTicketSyncWorker } from "./workers/ticket-sync-worker.js";
 import { startRepoCleanupWorker } from "./workers/repo-cleanup-worker.js";
 import { startPrWatcherWorker } from "./workers/pr-watcher-worker.js";
@@ -38,6 +38,9 @@ async function main() {
   // Start PR watcher worker
   const prWatcherWorker = startPrWatcherWorker();
   logger.info("PR watcher worker started");
+
+  // Re-enqueue any tasks orphaned by a Redis restart
+  await reconcileOrphanedTasks();
 
   // Start HTTP server
   await app.listen({ port: PORT, host: HOST });
