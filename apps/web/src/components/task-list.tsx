@@ -68,23 +68,37 @@ export function TaskList() {
     }
   }
 
-  // Determine if a pr_opened task has subtasks still in progress (bot working, not human-blocked)
-  const hasActiveSubtasks = (taskId: string) => {
+  // Check subtask states for a parent task
+  const subtaskStatus = (taskId: string) => {
     const subs = reviewMap.get(taskId) ?? [];
-    return subs.some((s) => ["queued", "running", "provisioning", "pending"].includes(s.state));
+    const hasRunning = subs.some((s) => ["running", "provisioning"].includes(s.state));
+    const hasQueued = subs.some((s) => ["queued", "pending"].includes(s.state));
+    const hasAny = subs.length > 0;
+    const allDone =
+      hasAny && subs.every((s) => ["completed", "failed", "cancelled"].includes(s.state));
+    return { hasRunning, hasQueued, hasAny, allDone };
   };
 
   // Split into clear sections
-  // "Running" includes actively executing + pr_opened with bot reviews still running
-  const running = topLevelTasks.filter(
-    (t) =>
-      ["running", "provisioning"].includes(t.state) ||
-      (t.state === "pr_opened" && hasActiveSubtasks(t.id)),
-  );
-  const queued = topLevelTasks.filter((t) => ["queued", "pending"].includes(t.state));
-  // "Awaiting Action" = only tasks that genuinely need human input
+  const running = topLevelTasks.filter((t) => {
+    if (["running", "provisioning"].includes(t.state)) return true;
+    // pr_opened with subtasks actually running → show in Running
+    if (t.state === "pr_opened" && subtaskStatus(t.id).hasRunning) return true;
+    return false;
+  });
+  const queued = topLevelTasks.filter((t) => {
+    if (["queued", "pending"].includes(t.state)) return true;
+    // pr_opened with subtasks only queued (not running) → show in Queue
+    if (t.state === "pr_opened" && !subtaskStatus(t.id).hasRunning && subtaskStatus(t.id).hasQueued)
+      return true;
+    return false;
+  });
+  // "Needs Your Input" = tasks that genuinely need human action
   const awaitingAction = topLevelTasks.filter(
-    (t) => t.state === "needs_attention" || (t.state === "pr_opened" && !hasActiveSubtasks(t.id)),
+    (t) =>
+      t.state === "needs_attention" ||
+      (t.state === "pr_opened" && subtaskStatus(t.id).allDone) ||
+      (t.state === "pr_opened" && !subtaskStatus(t.id).hasAny),
   );
   const done = topLevelTasks.filter((t) => ["completed", "failed", "cancelled"].includes(t.state));
 
