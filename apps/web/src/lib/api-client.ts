@@ -235,4 +235,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ taskIds }),
     }),
+
+  // Issues
+  listIssues: (params?: { repoId?: string; state?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.repoId) qs.set("repoId", params.repoId);
+    if (params?.state) qs.set("state", params.state);
+    const query = qs.toString();
+    return request<{ issues: any[] }>(`/api/issues${query ? `?${query}` : ""}`);
+  },
+
+  assignIssue: (data: {
+    issueNumber: number;
+    repoId: string;
+    title: string;
+    body: string;
+    agentType?: string;
+  }) =>
+    request<{ task: any }>("/api/issues/assign", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
 };
