@@ -12,6 +12,7 @@ interface TaskCardProps {
     agentType: string;
     repoUrl: string;
     prUrl?: string;
+    costUsd?: string;
     errorMessage?: string;
     createdAt: string;
     updatedAt: string;
@@ -45,6 +46,9 @@ export function TaskCard({ task }: TaskCardProps) {
       )}
       <div className="flex items-center justify-between mt-3 text-xs text-text-muted">
         <span>{formatRelativeTime(task.createdAt)}</span>
+        {task.costUsd && (
+          <span className="text-text-muted">${parseFloat(task.costUsd).toFixed(4)}</span>
+        )}
         {task.prUrl && (
           <span className="flex items-center gap-1 text-success">
             <ExternalLink className="w-3 h-3" />

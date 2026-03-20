@@ -50,6 +50,13 @@
       "when": 1773978384505,
       "tag": "0006_careful_polaris",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1773980347972,
+      "tag": "0007_hesitant_lilith",
+      "breakpoints": true
     }
   ]
 }

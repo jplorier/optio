@@ -34,7 +34,13 @@ export const tasks = pgTable("tasks", {
   containerId: text("container_id"),
   sessionId: text("session_id"),
   prUrl: text("pr_url"),
+  prNumber: integer("pr_number"),
+  prState: text("pr_state"), // "open" | "merged" | "closed"
+  prChecksStatus: text("pr_checks_status"), // "pending" | "passing" | "failing" | "none"
+  prReviewStatus: text("pr_review_status"), // "approved" | "changes_requested" | "pending" | "none"
+  prReviewComments: text("pr_review_comments"), // latest review comments (for resume)
   resultSummary: text("result_summary"),
+  costUsd: text("cost_usd"), // stored as string to avoid float precision issues
   errorMessage: text("error_message"),
   ticketSource: text("ticket_source"),
   ticketExternalId: text("ticket_external_id"),
@@ -108,6 +114,7 @@ export const repos = pgTable("repos", {
   claudeContextWindow: text("claude_context_window").default("1m"), // "200k" or "1m"
   claudeThinking: boolean("claude_thinking").notNull().default(true),
   claudeEffort: text("claude_effort").default("high"), // "low", "medium", "high"
+  autoResumeOnReview: boolean("auto_resume_on_review").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

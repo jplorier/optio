@@ -34,6 +34,7 @@ export interface AgentResult {
   prUrl?: string;
   summary?: string;
   error?: string;
+  costUsd?: number;
 }
 
 export interface AgentConfig {

@@ -30,6 +30,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [claudeContextWindow, setClaudeContextWindow] = useState("1m");
   const [claudeThinking, setClaudeThinking] = useState(true);
   const [claudeEffort, setClaudeEffort] = useState("high");
+  const [autoResumeOnReview, setAutoResumeOnReview] = useState(false);
 
   useEffect(() => {
     api
@@ -43,6 +44,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setCustomDockerfile(r.customDockerfile ?? "");
         if (r.setupCommands || r.customDockerfile) setShowAdvanced(true);
         setAutoMerge(r.autoMerge);
+        setAutoResumeOnReview(r.autoResumeOnReview ?? false);
         setDefaultBranch(r.defaultBranch);
         setClaudeModel(r.claudeModel ?? "opus");
         setClaudeContextWindow(r.claudeContextWindow ?? "1m");
@@ -66,6 +68,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setupCommands: setupCommands || undefined,
         customDockerfile: customDockerfile || null,
         autoMerge,
+        autoResumeOnReview,
         defaultBranch,
         promptTemplateOverride: useCustomPrompt ? promptOverride : null,
         claudeModel,
@@ -138,6 +141,21 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             className="w-4 h-4 rounded"
           />
           <span className="text-sm">Auto-merge PRs when CI passes</span>
+        </label>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={autoResumeOnReview}
+            onChange={(e) => setAutoResumeOnReview(e.target.checked)}
+            className="w-4 h-4 rounded"
+          />
+          <div>
+            <span className="text-sm">Auto-resume on review feedback</span>
+            <p className="text-xs text-text-muted">
+              When a reviewer requests changes, automatically resume the agent with the review
+              comments
+            </p>
+          </div>
         </label>
       </section>
 

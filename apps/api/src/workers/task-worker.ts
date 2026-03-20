@@ -8,6 +8,9 @@ import {
 } from "@optio/shared";
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
+import { db } from "../db/client.js";
+import { tasks } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 import * as taskService from "../services/task-service.js";
 import * as repoPool from "../services/repo-pool-service.js";
 import { resolveSecretsForTask, retrieveSecret } from "../services/secret-service.js";
@@ -191,6 +194,13 @@ export function startTaskWorker() {
         // Exec finished — determine result
         const result = adapter.parseResult(0, allLogs);
         await taskService.updateTaskResult(taskId, result.summary, result.error);
+
+        if (result.costUsd != null) {
+          await db
+            .update(tasks)
+            .set({ costUsd: String(result.costUsd) })
+            .where(eq(tasks.id, taskId));
+        }
 
         if (result.prUrl) {
           await taskService.updateTaskPr(taskId, result.prUrl);

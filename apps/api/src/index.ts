@@ -2,6 +2,7 @@ import { buildServer } from "./server.js";
 import { startTaskWorker } from "./workers/task-worker.js";
 import { startTicketSyncWorker } from "./workers/ticket-sync-worker.js";
 import { startRepoCleanupWorker } from "./workers/repo-cleanup-worker.js";
+import { startPrWatcherWorker } from "./workers/pr-watcher-worker.js";
 import { logger } from "./logger.js";
 
 const PORT = parseInt(process.env.API_PORT ?? "4000", 10);
@@ -23,6 +24,10 @@ async function main() {
   const repoCleanupWorker = startRepoCleanupWorker();
   logger.info("Repo cleanup worker started");
 
+  // Start PR watcher worker
+  const prWatcherWorker = startPrWatcherWorker();
+  logger.info("PR watcher worker started");
+
   // Start HTTP server
   await app.listen({ port: PORT, host: HOST });
   logger.info(`API server listening on ${HOST}:${PORT}`);
@@ -33,6 +38,7 @@ async function main() {
     await worker.close();
     await ticketSyncWorker.close();
     await repoCleanupWorker.close();
+    await prWatcherWorker.close();
     await app.close();
     process.exit(0);
   };

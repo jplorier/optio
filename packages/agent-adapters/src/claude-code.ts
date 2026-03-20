@@ -81,9 +81,11 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
   parseResult(exitCode: number, logs: string): AgentResult {
     const prMatch = logs.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
+    const costMatch = logs.match(/"total_cost_usd":\s*([\d.]+)/);
     return {
       success: exitCode === 0,
       prUrl: prMatch?.[0],
+      costUsd: costMatch ? parseFloat(costMatch[1]) : undefined,
       summary:
         exitCode === 0 ? "Agent completed successfully" : `Agent exited with code ${exitCode}`,
       error: exitCode !== 0 ? `Exit code: ${exitCode}` : undefined,
