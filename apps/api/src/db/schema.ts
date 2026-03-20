@@ -100,6 +100,8 @@ export const repos = pgTable("repos", {
   isPrivate: boolean("is_private").notNull().default(false),
   imagePreset: text("image_preset").default("base"),
   extraPackages: text("extra_packages"), // comma-separated
+  setupCommands: text("setup_commands"), // shell commands run at pod startup after clone
+  customDockerfile: text("custom_dockerfile"), // full Dockerfile override (advanced)
   autoMerge: boolean("auto_merge").notNull().default(false),
   promptTemplateOverride: text("prompt_template_override"), // null = use global default
   claudeModel: text("claude_model").default("opus"),

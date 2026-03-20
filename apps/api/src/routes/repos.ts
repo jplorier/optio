@@ -12,6 +12,8 @@ const createRepoSchema = z.object({
 const updateRepoSchema = z.object({
   imagePreset: z.string().optional(),
   extraPackages: z.string().optional(),
+  setupCommands: z.string().optional(),
+  customDockerfile: z.string().nullable().optional(),
   autoMerge: z.boolean().optional(),
   promptTemplateOverride: z.string().nullable().optional(),
   defaultBranch: z.string().optional(),

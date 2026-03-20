@@ -19,6 +19,9 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   // Editable fields
   const [imagePreset, setImagePreset] = useState("base");
   const [extraPackages, setExtraPackages] = useState("");
+  const [setupCommands, setSetupCommands] = useState("");
+  const [customDockerfile, setCustomDockerfile] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [autoMerge, setAutoMerge] = useState(false);
   const [promptOverride, setPromptOverride] = useState("");
   const [useCustomPrompt, setUseCustomPrompt] = useState(false);
@@ -36,6 +39,9 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setRepo(r);
         setImagePreset(r.imagePreset ?? "base");
         setExtraPackages(r.extraPackages ?? "");
+        setSetupCommands(r.setupCommands ?? "");
+        setCustomDockerfile(r.customDockerfile ?? "");
+        if (r.setupCommands || r.customDockerfile) setShowAdvanced(true);
         setAutoMerge(r.autoMerge);
         setDefaultBranch(r.defaultBranch);
         setClaudeModel(r.claudeModel ?? "opus");
@@ -57,6 +63,8 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
       await api.updateRepo(id, {
         imagePreset,
         extraPackages: extraPackages || undefined,
+        setupCommands: setupCommands || undefined,
+        customDockerfile: customDockerfile || null,
         autoMerge,
         defaultBranch,
         promptTemplateOverride: useCustomPrompt ? promptOverride : null,
@@ -229,7 +237,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         </div>
         <div>
           <label className="block text-xs text-text-muted mb-1">
-            Extra packages (comma-separated)
+            Extra apt packages (comma-separated)
           </label>
           <input
             value={extraPackages}
@@ -238,6 +246,58 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
           />
         </div>
+
+        {/* Advanced toggle */}
+        <button
+          onClick={() => setShowAdvanced(!showAdvanced)}
+          className="text-xs text-primary hover:underline"
+        >
+          {showAdvanced ? "Hide advanced options" : "Show advanced options"}
+        </button>
+
+        {showAdvanced && (
+          <div className="space-y-4 pt-2 border-t border-border">
+            {/* Setup commands */}
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Setup commands</label>
+              <p className="text-[10px] text-text-muted/60 mb-1.5">
+                Shell commands run inside the pod after cloning. Use this to install dependencies,
+                build tools, or configure the environment.
+              </p>
+              <textarea
+                value={setupCommands}
+                onChange={(e) => setSetupCommands(e.target.value)}
+                rows={4}
+                placeholder={"npm install\nnpx playwright install --with-deps\ncargo build"}
+                className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+              />
+            </div>
+
+            {/* Custom Dockerfile */}
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Custom Dockerfile</label>
+              <p className="text-[10px] text-text-muted/60 mb-1.5">
+                Full Dockerfile override. When set, this is used instead of the preset image. Must
+                include all tools the agent needs (git, node, claude-code, gh).
+              </p>
+              <textarea
+                value={customDockerfile}
+                onChange={(e) => setCustomDockerfile(e.target.value)}
+                rows={8}
+                placeholder={
+                  "FROM ubuntu:24.04\nRUN apt-get update && apt-get install -y git curl nodejs\nRUN npm install -g @anthropic-ai/claude-code\n# Add your custom tools here"
+                }
+                className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+              />
+              {customDockerfile && (
+                <p className="text-[10px] text-warning mt-1">
+                  Custom Dockerfile is set — the preset image above will be ignored. You must
+                  rebuild the image manually.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Prompt override */}

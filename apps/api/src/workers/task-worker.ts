@@ -109,6 +109,14 @@ export function startTaskWorker() {
         const resolvedSecrets = await resolveSecretsForTask(agentConfig.requiredSecrets);
         const allEnv = { ...agentConfig.env, ...resolvedSecrets };
 
+        // Inject repo-level setup config into pod env
+        if (repoConfig?.extraPackages) {
+          allEnv.OPTIO_EXTRA_PACKAGES = repoConfig.extraPackages;
+        }
+        if (repoConfig?.setupCommands) {
+          allEnv.OPTIO_SETUP_COMMANDS = repoConfig.setupCommands;
+        }
+
         // For max-subscription mode, fetch the OAuth token from the auth proxy
         if (claudeAuthMode === "max-subscription") {
           const { getClaudeAuthToken } = await import("../services/auth-service.js");

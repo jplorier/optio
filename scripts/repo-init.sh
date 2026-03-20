@@ -20,6 +20,13 @@ if [ -n "${GITHUB_TOKEN:-}" ]; then
   echo "[optio] GitHub CLI configured"
 fi
 
+# Install extra packages if requested (comma or space separated)
+if [ -n "${OPTIO_EXTRA_PACKAGES:-}" ]; then
+  PACKAGES=$(echo "${OPTIO_EXTRA_PACKAGES}" | tr ',' ' ')
+  echo "[optio] Installing packages: ${PACKAGES}"
+  sudo apt-get update -qq 2>/dev/null && sudo apt-get install -y -qq ${PACKAGES} 2>&1 | tail -3 || echo "[optio] Warning: package install failed"
+fi
+
 # Clone repo
 cd /workspace
 echo "[optio] Cloning..."
@@ -35,6 +42,14 @@ if [ -f /workspace/repo/.optio/setup.sh ]; then
   chmod +x /workspace/repo/.optio/setup.sh
   cd /workspace/repo && ./.optio/setup.sh
   echo "[optio] Repo setup complete"
+fi
+
+# Run custom setup commands from Optio repo settings
+if [ -n "${OPTIO_SETUP_COMMANDS:-}" ]; then
+  echo "[optio] Running setup commands..."
+  cd /workspace/repo
+  eval "${OPTIO_SETUP_COMMANDS}"
+  echo "[optio] Setup commands complete"
 fi
 
 # Signal that the pod is ready for tasks

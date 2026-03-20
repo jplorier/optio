@@ -43,6 +43,13 @@
       "when": 1773975560421,
       "tag": "0005_sad_guardian",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1773978384505,
+      "tag": "0006_careful_polaris",
+      "breakpoints": true
     }
   ]
 }

@@ -10,6 +10,8 @@ export interface RepoRecord {
   isPrivate: boolean;
   imagePreset: string | null;
   extraPackages: string | null;
+  setupCommands: string | null;
+  customDockerfile: string | null;
   autoMerge: boolean;
   promptTemplateOverride: string | null;
   claudeModel: string | null;
@@ -66,6 +68,8 @@ export async function updateRepo(
   data: {
     imagePreset?: string;
     extraPackages?: string;
+    setupCommands?: string;
+    customDockerfile?: string | null;
     autoMerge?: boolean;
     promptTemplateOverride?: string | null;
     defaultBranch?: string;
