@@ -151,7 +151,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <FolderGit2 className="w-5 h-5 text-text-muted" />
-        <h1 className="text-xl font-bold">{repo.fullName}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{repo.fullName}</h1>
         {repo.isPrivate ? (
           <Lock className="w-4 h-4 text-text-muted" />
         ) : (
@@ -160,7 +160,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* General */}
-      <section className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
         <h2 className="text-sm font-medium">General</h2>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -168,7 +168,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             <input
               value={defaultBranch}
               onChange={(e) => setDefaultBranch(e.target.value)}
-              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
             />
           </div>
           <div>
@@ -179,14 +179,14 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
               max={50}
               value={maxConcurrentTasks}
               onChange={(e) => setMaxConcurrentTasks(parseInt(e.target.value, 10) || 2)}
-              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
             />
           </div>
         </div>
       </section>
 
       {/* PR Lifecycle */}
-      <section className="p-4 rounded-lg border border-border bg-bg-card space-y-0">
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-0">
         <div className="flex items-center gap-2 mb-1">
           <GitPullRequest className="w-4 h-4 text-text-muted" />
           <h2 className="text-sm font-medium">PR Lifecycle</h2>
@@ -225,7 +225,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                   <select
                     value={reviewTrigger}
                     onChange={(e) => setReviewTrigger(e.target.value)}
-                    className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                   >
                     <option value="on_ci_pass">After CI passes</option>
                     <option value="on_pr">Immediately on PR open</option>
@@ -238,7 +238,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                     value={testCommand}
                     onChange={(e) => setTestCommand(e.target.value)}
                     placeholder="npm test, cargo test, pytest"
-                    className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                   />
                   <p className="text-[10px] text-text-muted/60 mt-1">
                     Leave empty if CI handles testing — the reviewer will check CI status instead.
@@ -252,7 +252,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                   <select
                     value={reviewModel}
                     onChange={(e) => setReviewModel(e.target.value)}
-                    className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                   >
                     <option value="sonnet">Sonnet 4.6</option>
                     <option value="opus">Opus 4.6</option>
@@ -263,7 +263,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                   <label className="block text-xs text-text-muted mb-1">Context Window</label>
                   <select
                     value={claudeContextWindow}
-                    className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                   >
                     <option value="200k">200K tokens</option>
                     <option value="1m">1M tokens</option>
@@ -276,7 +276,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                   <label className="block text-xs text-text-muted mb-1">Effort Level</label>
                   <select
                     value={claudeEffort}
-                    className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                   >
                     <option value="low">Low</option>
                     <option value="medium">Medium</option>
@@ -292,7 +292,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                     value={maxTurnsReview}
                     onChange={(e) => setMaxTurnsReview(parseInt(e.target.value, 10) || 10)}
                     placeholder="10"
-                    className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                   />
                 </div>
               </div>
@@ -331,7 +331,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                       value={reviewPromptTemplate}
                       onChange={(e) => setReviewPromptTemplate(e.target.value)}
                       rows={8}
-                      className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+                      className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y leading-relaxed"
                     />
                     <div className="p-3 rounded-md bg-bg border border-border">
                       <p className="text-xs text-text-muted mb-2">Available template variables:</p>
@@ -409,7 +409,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
       </section>
 
       {/* Agent Settings */}
-      <section className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
         <h2 className="text-sm font-medium">Agent Settings</h2>
         <p className="text-xs text-text-muted">
           Configure the Claude Code model and behavior for this repo.
@@ -420,7 +420,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             <select
               value={claudeModel}
               onChange={(e) => setClaudeModel(e.target.value)}
-              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
             >
               <option value="sonnet">Sonnet 4.6</option>
               <option value="opus">Opus 4.6</option>
@@ -432,7 +432,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             <select
               value={claudeContextWindow}
               onChange={(e) => setClaudeContextWindow(e.target.value)}
-              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
             >
               <option value="200k">200K tokens</option>
               <option value="1m">1M tokens</option>
@@ -443,7 +443,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             <select
               value={claudeEffort}
               onChange={(e) => setClaudeEffort(e.target.value)}
-              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
             >
               <option value="low">Low</option>
               <option value="medium">Medium</option>
@@ -471,13 +471,13 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             value={maxTurnsCoding}
             onChange={(e) => setMaxTurnsCoding(parseInt(e.target.value, 10) || 250)}
             placeholder="250"
-            className="w-48 px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            className="w-48 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           />
         </div>
       </section>
 
       {/* Image */}
-      <section className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
         <h2 className="text-sm font-medium">Container Image</h2>
         <p className="text-xs text-text-muted">
           Choose the base image for agent pods working on this repo.
@@ -522,7 +522,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             value={extraPackages}
             onChange={(e) => setExtraPackages(e.target.value)}
             placeholder="postgresql-client, redis-tools"
-            className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           />
         </div>
 
@@ -548,7 +548,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                 onChange={(e) => setSetupCommands(e.target.value)}
                 rows={4}
                 placeholder={"npm install\nnpx playwright install --with-deps\ncargo build"}
-                className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y leading-relaxed"
               />
             </div>
 
@@ -566,7 +566,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                 placeholder={
                   "FROM ubuntu:24.04\nRUN apt-get update && apt-get install -y git curl nodejs\nRUN npm install -g @anthropic-ai/claude-code\n# Add your custom tools here"
                 }
-                className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y leading-relaxed"
               />
               {customDockerfile && (
                 <p className="text-[10px] text-warning mt-1">
@@ -580,7 +580,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
       </section>
 
       {/* Prompt override */}
-      <section className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
         <h2 className="text-sm font-medium">Prompt Template</h2>
         <label className="flex items-center gap-2 cursor-pointer">
           <input
@@ -620,7 +620,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
               value={promptOverride}
               onChange={(e) => setPromptOverride(e.target.value)}
               rows={12}
-              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y leading-relaxed"
             />
             <div className="p-3 rounded-md bg-bg border border-border">
               <p className="text-xs text-text-muted mb-2">Available template variables:</p>

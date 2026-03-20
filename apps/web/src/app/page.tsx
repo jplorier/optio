@@ -136,16 +136,19 @@ export default function OverviewPage() {
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Overview</h1>
-        <button onClick={refresh} className="p-1.5 rounded-md hover:bg-bg-hover text-text-muted">
+        <h1 className="text-2xl font-semibold tracking-tight">Overview</h1>
+        <button
+          onClick={refresh}
+          className="p-2 rounded-lg hover:bg-bg-hover text-text-muted transition-colors"
+        >
           <RefreshCw className="w-4 h-4" />
         </button>
       </div>
 
       {/* Top stats row: tasks + cluster combined */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           icon={Activity}
           label="Running Tasks"
@@ -173,7 +176,7 @@ export default function OverviewPage() {
       </div>
 
       {/* Cluster health bar */}
-      <div className="p-3 rounded-lg border border-border bg-bg-card">
+      <div className="p-4 rounded-xl border border-border/50 bg-bg-card">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4 text-xs">
             {nodes[0] && (
@@ -248,11 +251,11 @@ export default function OverviewPage() {
       </div>
 
       {/* Two-column: Recent tasks + Pods */}
-      <div className="grid md:grid-cols-2 gap-6">
+      <div className="grid md:grid-cols-2 gap-8">
         {/* Recent tasks */}
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-text-muted">Recent Tasks</h2>
+            <h2 className="text-sm font-medium text-text-heading">Recent Tasks</h2>
             <div className="flex items-center gap-2">
               <Link
                 href="/tasks/new"
@@ -284,7 +287,7 @@ export default function OverviewPage() {
         {/* Pods */}
         <div className="min-w-0 overflow-hidden">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-medium text-text-muted">Pods</h2>
+            <h2 className="text-sm font-medium text-text-heading">Pods</h2>
           </div>
           {pods.length === 0 ? (
             <div className="text-center py-8 text-text-muted border border-dashed border-border rounded-lg text-sm">
@@ -460,12 +463,12 @@ function StatCard({
   color: string;
 }) {
   return (
-    <div className="p-3 rounded-lg border border-border bg-bg-card">
-      <div className="flex items-center gap-2 mb-1">
-        <Icon className={cn("w-4 h-4", color)} />
-        <span className="text-xs text-text-muted">{label}</span>
+    <div className="p-4 rounded-xl border border-border/50 bg-bg-card relative overflow-hidden">
+      <Icon className={cn("w-8 h-8 absolute top-3 right-3 opacity-[0.06]", color)} />
+      <span className="text-xs font-medium uppercase tracking-wider text-text-muted">{label}</span>
+      <div className="mt-1.5">
+        <span className="text-3xl font-semibold tabular-nums">{value}</span>
       </div>
-      <span className="text-2xl font-bold">{value}</span>
     </div>
   );
 }

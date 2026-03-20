@@ -3,53 +3,90 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { LayoutDashboard, ListTodo, Plus, KeyRound, Settings, Zap, FolderGit2 } from "lucide-react";
+import {
+  LayoutDashboard,
+  ListTodo,
+  FolderGit2,
+  Server,
+  KeyRound,
+  Settings,
+  Zap,
+} from "lucide-react";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Overview", icon: LayoutDashboard, indent: false },
-  { href: "/tasks", label: "Tasks", icon: ListTodo, indent: false },
-  { href: "/tasks/new", label: "New Task", icon: Plus, indent: true },
-  { href: "/repos", label: "Repos", icon: FolderGit2, indent: false },
-  { href: "/secrets", label: "Secrets", icon: KeyRound, indent: false },
-  { href: "/settings", label: "Settings", icon: Settings, indent: false },
+const MAIN_NAV = [
+  { href: "/", label: "Overview", icon: LayoutDashboard },
+  { href: "/tasks", label: "Tasks", icon: ListTodo },
+  { href: "/repos", label: "Repos", icon: FolderGit2 },
+  { href: "/cluster", label: "Cluster", icon: Server },
 ];
+
+const SECONDARY_NAV = [
+  { href: "/secrets", label: "Secrets", icon: KeyRound },
+  { href: "/settings", label: "Settings", icon: Settings },
+];
+
+function NavLink({
+  href,
+  label,
+  icon: Icon,
+  active,
+}: {
+  href: string;
+  label: string;
+  icon: any;
+  active: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        "flex items-center gap-3 py-2.5 px-3 rounded-lg text-[13px] font-medium transition-colors",
+        active
+          ? "bg-primary/10 text-text border-l-2 border-primary -ml-px"
+          : "text-text-muted hover:bg-bg-hover hover:text-text",
+      )}
+    >
+      <Icon className="w-4 h-4 shrink-0" />
+      {label}
+    </Link>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
 
+  const isActive = (href: string) =>
+    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+
   return (
-    <aside className="w-56 shrink-0 border-r border-border bg-bg flex flex-col">
-      <div className="p-4 border-b border-border">
-        <Link href="/" className="flex items-center gap-2 text-primary font-bold text-lg">
+    <aside className="w-60 shrink-0 border-r border-border bg-bg flex flex-col">
+      <div className="px-5 py-5 border-b border-border">
+        <Link href="/" className="flex items-center gap-2.5 text-primary">
           <Zap className="w-5 h-5" />
-          Optio
+          <div>
+            <span className="font-semibold text-lg tracking-tight">Optio</span>
+            <span className="block text-[10px] text-text-muted font-normal tracking-wide">
+              Agent Orchestration
+            </span>
+          </div>
         </Link>
       </div>
-      <nav className="flex-1 p-2 space-y-0.5">
-        {NAV_ITEMS.map((item) => {
-          const active =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname === item.href || pathname.startsWith(item.href + "/");
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 py-2 rounded-md text-sm transition-colors",
-                item.indent ? "pl-9 pr-3" : "px-3",
-                active
-                  ? "bg-primary/15 text-primary"
-                  : "text-text-muted hover:bg-bg-hover hover:text-text",
-              )}
-            >
-              <item.icon className={cn("shrink-0", item.indent ? "w-3.5 h-3.5" : "w-4 h-4")} />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-3 py-4">
+        <div className="space-y-1">
+          {MAIN_NAV.map((item) => (
+            <NavLink key={item.href} {...item} active={isActive(item.href)} />
+          ))}
+        </div>
+        <div className="my-4 mx-3 border-t border-border" />
+        <div className="space-y-1">
+          {SECONDARY_NAV.map((item) => (
+            <NavLink key={item.href} {...item} active={isActive(item.href)} />
+          ))}
+        </div>
       </nav>
-      <div className="p-4 border-t border-border text-xs text-text-muted">Optio v0.1.0</div>
+      <div className="px-5 py-4 border-t border-border text-[11px] text-text-muted/50">
+        Optio v0.1.0
+      </div>
     </aside>
   );
 }

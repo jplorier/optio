@@ -6,18 +6,7 @@ import { api } from "@/lib/api-client";
 import { useStore, type TaskSummary } from "@/hooks/use-store";
 import { TaskCard } from "./task-card";
 import { StateBadge } from "./state-badge";
-import {
-  Loader2,
-  ChevronUp,
-  ChevronDown,
-  GripVertical,
-  Bot,
-  Clock,
-  Play,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
-} from "lucide-react";
+import { Loader2, ChevronUp, ChevronDown, GripVertical, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -55,12 +44,7 @@ export function TaskList() {
   const topLevelTasks: TaskSummary[] = [];
 
   for (const t of filteredTasks) {
-    if (t.taskType === "review" && t.parentTaskId) {
-      const existing = reviewMap.get(t.parentTaskId) ?? [];
-      existing.push(t);
-      reviewMap.set(t.parentTaskId, existing);
-    } else if (t.parentTaskId) {
-      // Other subtasks — also nest under parent
+    if (t.parentTaskId) {
       const existing = reviewMap.get(t.parentTaskId) ?? [];
       existing.push(t);
       reviewMap.set(t.parentTaskId, existing);
@@ -83,18 +67,15 @@ export function TaskList() {
   // Split into clear sections
   const running = topLevelTasks.filter((t) => {
     if (["running", "provisioning"].includes(t.state)) return true;
-    // pr_opened with subtasks actually running → show in Running
     if (t.state === "pr_opened" && subtaskStatus(t.id).hasRunning) return true;
     return false;
   });
   const queued = topLevelTasks.filter((t) => {
     if (["queued", "pending"].includes(t.state)) return true;
-    // pr_opened with subtasks only queued (not running) → show in Queue
     if (t.state === "pr_opened" && !subtaskStatus(t.id).hasRunning && subtaskStatus(t.id).hasQueued)
       return true;
     return false;
   });
-  // "Needs Your Input" = tasks that genuinely need human action
   const awaitingAction = topLevelTasks.filter(
     (t) =>
       t.state === "needs_attention" ||
@@ -127,20 +108,20 @@ export function TaskList() {
     const subs = reviewMap.get(parentId);
     if (!subs || subs.length === 0) return null;
     return (
-      <div className="ml-6 mt-1 space-y-1">
+      <div className="ml-8 mt-1.5 space-y-1.5 border-l-2 border-border pl-3">
         {subs.map((sub) => (
           <Link
             key={sub.id}
             href={`/tasks/${sub.id}`}
             className={cn(
-              "flex items-center gap-2 p-2 rounded-md border text-xs transition-colors hover:bg-bg-hover",
-              sub.taskType === "review" ? "border-info/20 bg-info/5" : "border-border bg-bg-card",
+              "flex items-center gap-2 p-2.5 rounded-lg text-xs transition-colors hover:bg-bg-hover",
+              sub.taskType === "review" ? "bg-info/5" : "bg-bg-card",
             )}
           >
             {sub.taskType === "review" ? (
               <Bot className="w-3.5 h-3.5 text-info shrink-0" />
             ) : (
-              <span className="w-3.5 h-3.5 text-text-muted shrink-0 text-center">•</span>
+              <span className="w-3.5 h-3.5 text-text-muted shrink-0 text-center">&bull;</span>
             )}
             <span className="truncate flex-1">{sub.title}</span>
             <StateBadge state={sub.state} />
@@ -152,16 +133,17 @@ export function TaskList() {
 
   return (
     <div>
-      <div className="flex gap-1.5 mb-4 flex-wrap">
+      {/* Filters */}
+      <div className="flex gap-1.5 mb-6 flex-wrap">
         {STATE_FILTERS.map((f) => (
           <button
             key={f.value}
             onClick={() => setFilter(f.value)}
             className={cn(
-              "px-3 py-1 rounded-md text-xs transition-colors",
+              "px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors",
               filter === f.value
-                ? "bg-primary text-white"
-                : "bg-bg-card text-text-muted hover:bg-bg-hover",
+                ? "bg-bg-card border border-border text-text"
+                : "text-text-muted hover:bg-bg-hover hover:text-text",
             )}
           >
             {f.label}
@@ -170,19 +152,19 @@ export function TaskList() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-text-muted">
+        <div className="flex items-center justify-center py-16 text-text-muted">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
           Loading tasks...
         </div>
       ) : filteredTasks.length === 0 ? (
-        <div className="text-center py-12 text-text-muted">
+        <div className="text-center py-16 text-text-muted">
           <p>No tasks found</p>
         </div>
       ) : (
-        <div className="space-y-6">
+        <div className="space-y-8">
           {/* Running */}
           {running.length > 0 && (
-            <Section icon={Play} label="Running" count={running.length} color="text-primary">
+            <Section label="Running" count={running.length}>
               {running.map((task) => (
                 <div key={task.id}>
                   <TaskCard task={task} />
@@ -194,12 +176,7 @@ export function TaskList() {
 
           {/* Needs human input */}
           {awaitingAction.length > 0 && (
-            <Section
-              icon={AlertTriangle}
-              label="Needs Your Input"
-              count={awaitingAction.length}
-              color="text-warning"
-            >
+            <Section label="Needs Your Input" count={awaitingAction.length}>
               {awaitingAction.map((task) => (
                 <div key={task.id}>
                   <TaskCard task={task} />
@@ -211,28 +188,28 @@ export function TaskList() {
 
           {/* Queue */}
           {queued.length > 0 && (
-            <Section icon={Clock} label="Queue" count={queued.length} color="text-text-muted">
+            <Section label="Queue" count={queued.length}>
               {queued.length > 1 && (
-                <div className="text-xs text-text-muted mb-2 flex items-center gap-1">
+                <div className="text-xs text-text-muted/50 mb-2 flex items-center gap-1.5">
                   <GripVertical className="w-3 h-3" />
                   Use arrows to reprioritize
                 </div>
               )}
               {queued.map((task, i) => (
-                <div key={task.id} className="flex items-center gap-1">
+                <div key={task.id} className="flex items-center gap-1.5">
                   {queued.length > 1 && (
-                    <div className="flex flex-col shrink-0">
+                    <div className="flex flex-col shrink-0 rounded-md bg-bg-card p-0.5">
                       <button
                         onClick={() => moveTask(i, "up")}
                         disabled={i === 0}
-                        className="p-0.5 text-text-muted hover:text-text disabled:opacity-20"
+                        className="p-0.5 text-text-muted hover:text-text disabled:opacity-20 transition-colors"
                       >
                         <ChevronUp className="w-4 h-4" />
                       </button>
                       <button
                         onClick={() => moveTask(i, "down")}
                         disabled={i === queued.length - 1}
-                        className="p-0.5 text-text-muted hover:text-text disabled:opacity-20"
+                        className="p-0.5 text-text-muted hover:text-text disabled:opacity-20 transition-colors"
                       >
                         <ChevronDown className="w-4 h-4" />
                       </button>
@@ -249,7 +226,7 @@ export function TaskList() {
 
           {/* Failed */}
           {failed.length > 0 && (
-            <Section icon={XCircle} label="Failed" count={failed.length} color="text-error">
+            <Section label="Failed" count={failed.length}>
               {failed.map((task) => (
                 <div key={task.id}>
                   <TaskCard task={task} />
@@ -261,12 +238,7 @@ export function TaskList() {
 
           {/* Completed */}
           {completed.length > 0 && (
-            <Section
-              icon={CheckCircle2}
-              label="Completed"
-              count={completed.length}
-              color="text-text-muted"
-            >
+            <Section label="Completed" count={completed.length}>
               {completed.map((task) => (
                 <div key={task.id}>
                   <TaskCard task={task} />
@@ -282,26 +254,23 @@ export function TaskList() {
 }
 
 function Section({
-  icon: Icon,
   label,
   count,
-  color,
   children,
 }: {
-  icon: any;
   label: string;
   count: number;
-  color: string;
   children: React.ReactNode;
 }) {
   return (
     <div>
-      <div className="flex items-center gap-2 mb-2">
-        <Icon className={cn("w-4 h-4", color)} />
-        <span className="text-sm font-medium">{label}</span>
-        <span className="text-xs text-text-muted">({count})</span>
+      <div className="flex items-center gap-2 mb-3">
+        <span className="text-xs font-medium uppercase tracking-wider text-text-muted">
+          {label}
+        </span>
+        <span className="text-xs text-text-muted/40">{count}</span>
       </div>
-      <div className="grid gap-2">{children}</div>
+      <div className="grid gap-2.5">{children}</div>
     </div>
   );
 }

@@ -142,7 +142,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         <div className="flex items-start justify-between gap-4 max-w-5xl mx-auto">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-3">
-              <h1 className="text-lg font-bold truncate">{task.title}</h1>
+              <h1 className="text-lg font-semibold truncate">{task.title}</h1>
               <StateBadge state={task.state} />
             </div>
             <div className="flex items-center gap-4 mt-2 text-xs text-text-muted">
@@ -381,14 +381,14 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                   value={newSubtask.title}
                   onChange={(e) => setNewSubtask((s) => ({ ...s, title: e.target.value }))}
                   placeholder="Subtask title"
-                  className="w-full px-3 py-1.5 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                  className="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                 />
                 <textarea
                   value={newSubtask.prompt}
                   onChange={(e) => setNewSubtask((s) => ({ ...s, prompt: e.target.value }))}
                   placeholder="What should the agent do?"
                   rows={3}
-                  className="w-full px-3 py-1.5 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y"
+                  className="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y"
                 />
                 <div className="flex items-center gap-4">
                   <select
@@ -499,7 +499,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                       : "Task has ended"
                 }
                 disabled={!canResume}
-                className="flex-1 px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex-1 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
               />
               <button
                 onClick={handleResume}

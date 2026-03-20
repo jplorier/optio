@@ -81,7 +81,7 @@ export default function NewTaskPage() {
 
   return (
     <div className="p-6 max-w-2xl mx-auto">
-      <h1 className="text-xl font-bold mb-6">Create New Task</h1>
+      <h1 className="text-2xl font-semibold tracking-tight mb-6">Create New Task</h1>
 
       <form onSubmit={handleSubmit} className="space-y-5">
         {/* Repository */}
@@ -96,7 +96,7 @@ export default function NewTaskPage() {
               required
               value={form.repoId}
               onChange={(e) => handleRepoChange(e.target.value)}
-              className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
             >
               {repos.map((repo: any) => (
                 <option key={repo.id} value={repo.id}>
@@ -124,7 +124,7 @@ export default function NewTaskPage() {
             value={form.title}
             onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
             placeholder="Add input validation to user registration"
-            className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary transition-colors"
+            className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
           />
         </div>
 
@@ -137,7 +137,7 @@ export default function NewTaskPage() {
             value={form.prompt}
             onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
             placeholder="Describe what the agent should do. Be specific about requirements, files to modify, and expected behavior."
-            className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary transition-colors resize-y"
+            className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors resize-y"
           />
         </div>
 
@@ -149,7 +149,7 @@ export default function NewTaskPage() {
               type="text"
               value={form.repoBranch}
               onChange={(e) => setForm((f) => ({ ...f, repoBranch: e.target.value }))}
-              className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
             />
           </div>
           <div>
@@ -157,7 +157,7 @@ export default function NewTaskPage() {
             <select
               value={form.agentType}
               onChange={(e) => setForm((f) => ({ ...f, agentType: e.target.value }))}
-              className="w-full px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary transition-colors"
+              className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
             >
               <option value="claude-code">Claude Code</option>
               <option value="codex">OpenAI Codex</option>
@@ -179,7 +179,7 @@ export default function NewTaskPage() {
             onChange={(e) =>
               setForm((f) => ({ ...f, priority: parseInt(e.target.value, 10) || 100 }))
             }
-            className="w-24 px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary transition-colors"
+            className="w-24 px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
           />
         </div>
 

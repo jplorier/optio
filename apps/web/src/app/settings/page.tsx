@@ -41,14 +41,14 @@ function PromptTemplateEditor() {
 
   if (loading) {
     return (
-      <div className="p-4 rounded-lg border border-border bg-bg-card text-center text-text-muted text-sm">
+      <div className="p-5 rounded-xl border border-border/50 bg-bg-card text-center text-text-muted text-sm">
         <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading...
       </div>
     );
   }
 
   return (
-    <div className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+    <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-text-muted">
           Default prompt used for all repos unless overridden in repo settings.
@@ -95,7 +95,7 @@ function PromptTemplateEditor() {
         value={template}
         onChange={(e) => setTemplate(e.target.value)}
         rows={12}
-        className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+        className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y leading-relaxed"
       />
       <div className="flex items-center justify-between">
         <label className="flex items-center gap-2 text-sm cursor-pointer">
@@ -144,14 +144,14 @@ function DefaultReviewEditor() {
 
   if (loading) {
     return (
-      <div className="p-4 rounded-lg border border-border bg-bg-card text-center text-text-muted text-sm">
+      <div className="p-5 rounded-xl border border-border/50 bg-bg-card text-center text-text-muted text-sm">
         <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading...
       </div>
     );
   }
 
   return (
-    <div className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+    <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
       <p className="text-xs text-text-muted">
         Default review settings applied to all repos unless overridden in repo settings.
       </p>
@@ -162,7 +162,7 @@ function DefaultReviewEditor() {
           <select
             value={reviewTrigger}
             onChange={(e) => setReviewTrigger(e.target.value)}
-            className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           >
             <option value="on_ci_pass">After CI passes</option>
             <option value="on_pr">Immediately on PR open</option>
@@ -174,7 +174,7 @@ function DefaultReviewEditor() {
           <select
             value={reviewModel}
             onChange={(e) => setReviewModel(e.target.value)}
-            className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           >
             <option value="sonnet">Sonnet 4.6</option>
             <option value="opus">Opus 4.6</option>
@@ -189,7 +189,7 @@ function DefaultReviewEditor() {
           <select
             value={reviewContextWindow}
             onChange={(e) => setReviewContextWindow(e.target.value)}
-            className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           >
             <option value="200k">200K tokens</option>
             <option value="1m">1M tokens</option>
@@ -200,7 +200,7 @@ function DefaultReviewEditor() {
           <select
             value={reviewEffort}
             onChange={(e) => setReviewEffort(e.target.value)}
-            className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+            className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           >
             <option value="low">Low</option>
             <option value="medium">Medium</option>
@@ -230,7 +230,7 @@ function DefaultReviewEditor() {
           value={reviewTestCommand}
           onChange={(e) => setReviewTestCommand(e.target.value)}
           placeholder="npm test, cargo test, pytest"
-          className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+          className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
         />
       </div>
 
@@ -264,7 +264,7 @@ function DefaultReviewEditor() {
         value={reviewPrompt}
         onChange={(e) => setReviewPrompt(e.target.value)}
         rows={10}
-        className="w-full px-3 py-2 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y leading-relaxed"
+        className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y leading-relaxed"
       />
 
       <div className="flex items-center justify-between">
@@ -338,12 +338,12 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">
-      <h1 className="text-xl font-bold">Settings</h1>
+      <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
 
       {/* Notifications */}
       <section>
         <h2 className="text-sm font-medium text-text-muted mb-3">Notifications</h2>
-        <div className="p-4 rounded-lg border border-border bg-bg-card">
+        <div className="p-5 rounded-xl border border-border/50 bg-bg-card">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Bell className="w-5 h-5 text-text-muted" />
@@ -372,7 +372,7 @@ export default function SettingsPage() {
       {/* Ticket Sync */}
       <section>
         <h2 className="text-sm font-medium text-text-muted mb-3">Ticket Integration</h2>
-        <div className="p-4 rounded-lg border border-border bg-bg-card space-y-3">
+        <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
           <p className="text-xs text-text-muted">
             Sync issues labeled with{" "}
             <code className="px-1 py-0.5 bg-bg rounded text-primary">optio</code> from your

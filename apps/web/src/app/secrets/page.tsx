@@ -55,7 +55,7 @@ export default function SecretsPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold">Secrets</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Secrets</h1>
         <button
           onClick={() => setShowForm(!showForm)}
           className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover transition-colors"
@@ -68,7 +68,7 @@ export default function SecretsPage() {
       {showForm && (
         <form
           onSubmit={handleCreate}
-          className="mb-6 p-4 rounded-lg border border-border bg-bg-card space-y-3"
+          className="mb-6 p-5 rounded-xl border border-border/50 bg-bg-card space-y-3"
         >
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -78,7 +78,7 @@ export default function SecretsPage() {
                 value={form.name}
                 onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                 placeholder="ANTHROPIC_API_KEY"
-                className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
               />
             </div>
             <div>
@@ -86,7 +86,7 @@ export default function SecretsPage() {
               <input
                 value={form.scope}
                 onChange={(e) => setForm((f) => ({ ...f, scope: e.target.value }))}
-                className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
               />
             </div>
           </div>
@@ -98,7 +98,7 @@ export default function SecretsPage() {
               value={form.value}
               onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))}
               placeholder="sk-ant-..."
-              className="w-full px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
             />
           </div>
           <div className="flex gap-2">
@@ -136,7 +136,7 @@ export default function SecretsPage() {
           {secrets.map((secret: any) => (
             <div
               key={secret.id}
-              className="flex items-center justify-between p-3 rounded-lg border border-border bg-bg-card"
+              className="flex items-center justify-between p-3 rounded-xl border border-border/50 bg-bg-card"
             >
               <div>
                 <span className="text-sm font-medium">{secret.name}</span>

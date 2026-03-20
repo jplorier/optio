@@ -73,13 +73,13 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
     pod.repoUrl?.replace(/.*github\.com[/:]/, "").replace(/\.git$/, "") ?? pod.repoUrl;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
         <Link href="/cluster" className="p-1.5 rounded-md hover:bg-bg-hover text-text-muted">
           <ArrowLeft className="w-4 h-4" />
         </Link>
         <Server className="w-5 h-5 text-text-muted" />
-        <h1 className="text-xl font-bold font-mono">{pod.podName ?? "Pod"}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight font-mono">{pod.podName ?? "Pod"}</h1>
         <Circle
           className={cn(
             "w-3 h-3 fill-current",
@@ -102,18 +102,18 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
 
       {/* Pod info */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="p-3 rounded-lg border border-border bg-bg-card">
+        <div className="p-3 rounded-xl border border-border/50 bg-bg-card">
           <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">State</div>
           <div className="text-sm capitalize">{runtimeState}</div>
         </div>
-        <div className="p-3 rounded-lg border border-border bg-bg-card">
+        <div className="p-3 rounded-xl border border-border/50 bg-bg-card">
           <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Repo</div>
           <div className="text-sm flex items-center gap-1">
             <GitBranch className="w-3 h-3" />
             {repoName}
           </div>
         </div>
-        <div className="p-3 rounded-lg border border-border bg-bg-card">
+        <div className="p-3 rounded-xl border border-border/50 bg-bg-card">
           <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
             Active Tasks
           </div>
@@ -122,7 +122,7 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
             {pod.activeTaskCount}
           </div>
         </div>
-        <div className="p-3 rounded-lg border border-border bg-bg-card">
+        <div className="p-3 rounded-xl border border-border/50 bg-bg-card">
           <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Created</div>
           <div className="text-sm flex items-center gap-1">
             <Clock className="w-3 h-3" />
@@ -133,12 +133,12 @@ export default function PodDetailPage({ params }: { params: Promise<{ id: string
 
       {pod.runtimeStatus?.startedAt && (
         <div className="grid grid-cols-2 gap-3">
-          <div className="p-3 rounded-lg border border-border bg-bg-card">
+          <div className="p-3 rounded-xl border border-border/50 bg-bg-card">
             <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Started</div>
             <div className="text-xs">{new Date(pod.runtimeStatus.startedAt).toLocaleString()}</div>
           </div>
           {pod.lastTaskAt && (
-            <div className="p-3 rounded-lg border border-border bg-bg-card">
+            <div className="p-3 rounded-xl border border-border/50 bg-bg-card">
               <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
                 Last Task
               </div>

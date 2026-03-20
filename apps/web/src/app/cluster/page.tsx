@@ -75,9 +75,9 @@ export default function ClusterPage() {
   const { nodes, pods, services, events, repoPods, summary } = data;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">Cluster</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Cluster</h1>
         <button onClick={refresh} className="p-1.5 rounded-md hover:bg-bg-hover text-text-muted">
           <RefreshCw className="w-4 h-4" />
         </button>
@@ -117,7 +117,7 @@ export default function ClusterPage() {
 
       {/* Node info */}
       {nodes.length > 0 && (
-        <div className="p-3 rounded-lg border border-border bg-bg-card">
+        <div className="p-3 rounded-xl border border-border/50 bg-bg-card">
           <h3 className="text-xs font-medium text-text-muted mb-2">Nodes</h3>
           {nodes.map((node: any) => (
             <div key={node.name} className="flex items-center gap-4 text-xs">
@@ -348,12 +348,12 @@ function SummaryCard({
   color: string;
 }) {
   return (
-    <div className="p-3 rounded-lg border border-border bg-bg-card">
+    <div className="p-3 rounded-xl border border-border/50 bg-bg-card">
       <div className="flex items-center gap-2 mb-1">
         <Icon className={cn("w-4 h-4", color)} />
         <span className="text-xs text-text-muted">{label}</span>
       </div>
-      <div className="text-xl font-bold">{value}</div>
+      <div className="text-xl font-semibold">{value}</div>
       <div className="text-[10px] text-text-muted">{sub}</div>
     </div>
   );

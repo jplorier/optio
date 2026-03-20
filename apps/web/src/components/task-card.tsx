@@ -5,7 +5,7 @@ import { StateBadge } from "./state-badge";
 import { classifyError } from "@optio/shared";
 import { api } from "@/lib/api-client";
 import { formatRelativeTime, truncate } from "@/lib/utils";
-import { GitBranch, ExternalLink, RotateCcw, Bot } from "lucide-react";
+import { ExternalLink, RotateCcw, Bot } from "lucide-react";
 
 interface TaskCardProps {
   task: {
@@ -26,39 +26,50 @@ interface TaskCardProps {
 export function TaskCard({ task }: TaskCardProps) {
   const router = useRouter();
   const repoName = task.repoUrl.replace(/.*\/\/[^/]+\//, "").replace(/\.git$/, "");
+  const [owner, repo] = repoName.includes("/") ? repoName.split("/") : ["", repoName];
+  const prNumber = task.prUrl?.match(/\/pull\/(\d+)/)?.[1];
 
   return (
     <div
       onClick={() => router.push(`/tasks/${task.id}`)}
-      className="block p-4 rounded-lg border border-border bg-bg-card hover:bg-bg-hover transition-colors overflow-hidden cursor-pointer"
+      className="block p-5 rounded-xl border border-border/50 bg-bg-card hover:border-border hover:bg-bg-card-hover transition-all cursor-pointer"
     >
+      {/* Top row: title + badges */}
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h3 className="font-medium text-sm truncate">{task.title}</h3>
+            <h3 className="font-semibold text-sm tracking-tight truncate">{task.title}</h3>
             {task.taskType === "review" && (
-              <span className="shrink-0 flex items-center gap-1 text-[9px] px-1.5 py-0.5 rounded-full bg-info/10 text-info border border-info/20">
-                <Bot className="w-2.5 h-2.5" />
+              <span className="shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-info/10 text-info">
+                <Bot className="w-3 h-3" />
                 Review
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 mt-1.5 text-xs text-text-muted">
-            <GitBranch className="w-3 h-3" />
-            <span>{truncate(repoName, 30)}</span>
-            <span className="opacity-50">·</span>
+          {/* Metadata row */}
+          <div className="flex items-center gap-1.5 mt-2 text-xs text-text-muted">
+            <span className="text-text-muted/50">{owner}/</span>
+            <span>{repo}</span>
+            <span className="text-text-muted/30 mx-1">&middot;</span>
             <span className="capitalize">{task.agentType.replace("-", " ")}</span>
           </div>
         </div>
-        <StateBadge state={task.state} />
-      </div>
-      {task.state === "failed" && (
-        <div className="flex items-center justify-between mt-2">
-          {task.errorMessage && (
-            <span className="text-xs text-error/70 truncate">
-              {classifyError(task.errorMessage).title}
+        <div className="flex items-center gap-2 shrink-0">
+          {task.costUsd && (
+            <span className="text-[11px] text-text-muted/40 tabular-nums">
+              ${parseFloat(task.costUsd).toFixed(2)}
             </span>
           )}
+          <StateBadge state={task.state} />
+        </div>
+      </div>
+
+      {/* Error section */}
+      {task.state === "failed" && task.errorMessage && (
+        <div className="mt-3 px-3 py-2.5 rounded-lg bg-error/5 border border-error/10 flex items-center justify-between gap-2">
+          <span className="text-xs text-error/80 truncate">
+            {classifyError(task.errorMessage).title}
+          </span>
           <button
             onClick={async (e) => {
               e.stopPropagation();
@@ -76,28 +87,27 @@ export function TaskCard({ task }: TaskCardProps) {
                 }, 2000);
               }
             }}
-            className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-primary/10 text-primary hover:bg-primary/20 shrink-0 ml-2"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-primary/10 text-primary hover:bg-primary/20 shrink-0"
           >
             <RotateCcw className="w-3 h-3" />
             Retry
           </button>
         </div>
       )}
-      <div className="flex items-center justify-between mt-3 text-xs text-text-muted">
+
+      {/* Footer: time + PR */}
+      <div className="flex items-center justify-between mt-4 text-xs text-text-muted/60">
         <span>{formatRelativeTime(task.createdAt)}</span>
-        {task.costUsd && (
-          <span className="text-text-muted">${parseFloat(task.costUsd).toFixed(4)}</span>
-        )}
-        {task.prUrl && (
+        {prNumber && (
           <a
             href={task.prUrl}
             target="_blank"
             rel="noopener noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1 px-2 py-0.5 rounded bg-success/10 text-success hover:bg-success/20 transition-colors"
+            className="flex items-center gap-1 text-text-muted hover:text-text transition-colors"
           >
+            PR #{prNumber}
             <ExternalLink className="w-3 h-3" />
-            View PR
           </a>
         )}
       </div>

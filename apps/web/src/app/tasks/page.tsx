@@ -37,16 +37,16 @@ export default function TasksPage() {
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold">Tasks</h1>
+    <div className="p-6 max-w-6xl mx-auto">
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-2xl font-semibold tracking-tight">Tasks</h1>
         <div className="flex items-center gap-2">
           {tab === "tasks" && (
             <>
               <button
                 onClick={handleRetryFailed}
                 disabled={bulkLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-bg-card border border-border text-text-muted hover:text-text hover:bg-bg-hover disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-bg-card border border-border text-text-muted hover:text-text hover:bg-bg-hover disabled:opacity-50 transition-colors"
               >
                 <RotateCcw className="w-3 h-3" />
                 Retry Failed
@@ -54,7 +54,7 @@ export default function TasksPage() {
               <button
                 onClick={handleCancelActive}
                 disabled={bulkLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs bg-bg-card border border-border text-text-muted hover:text-error hover:bg-error/5 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium bg-bg-card border border-border text-text-muted hover:text-error hover:bg-error/5 disabled:opacity-50 transition-colors"
               >
                 <XCircle className="w-3 h-3" />
                 Cancel Active
@@ -63,7 +63,7 @@ export default function TasksPage() {
           )}
           <Link
             href="/tasks/new"
-            className="flex items-center gap-2 px-4 py-1.5 rounded-md bg-primary text-white text-sm hover:bg-primary-hover transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-colors"
           >
             <Plus className="w-4 h-4" />
             New Task
@@ -72,13 +72,13 @@ export default function TasksPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-0 border-b border-border mb-4">
+      <div className="flex gap-0 border-b border-border mb-6">
         <button
           onClick={() => setTab("tasks")}
           className={cn(
-            "px-4 py-2 text-sm border-b-2 transition-colors",
+            "px-5 py-3 text-[13px] font-medium border-b-2 transition-colors",
             tab === "tasks"
-              ? "border-primary text-primary"
+              ? "border-primary text-text"
               : "border-transparent text-text-muted hover:text-text",
           )}
         >
@@ -87,7 +87,7 @@ export default function TasksPage() {
         <button
           onClick={() => setTab("issues")}
           className={cn(
-            "px-4 py-2 text-sm border-b-2 transition-colors",
+            "px-5 py-3 text-[13px] font-medium border-b-2 transition-colors",
             tab === "issues"
               ? "border-primary text-primary"
               : "border-transparent text-text-muted hover:text-text",

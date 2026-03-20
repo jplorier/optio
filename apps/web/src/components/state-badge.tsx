@@ -1,33 +1,47 @@
 import { cn } from "@/lib/utils";
 
-const STATE_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  pending: { label: "Pending", color: "text-text-muted", bg: "bg-text-muted/10" },
-  queued: { label: "Queued", color: "text-info", bg: "bg-info/10" },
-  provisioning: { label: "Provisioning", color: "text-info", bg: "bg-info/10" },
-  running: { label: "Running", color: "text-primary", bg: "bg-primary/10" },
-  needs_attention: { label: "Needs Attention", color: "text-warning", bg: "bg-warning/10" },
-  pr_opened: { label: "PR Opened", color: "text-success", bg: "bg-success/10" },
-  completed: { label: "Completed", color: "text-success", bg: "bg-success/10" },
-  failed: { label: "Failed", color: "text-error", bg: "bg-error/10" },
-  cancelled: { label: "Cancelled", color: "text-text-muted", bg: "bg-text-muted/10" },
+const STATE_CONFIG: Record<
+  string,
+  { label: string; color: string; dotColor: string; pulse?: boolean; emphasis?: boolean }
+> = {
+  pending: { label: "Pending", color: "text-text-muted", dotColor: "bg-text-muted" },
+  queued: { label: "Queued", color: "text-info", dotColor: "bg-info" },
+  provisioning: { label: "Provisioning", color: "text-info", dotColor: "bg-info", pulse: true },
+  running: { label: "Running", color: "text-primary", dotColor: "bg-primary", pulse: true },
+  needs_attention: {
+    label: "Attention",
+    color: "text-warning",
+    dotColor: "bg-warning",
+    emphasis: true,
+  },
+  pr_opened: { label: "PR Opened", color: "text-success", dotColor: "bg-success" },
+  completed: { label: "Completed", color: "text-success", dotColor: "bg-success" },
+  failed: { label: "Failed", color: "text-error", dotColor: "bg-error" },
+  cancelled: { label: "Cancelled", color: "text-text-muted", dotColor: "bg-text-muted" },
 };
 
 export function StateBadge({ state, showDot = true }: { state: string; showDot?: boolean }) {
   const config = STATE_CONFIG[state] ?? {
     label: state,
     color: "text-text-muted",
-    bg: "bg-text-muted/10",
+    dotColor: "bg-text-muted",
   };
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium",
+        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-medium tracking-wide uppercase",
         config.color,
-        config.bg,
+        config.emphasis && "bg-warning/10 border border-warning/20",
       )}
     >
       {showDot && (
-        <span className={cn("w-1.5 h-1.5 rounded-full", config.color.replace("text-", "bg-"))} />
+        <span
+          className={cn(
+            "w-1.5 h-1.5 rounded-full",
+            config.dotColor,
+            config.pulse && "animate-pulse",
+          )}
+        />
       )}
       {config.label}
     </span>

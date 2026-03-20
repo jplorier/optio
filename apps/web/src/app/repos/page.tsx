@@ -18,9 +18,9 @@ export default function ReposPage() {
   }, []);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-xl font-bold">Repositories</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Repositories</h1>
       </div>
 
       {loading ? (
@@ -45,7 +45,7 @@ export default function ReposPage() {
             <Link
               key={repo.id}
               href={`/repos/${repo.id}`}
-              className="flex items-center justify-between p-4 rounded-lg border border-border bg-bg-card hover:bg-bg-hover transition-colors"
+              className="flex items-center justify-between p-5 rounded-xl border border-border/50 bg-bg-card hover:bg-bg-hover transition-colors"
             >
               <div className="flex items-center gap-3 min-w-0">
                 <FolderGit2 className="w-5 h-5 text-text-muted shrink-0" />
