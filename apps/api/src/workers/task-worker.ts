@@ -145,27 +145,25 @@ export function startTaskWorker() {
           for (const line of text.split("\n")) {
             if (!line.trim()) continue;
 
-            // Try to parse as Claude stream-json event
+            // Parse as Claude stream-json event (may produce multiple entries)
             const parsed = parseClaudeEvent(line, taskId);
             if (parsed.sessionId && !sessionId) {
               sessionId = parsed.sessionId;
               await taskService.updateTaskSession(taskId, sessionId);
               log.info({ sessionId }, "Session ID captured");
             }
-            if (parsed.entry) {
+            for (const entry of parsed.entries) {
               await taskService.appendTaskLog(
                 taskId,
-                parsed.entry.content,
+                entry.content,
                 "stdout",
-                parsed.entry.type,
-                parsed.entry.metadata,
+                entry.type,
+                entry.metadata,
               );
 
-              // Check for PR URL in text entries
-              if (parsed.entry.type === "text" || parsed.entry.type === "info") {
-                const prMatch = parsed.entry.content.match(
-                  /https:\/\/github\.com\/[^\s]+\/pull\/\d+/,
-                );
+              // Check for PR URL in text/info entries
+              if (entry.type === "text" || entry.type === "info") {
+                const prMatch = entry.content.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
                 if (prMatch) {
                   await taskService.updateTaskPr(taskId, prMatch[0]);
                 }
