@@ -244,7 +244,14 @@ export function startTaskWorker() {
         }
 
         // Exec finished — determine result
-        const result = adapter.parseResult(0, allLogs);
+        // Detect exit code from logs: check for is_error in result event, or fatal errors
+        const hasResultError = allLogs.includes('"is_error":true');
+        const hasFatalError =
+          allLogs.includes("fatal:") ||
+          allLogs.includes("Error: authentication_failed") ||
+          allLogs.includes("exit 1");
+        const inferredExitCode = hasResultError || hasFatalError ? 1 : 0;
+        const result = adapter.parseResult(inferredExitCode, allLogs);
         await taskService.updateTaskResult(taskId, result.summary, result.error);
 
         if (result.costUsd != null) {

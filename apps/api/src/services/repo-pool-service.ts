@@ -193,9 +193,11 @@ export async function execTaskInRepoPod(
     `for i in $(seq 1 120); do [ -f /workspace/.ready ] && break; sleep 1; done`,
     `[ -f /workspace/.ready ] || { echo "[optio] ERROR: repo not ready after 120s"; exit 1; }`,
     `echo "[optio] Repo ready"`,
-    // Create worktree from the main branch
+    // Create worktree from the main branch (clean up stale branch/worktree from previous attempts)
     `cd /workspace/repo`,
     `git fetch origin`,
+    `git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true`,
+    `git branch -D optio/task-${taskId} 2>/dev/null || true`,
     `git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
     `cd /workspace/tasks/${taskId}`,
     // Write setup files if provided
@@ -232,7 +234,7 @@ export async function execTaskInRepoPod(
     `exit $EXIT_CODE`,
   ].join("\n");
 
-  return rt.exec(handle, ["bash", "-c", script], { tty: true });
+  return rt.exec(handle, ["bash", "-c", script], { tty: false });
 }
 
 /**

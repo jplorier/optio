@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { StateBadge } from "./state-badge";
 import { classifyError } from "@optio/shared";
+import { api } from "@/lib/api-client";
 import { formatRelativeTime, truncate } from "@/lib/utils";
-import { GitBranch, ExternalLink } from "lucide-react";
+import { GitBranch, ExternalLink, RotateCcw } from "lucide-react";
 
 interface TaskCardProps {
   task: {
@@ -39,9 +40,27 @@ export function TaskCard({ task }: TaskCardProps) {
         </div>
         <StateBadge state={task.state} />
       </div>
-      {task.state === "failed" && task.errorMessage && (
-        <div className="mt-2 text-xs text-error/70 truncate">
-          {classifyError(task.errorMessage).title}
+      {task.state === "failed" && (
+        <div className="flex items-center justify-between mt-2">
+          {task.errorMessage && (
+            <span className="text-xs text-error/70 truncate">
+              {classifyError(task.errorMessage).title}
+            </span>
+          )}
+          <button
+            onClick={async (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              try {
+                await api.retryTask(task.id);
+                window.location.reload();
+              } catch {}
+            }}
+            className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-primary/10 text-primary hover:bg-primary/20 shrink-0 ml-2"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Retry
+          </button>
         </div>
       )}
       <div className="flex items-center justify-between mt-3 text-xs text-text-muted">
