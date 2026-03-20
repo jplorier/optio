@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { canTransition, transition, isTerminal, getValidTransitions, InvalidTransitionError } from "./state-machine.js";
+import {
+  canTransition,
+  transition,
+  isTerminal,
+  getValidTransitions,
+  InvalidTransitionError,
+} from "./state-machine.js";
 import { TaskState } from "../types/task.js";
 
 describe("state-machine", () => {
@@ -27,7 +33,9 @@ describe("state-machine", () => {
     });
 
     it("throws InvalidTransitionError on invalid transition", () => {
-      expect(() => transition(TaskState.FAILED, TaskState.PROVISIONING)).toThrow(InvalidTransitionError);
+      expect(() => transition(TaskState.FAILED, TaskState.PROVISIONING)).toThrow(
+        InvalidTransitionError,
+      );
     });
   });
 

@@ -45,7 +45,8 @@ export default function ClusterPage() {
   const [tab, setTab] = useState<"pods" | "events" | "services">("pods");
 
   const refresh = () => {
-    api.getClusterOverview()
+    api
+      .getClusterOverview()
       .then(setData)
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -86,10 +87,34 @@ export default function ClusterPage() {
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <SummaryCard icon={Server} label="Nodes" value={`${summary.readyNodes}/${summary.totalNodes}`} sub="ready" color="text-success" />
-        <SummaryCard icon={Container} label="Pods" value={`${summary.runningPods}/${summary.totalPods}`} sub="running" color="text-primary" />
-        <SummaryCard icon={Activity} label="Agent Pods" value={String(summary.agentPods)} sub="optio-managed" color="text-warning" />
-        <SummaryCard icon={Database} label="Infrastructure" value={String(summary.infraPods)} sub="postgres + redis" color="text-info" />
+        <SummaryCard
+          icon={Server}
+          label="Nodes"
+          value={`${summary.readyNodes}/${summary.totalNodes}`}
+          sub="ready"
+          color="text-success"
+        />
+        <SummaryCard
+          icon={Container}
+          label="Pods"
+          value={`${summary.runningPods}/${summary.totalPods}`}
+          sub="running"
+          color="text-primary"
+        />
+        <SummaryCard
+          icon={Activity}
+          label="Agent Pods"
+          value={String(summary.agentPods)}
+          sub="optio-managed"
+          color="text-warning"
+        />
+        <SummaryCard
+          icon={Database}
+          label="Infrastructure"
+          value={String(summary.infraPods)}
+          sub="postgres + redis"
+          color="text-info"
+        />
       </div>
 
       {/* Node info */}
@@ -98,16 +123,35 @@ export default function ClusterPage() {
           <h3 className="text-xs font-medium text-text-muted mb-2">Nodes</h3>
           {nodes.map((node: any) => (
             <div key={node.name} className="flex items-center gap-4 text-xs">
-              <Circle className={cn("w-2 h-2 fill-current", node.status === "Ready" ? "text-success" : "text-error")} />
+              <Circle
+                className={cn(
+                  "w-2 h-2 fill-current",
+                  node.status === "Ready" ? "text-success" : "text-error",
+                )}
+              />
               <span className="font-mono font-medium">{node.name}</span>
               <span className="text-text-muted">{node.kubeletVersion}</span>
               <span className="text-text-muted flex items-center gap-1">
                 <Cpu className="w-3 h-3" />
-                {node.cpuPercent != null ? <><span className="font-medium text-text">{node.cpuPercent}%</span> of {node.cpu} cores</> : <>{node.cpu} cores</>}
+                {node.cpuPercent != null ? (
+                  <>
+                    <span className="font-medium text-text">{node.cpuPercent}%</span> of {node.cpu}{" "}
+                    cores
+                  </>
+                ) : (
+                  <>{node.cpu} cores</>
+                )}
               </span>
               <span className="text-text-muted flex items-center gap-1">
                 <HardDrive className="w-3 h-3" />
-                {node.memoryUsedGi != null ? <><span className="font-medium text-text">{node.memoryUsedGi}</span> / {node.memoryTotalGi} Gi</> : formatK8sResource(node.memory)}
+                {node.memoryUsedGi != null ? (
+                  <>
+                    <span className="font-medium text-text">{node.memoryUsedGi}</span> /{" "}
+                    {node.memoryTotalGi} Gi
+                  </>
+                ) : (
+                  formatK8sResource(node.memory)
+                )}
               </span>
               <span className="text-text-muted">{node.containerRuntime}</span>
             </div>
@@ -123,7 +167,9 @@ export default function ClusterPage() {
             onClick={() => setTab(t)}
             className={cn(
               "px-4 py-2 text-sm border-b-2 transition-colors capitalize",
-              tab === t ? "border-primary text-primary" : "border-transparent text-text-muted hover:text-text"
+              tab === t
+                ? "border-primary text-primary"
+                : "border-transparent text-text-muted hover:text-text",
             )}
           >
             {t} {t === "pods" && `(${pods.length})`}
@@ -151,17 +197,23 @@ export default function ClusterPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-medium">{pod.name}</span>
                       {pod.isOptioManaged && (
-                        <span className="text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary">agent</span>
+                        <span className="text-[10px] px-1 py-0.5 rounded bg-primary/10 text-primary">
+                          agent
+                        </span>
                       )}
                       {pod.isInfra && (
-                        <span className="text-[10px] px-1 py-0.5 rounded bg-info/10 text-info">infra</span>
+                        <span className="text-[10px] px-1 py-0.5 rounded bg-info/10 text-info">
+                          infra
+                        </span>
                       )}
                     </div>
                     <div className="flex items-center gap-3 text-[11px] text-text-muted mt-0.5">
                       <span className={color}>{pod.status}</span>
                       {pod.cpuMillicores != null && <span>{pod.cpuMillicores}m CPU</span>}
                       {pod.memoryMi != null && <span>{pod.memoryMi} Mi RAM</span>}
-                      {pod.restarts > 0 && <span className="text-warning">{pod.restarts} restarts</span>}
+                      {pod.restarts > 0 && (
+                        <span className="text-warning">{pod.restarts} restarts</span>
+                      )}
                       <span className="font-mono">{pod.image?.split("/").pop()}</span>
                       {pod.ip && <span>{pod.ip}</span>}
                       {pod.startedAt && <span>{formatRelativeTime(pod.startedAt)}</span>}
@@ -180,7 +232,9 @@ export default function ClusterPage() {
             );
           })}
           {pods.length === 0 && (
-            <div className="text-center py-8 text-text-muted text-sm">No pods in the optio namespace</div>
+            <div className="text-center py-8 text-text-muted text-sm">
+              No pods in the optio namespace
+            </div>
           )}
         </div>
       )}
@@ -189,8 +243,16 @@ export default function ClusterPage() {
       {tab === "events" && (
         <div className="space-y-1">
           {events.map((event: any, i: number) => (
-            <div key={i} className="flex items-start gap-3 p-2.5 rounded-md border border-border bg-bg-card text-xs">
-              <AlertTriangle className={cn("w-3.5 h-3.5 shrink-0 mt-0.5", event.type === "Warning" ? "text-warning" : "text-info")} />
+            <div
+              key={i}
+              className="flex items-start gap-3 p-2.5 rounded-md border border-border bg-bg-card text-xs"
+            >
+              <AlertTriangle
+                className={cn(
+                  "w-3.5 h-3.5 shrink-0 mt-0.5",
+                  event.type === "Warning" ? "text-warning" : "text-info",
+                )}
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <span className="font-medium">{event.reason}</span>
@@ -199,7 +261,9 @@ export default function ClusterPage() {
                 </div>
                 <p className="text-text-muted mt-0.5">{event.message}</p>
                 {event.lastTimestamp && (
-                  <span className="text-text-muted/50">{formatRelativeTime(event.lastTimestamp)}</span>
+                  <span className="text-text-muted/50">
+                    {formatRelativeTime(event.lastTimestamp)}
+                  </span>
                 )}
               </div>
             </div>
@@ -214,7 +278,10 @@ export default function ClusterPage() {
       {tab === "services" && (
         <div className="space-y-1.5">
           {services.map((svc: any) => (
-            <div key={svc.name} className="flex items-center justify-between p-3 rounded-md border border-border bg-bg-card text-xs">
+            <div
+              key={svc.name}
+              className="flex items-center justify-between p-3 rounded-md border border-border bg-bg-card text-xs"
+            >
               <div className="flex items-center gap-3">
                 <Network className="w-4 h-4 text-text-muted" />
                 <div>
@@ -225,7 +292,9 @@ export default function ClusterPage() {
               <div className="flex items-center gap-3 text-text-muted">
                 <span>{svc.clusterIP}</span>
                 {svc.ports?.map((p: any, i: number) => (
-                  <span key={i}>{p.port}→{String(p.targetPort)}/{p.protocol}</span>
+                  <span key={i}>
+                    {p.port}→{String(p.targetPort)}/{p.protocol}
+                  </span>
                 ))}
               </div>
             </div>
@@ -267,8 +336,18 @@ function formatK8sResource(value: string | undefined): string {
   return value;
 }
 
-function SummaryCard({ icon: Icon, label, value, sub, color }: {
-  icon: any; label: string; value: string; sub: string; color: string;
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  color,
+}: {
+  icon: any;
+  label: string;
+  value: string;
+  sub: string;
+  color: string;
 }) {
   return (
     <div className="p-3 rounded-lg border border-border bg-bg-card">

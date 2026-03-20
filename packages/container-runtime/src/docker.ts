@@ -1,11 +1,6 @@
 import Docker from "dockerode";
 import { Readable, Writable } from "node:stream";
-import type {
-  ContainerSpec,
-  ContainerHandle,
-  ContainerStatus,
-  ExecSession,
-} from "@optio/shared";
+import type { ContainerSpec, ContainerHandle, ContainerStatus, ExecSession } from "@optio/shared";
 import type { ContainerRuntime, LogOptions, ExecOptions } from "./types.js";
 
 export interface DockerRuntimeOptions {
@@ -75,9 +70,10 @@ export class DockerContainerRuntime implements ContainerRuntime {
       state,
       exitCode: dockerState.ExitCode ?? undefined,
       startedAt: dockerState.StartedAt ? new Date(dockerState.StartedAt) : undefined,
-      finishedAt: dockerState.FinishedAt && dockerState.FinishedAt !== "0001-01-01T00:00:00Z"
-        ? new Date(dockerState.FinishedAt)
-        : undefined,
+      finishedAt:
+        dockerState.FinishedAt && dockerState.FinishedAt !== "0001-01-01T00:00:00Z"
+          ? new Date(dockerState.FinishedAt)
+          : undefined,
       reason: dockerState.Error || undefined,
     };
   }
@@ -114,11 +110,7 @@ export class DockerContainerRuntime implements ContainerRuntime {
     }
   }
 
-  async exec(
-    handle: ContainerHandle,
-    command: string[],
-    opts?: ExecOptions,
-  ): Promise<ExecSession> {
+  async exec(handle: ContainerHandle, command: string[], opts?: ExecOptions): Promise<ExecSession> {
     const container = this.docker.getContainer(handle.id);
     const exec = await container.exec({
       Cmd: command,

@@ -167,7 +167,11 @@ export async function setupRoutes(app: FastifyInstance) {
 
       const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
       if (res.ok) {
-        const data = (await res.json()) as { full_name: string; default_branch: string; private: boolean };
+        const data = (await res.json()) as {
+          full_name: string;
+          default_branch: string;
+          private: boolean;
+        };
         reply.send({
           valid: true,
           repo: {

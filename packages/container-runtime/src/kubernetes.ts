@@ -16,12 +16,7 @@ import {
   V1PersistentVolumeClaimVolumeSource,
 } from "@kubernetes/client-node";
 import { Readable, Writable, PassThrough } from "node:stream";
-import type {
-  ContainerSpec,
-  ContainerHandle,
-  ContainerStatus,
-  ExecSession,
-} from "@optio/shared";
+import type { ContainerSpec, ContainerHandle, ContainerStatus, ExecSession } from "@optio/shared";
 import type { ContainerRuntime, LogOptions, ExecOptions } from "./types.js";
 
 const CONTAINER_NAME = "main";
@@ -186,17 +181,11 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
 
     if (state?.terminated) {
       exitCode = state.terminated.exitCode;
-      startedAt = state.terminated.startedAt
-        ? new Date(state.terminated.startedAt)
-        : undefined;
-      finishedAt = state.terminated.finishedAt
-        ? new Date(state.terminated.finishedAt)
-        : undefined;
+      startedAt = state.terminated.startedAt ? new Date(state.terminated.startedAt) : undefined;
+      finishedAt = state.terminated.finishedAt ? new Date(state.terminated.finishedAt) : undefined;
       reason = state.terminated.reason ?? state.terminated.message ?? undefined;
     } else if (state?.running) {
-      startedAt = state.running.startedAt
-        ? new Date(state.running.startedAt)
-        : undefined;
+      startedAt = state.running.startedAt ? new Date(state.running.startedAt) : undefined;
     } else if (state?.waiting) {
       reason = state.waiting.reason ?? state.waiting.message ?? undefined;
     }
@@ -244,11 +233,7 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
     }
   }
 
-  async exec(
-    handle: ContainerHandle,
-    command: string[],
-    opts?: ExecOptions,
-  ): Promise<ExecSession> {
+  async exec(handle: ContainerHandle, command: string[], opts?: ExecOptions): Promise<ExecSession> {
     const k8sExec = new Exec(this.kubeConfig);
     const tty = opts?.tty ?? true;
 
@@ -399,18 +384,12 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
       ? Math.max(1, Math.floor((Date.now() - opts.since.getTime()) / 1000))
       : undefined;
 
-    const abortController = await log.log(
-      this.namespace,
-      handle.name,
-      CONTAINER_NAME,
-      lineStream,
-      {
-        follow: true,
-        sinceSeconds,
-        tailLines: opts?.tail,
-        timestamps: true,
-      },
-    );
+    const abortController = await log.log(this.namespace, handle.name, CONTAINER_NAME, lineStream, {
+      follow: true,
+      sinceSeconds,
+      tailLines: opts?.tail,
+      timestamps: true,
+    });
 
     try {
       let buffer = "";

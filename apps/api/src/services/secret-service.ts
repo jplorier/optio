@@ -54,9 +54,7 @@ export async function storeSecret(name: string, value: string, scope = "global")
       .set({ encryptedValue: encrypted, iv, authTag, updatedAt: new Date() })
       .where(and(eq(secrets.name, name), eq(secrets.scope, scope)));
   } else {
-    await db
-      .insert(secrets)
-      .values({ name, scope, encryptedValue: encrypted, iv, authTag });
+    await db.insert(secrets).values({ name, scope, encryptedValue: encrypted, iv, authTag });
   }
 }
 
@@ -87,7 +85,10 @@ export async function deleteSecret(name: string, scope = "global"): Promise<void
   await db.delete(secrets).where(and(eq(secrets.name, name), eq(secrets.scope, scope)));
 }
 
-export async function resolveSecretsForTask(requiredSecrets: string[], scope = "global"): Promise<Record<string, string>> {
+export async function resolveSecretsForTask(
+  requiredSecrets: string[],
+  scope = "global",
+): Promise<Record<string, string>> {
   const resolved: Record<string, string> = {};
   for (const name of requiredSecrets) {
     resolved[name] = await retrieveSecret(name, scope);

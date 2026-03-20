@@ -16,10 +16,7 @@ export async function getPromptTemplate(repoUrl?: string): Promise<{
 }> {
   // Check repo-level override first
   if (repoUrl) {
-    const [repo] = await db
-      .select()
-      .from(repos)
-      .where(eq(repos.repoUrl, repoUrl));
+    const [repo] = await db.select().from(repos).where(eq(repos.repoUrl, repoUrl));
     if (repo?.promptTemplateOverride) {
       return {
         id: repo.id,

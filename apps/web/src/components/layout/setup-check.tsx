@@ -16,7 +16,8 @@ export function SetupCheck() {
       return;
     }
 
-    api.getSetupStatus()
+    api
+      .getSetupStatus()
       .then((res) => {
         if (!res.isSetUp) {
           router.replace("/setup");

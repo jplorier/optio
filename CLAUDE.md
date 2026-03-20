@@ -42,6 +42,7 @@ This is the central optimization. Instead of one pod per task (slow, wasteful), 
 - On the next task for that repo, a new pod is created automatically
 
 The entrypoint scripts are in `scripts/`:
+
 - `repo-init.sh` — pod entrypoint: clone repo, run `.optio/setup.sh` if present, sleep forever
 - `agent-entrypoint.sh` — legacy per-task entrypoint (kept for compatibility)
 
@@ -93,6 +94,7 @@ The auth service is at `apps/api/src/services/auth-service.ts`. Tokens are cache
 ### Prompt templates
 
 System prompts use a simple template language:
+
 - `{{VARIABLE}}` — replaced with the variable value
 - `{{#if VAR}}...{{else}}...{{/if}}` — conditional blocks (truthy if non-empty, not "false", not "0")
 
@@ -110,18 +112,18 @@ When tasks fail, the error message is pattern-matched by `packages/shared/src/er
 
 ## Tech Stack
 
-| Layer | Technology | Notes |
-|-------|-----------|-------|
-| Monorepo | Turborepo + pnpm | 6 packages, workspace protocol |
-| API | Fastify 5 | Plugins, schema validation, WebSocket |
-| ORM | Drizzle | PostgreSQL, generated migrations in `apps/api/src/db/migrations/` |
-| Queue | BullMQ + Redis | Also used for pub/sub (log streaming to WebSocket clients) |
-| Web | Next.js 15 App Router | Tailwind CSS v4, Zustand, Lucide icons, sonner toasts |
-| K8s client | @kubernetes/client-node | Pod lifecycle, exec, log streaming, metrics |
-| Validation | Zod | API request schemas |
-| Testing | Vitest | State machine tests in `packages/shared` |
-| CI | GitHub Actions | Typecheck, test, build-web, build-image |
-| Deploy | Helm | Chart at `helm/optio/` |
+| Layer      | Technology              | Notes                                                             |
+| ---------- | ----------------------- | ----------------------------------------------------------------- |
+| Monorepo   | Turborepo + pnpm        | 6 packages, workspace protocol                                    |
+| API        | Fastify 5               | Plugins, schema validation, WebSocket                             |
+| ORM        | Drizzle                 | PostgreSQL, generated migrations in `apps/api/src/db/migrations/` |
+| Queue      | BullMQ + Redis          | Also used for pub/sub (log streaming to WebSocket clients)        |
+| Web        | Next.js 15 App Router   | Tailwind CSS v4, Zustand, Lucide icons, sonner toasts             |
+| K8s client | @kubernetes/client-node | Pod lifecycle, exec, log streaming, metrics                       |
+| Validation | Zod                     | API request schemas                                               |
+| Testing    | Vitest                  | State machine tests in `packages/shared`                          |
+| CI         | GitHub Actions          | Typecheck, test, build-web, build-image                           |
+| Deploy     | Helm                    | Chart at `helm/optio/`                                            |
 
 ## Directory Layout
 
@@ -176,6 +178,7 @@ scripts/              repo-init.sh, agent-entrypoint.sh, setup-local.sh
 At `helm/optio/`. Deploys the full stack to any K8s cluster.
 
 Key `values.yaml` settings:
+
 - `postgresql.enabled` / `redis.enabled` — set to `false` and use `externalDatabase.url` / `externalRedis.url` for managed services
 - `encryption.key` — **required**, generate with `openssl rand -hex 32`
 - `agent.imagePullPolicy` — `Never` for local dev, `IfNotPresent` or `Always` for registries

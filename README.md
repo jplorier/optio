@@ -89,6 +89,7 @@ scripts/              Setup, init, and entrypoint scripts
 ### Per-Repo Settings
 
 Each repository can be configured with:
+
 - **Container image** — preset (base/node/python/go/rust/full) or custom
 - **Extra packages** — apt packages installed at pod startup
 - **Prompt template override** — custom agent instructions for this repo
@@ -98,6 +99,7 @@ Each repository can be configured with:
 ### Prompt Templates
 
 Agents receive a system prompt with these variables:
+
 - `{{TASK_FILE}}` — path to the task description file
 - `{{BRANCH_NAME}}` — the working branch
 - `{{TASK_ID}}` — unique task identifier
@@ -108,6 +110,7 @@ Agents receive a system prompt with these variables:
 ### Authentication
 
 Claude Code supports two auth modes:
+
 - **API Key** — `ANTHROPIC_API_KEY` injected into the container
 - **Max Subscription** — token proxy reads from host's Keychain, containers call back via `apiKeyHelper`
 
@@ -120,12 +123,12 @@ kubectl delete namespace optio
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Monorepo | Turborepo + pnpm |
-| API | Fastify 5, Drizzle ORM, BullMQ |
-| Web | Next.js 15, Tailwind CSS 4, Zustand |
-| Database | PostgreSQL 16 |
-| Queue | Redis 7 + BullMQ |
-| Runtime | Kubernetes (Docker Desktop for local) |
-| Agents | Claude Code, OpenAI Codex |
+| Layer    | Technology                            |
+| -------- | ------------------------------------- |
+| Monorepo | Turborepo + pnpm                      |
+| API      | Fastify 5, Drizzle ORM, BullMQ        |
+| Web      | Next.js 15, Tailwind CSS 4, Zustand   |
+| Database | PostgreSQL 16                         |
+| Queue    | Redis 7 + BullMQ                      |
+| Runtime  | Kubernetes (Docker Desktop for local) |
+| Agents   | Claude Code, OpenAI Codex             |

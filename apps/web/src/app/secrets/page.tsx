@@ -13,13 +13,16 @@ export default function SecretsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const loadSecrets = () => {
-    api.listSecrets()
+    api
+      .listSecrets()
       .then((res) => setSecrets(res.secrets))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { loadSecrets(); }, []);
+  useEffect(() => {
+    loadSecrets();
+  }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +66,10 @@ export default function SecretsPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mb-6 p-4 rounded-lg border border-border bg-bg-card space-y-3">
+        <form
+          onSubmit={handleCreate}
+          className="mb-6 p-4 rounded-lg border border-border bg-bg-card space-y-3"
+        >
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-sm text-text-muted mb-1">Name</label>

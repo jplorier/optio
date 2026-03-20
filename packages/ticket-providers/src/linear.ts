@@ -8,11 +8,19 @@ export class LinearTicketProvider implements TicketProvider {
     throw new Error("Linear provider not yet implemented");
   }
 
-  async addComment(_ticketId: string, _comment: string, _config: TicketProviderConfig): Promise<void> {
+  async addComment(
+    _ticketId: string,
+    _comment: string,
+    _config: TicketProviderConfig,
+  ): Promise<void> {
     throw new Error("Linear provider not yet implemented");
   }
 
-  async updateState(_ticketId: string, _state: "open" | "closed", _config: TicketProviderConfig): Promise<void> {
+  async updateState(
+    _ticketId: string,
+    _state: "open" | "closed",
+    _config: TicketProviderConfig,
+  ): Promise<void> {
     throw new Error("Linear provider not yet implemented");
   }
 }

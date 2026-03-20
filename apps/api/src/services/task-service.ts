@@ -69,7 +69,11 @@ export async function transitionTask(
   if (toState === TaskState.RUNNING && !task.startedAt) {
     updateFields.startedAt = new Date();
   }
-  if (toState === TaskState.COMPLETED || toState === TaskState.FAILED || toState === TaskState.CANCELLED) {
+  if (
+    toState === TaskState.COMPLETED ||
+    toState === TaskState.FAILED ||
+    toState === TaskState.CANCELLED
+  ) {
     updateFields.completedAt = new Date();
   }
   // Reset fields when retrying/re-queuing

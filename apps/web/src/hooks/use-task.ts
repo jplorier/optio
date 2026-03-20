@@ -11,10 +11,7 @@ export function useTask(id: string) {
 
   const refresh = useCallback(async () => {
     try {
-      const [taskRes, eventsRes] = await Promise.all([
-        api.getTask(id),
-        api.getTaskEvents(id),
-      ]);
+      const [taskRes, eventsRes] = await Promise.all([api.getTask(id), api.getTaskEvents(id)]);
       setTask(taskRes.task);
       setEvents(eventsRes.events);
       setError(null);

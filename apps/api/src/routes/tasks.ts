@@ -43,11 +43,15 @@ export async function taskRoutes(app: FastifyInstance) {
 
     // Enqueue for processing
     await taskService.transitionTask(task.id, TaskState.QUEUED, "task_submitted");
-    await taskQueue.add("process-task", { taskId: task.id }, {
-      jobId: task.id,
-      attempts: task.maxRetries + 1,
-      backoff: { type: "exponential", delay: 5000 },
-    });
+    await taskQueue.add(
+      "process-task",
+      { taskId: task.id },
+      {
+        jobId: task.id,
+        attempts: task.maxRetries + 1,
+        backoff: { type: "exponential", delay: 5000 },
+      },
+    );
 
     reply.status(201).send({ task });
   });
@@ -63,10 +67,14 @@ export async function taskRoutes(app: FastifyInstance) {
   app.post("/api/tasks/:id/retry", async (req, reply) => {
     const { id } = req.params as { id: string };
     const task = await taskService.transitionTask(id, TaskState.QUEUED, "user_retry");
-    await taskQueue.add("process-task", { taskId: id }, {
-      jobId: `${id}-retry-${Date.now()}`,
-      attempts: 1,
-    });
+    await taskQueue.add(
+      "process-task",
+      { taskId: id },
+      {
+        jobId: `${id}-retry-${Date.now()}`,
+        attempts: 1,
+      },
+    );
     reply.send({ task });
   });
 

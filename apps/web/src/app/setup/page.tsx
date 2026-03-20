@@ -70,15 +70,17 @@ export default function SetupPage() {
 
   // Step 4: Repos
   const [repos, setRepos] = useState<RepoEntry[]>([]);
-  const [suggestedRepos, setSuggestedRepos] = useState<Array<{
-    fullName: string;
-    cloneUrl: string;
-    defaultBranch: string;
-    isPrivate: boolean;
-    description: string | null;
-    language: string | null;
-    pushedAt: string;
-  }>>([]);
+  const [suggestedRepos, setSuggestedRepos] = useState<
+    Array<{
+      fullName: string;
+      cloneUrl: string;
+      defaultBranch: string;
+      isPrivate: boolean;
+      description: string | null;
+      language: string | null;
+      pushedAt: string;
+    }>
+  >([]);
   const [suggestedLoading, setSuggestedLoading] = useState(false);
   const [manualRepoUrl, setManualRepoUrl] = useState("");
 
@@ -94,7 +96,8 @@ export default function SetupPage() {
 
   // Check runtime on mount
   useEffect(() => {
-    api.getHealth()
+    api
+      .getHealth()
       .then((res) => setRuntimeHealthy(res.healthy))
       .catch(() => setRuntimeHealthy(false));
   }, []);
@@ -110,7 +113,8 @@ export default function SetupPage() {
   useEffect(() => {
     if (currentStep?.id === "repos" && githubToken && suggestedRepos.length === 0) {
       setSuggestedLoading(true);
-      api.listUserRepos(githubToken)
+      api
+        .listUserRepos(githubToken)
         .then((res) => setSuggestedRepos(res.repos.slice(0, 8)))
         .catch(() => {})
         .finally(() => setSuggestedLoading(false));
@@ -120,14 +124,16 @@ export default function SetupPage() {
   useEffect(() => {
     if (currentStep?.id === "prompt" && !promptTemplate) {
       setPromptLoading(true);
-      api.getBuiltinDefault()
+      api
+        .getBuiltinDefault()
         .then((res) => setPromptTemplate(res.template))
         .catch(() => {})
         .finally(() => setPromptLoading(false));
     }
   }, [step]);
 
-  const claudeReady = claudeAuthMode === "max-subscription" ? subscriptionAvailable : anthropicValidated;
+  const claudeReady =
+    claudeAuthMode === "max-subscription" ? subscriptionAvailable : anthropicValidated;
 
   const currentStep = STEPS[step];
 
@@ -329,7 +335,7 @@ export default function SetupPage() {
                     ? "bg-primary text-white"
                     : i === step
                       ? "bg-primary/20 text-primary border border-primary"
-                      : "bg-bg-card text-text-muted border border-border"
+                      : "bg-bg-card text-text-muted border border-border",
                 )}
               >
                 {i < step ? <Check className="w-4 h-4" /> : <s.icon className="w-3.5 h-3.5" />}
@@ -351,12 +357,20 @@ export default function SetupPage() {
                 <h1 className="text-xl font-bold">Welcome to Optio</h1>
               </div>
               <p className="text-text-muted text-sm leading-relaxed">
-                Optio orchestrates AI coding agents on your repositories. Let's get you set up
-                with the credentials and repos your agents will need.
+                Optio orchestrates AI coding agents on your repositories. Let's get you set up with
+                the credentials and repos your agents will need.
               </p>
               <div className="p-3 rounded-md bg-bg border border-border">
                 <div className="flex items-center gap-2 text-sm">
-                  <span className={runtimeHealthy === true ? "text-success" : runtimeHealthy === false ? "text-error" : "text-text-muted"}>
+                  <span
+                    className={
+                      runtimeHealthy === true
+                        ? "text-success"
+                        : runtimeHealthy === false
+                          ? "text-error"
+                          : "text-text-muted"
+                    }
+                  >
                     {runtimeHealthy === null ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : runtimeHealthy ? (
@@ -367,7 +381,11 @@ export default function SetupPage() {
                   </span>
                   <span>
                     Kubernetes runtime:{" "}
-                    {runtimeHealthy === null ? "Checking..." : runtimeHealthy ? "Connected" : "Not available"}
+                    {runtimeHealthy === null
+                      ? "Checking..."
+                      : runtimeHealthy
+                        ? "Connected"
+                        : "Not available"}
                   </span>
                 </div>
               </div>
@@ -392,7 +410,8 @@ export default function SetupPage() {
               </div>
               <p className="text-text-muted text-sm">
                 Agents need a GitHub token to clone repos, create branches, and open pull requests.
-                Create a token with <code className="px-1 py-0.5 bg-bg rounded text-xs">repo</code> scope, then paste it below.
+                Create a token with <code className="px-1 py-0.5 bg-bg rounded text-xs">repo</code>{" "}
+                scope, then paste it below.
               </p>
               <a
                 href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Optio+Agent"
@@ -440,7 +459,10 @@ export default function SetupPage() {
                 </div>
               )}
               <div className="flex items-center justify-between">
-                <button onClick={goBack} className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover">
+                <button
+                  onClick={goBack}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover"
+                >
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <div className="flex gap-2">
@@ -458,7 +480,13 @@ export default function SetupPage() {
                     disabled={!githubValidated || loading}
                     className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover disabled:opacity-50"
                   >
-                    {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ArrowRight className="w-4 h-4" /></>}
+                    {loading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <>
+                        Continue <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
                   </button>
                 </div>
               </div>
@@ -480,8 +508,11 @@ export default function SetupPage() {
               <div className="p-4 rounded-md bg-bg border border-border space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium">Claude Code</span>
-                  {(claudeAuthMode === "max-subscription" && subscriptionAvailable) || anthropicValidated ? (
-                    <span className="text-success text-xs flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Ready</span>
+                  {(claudeAuthMode === "max-subscription" && subscriptionAvailable) ||
+                  anthropicValidated ? (
+                    <span className="text-success text-xs flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" /> Ready
+                    </span>
                   ) : null}
                 </div>
 
@@ -490,7 +521,9 @@ export default function SetupPage() {
                   <label
                     className={cn(
                       "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
-                      claudeAuthMode === "max-subscription" ? "border-primary bg-primary/5" : "border-border hover:border-text-muted"
+                      claudeAuthMode === "max-subscription"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-text-muted",
                     )}
                   >
                     <input
@@ -521,7 +554,9 @@ export default function SetupPage() {
                                 <AlertCircle className="w-3 h-3" /> No subscription found
                               </span>
                               <p className="text-text-muted">
-                                Log in with <code className="px-1 py-0.5 bg-bg-card rounded">claude</code> on this machine first, then click Recheck.
+                                Log in with{" "}
+                                <code className="px-1 py-0.5 bg-bg-card rounded">claude</code> on
+                                this machine first, then click Recheck.
                               </p>
                               <button
                                 onClick={checkSubscription}
@@ -539,7 +574,9 @@ export default function SetupPage() {
                   <label
                     className={cn(
                       "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
-                      claudeAuthMode === "api-key" ? "border-primary bg-primary/5" : "border-border hover:border-text-muted"
+                      claudeAuthMode === "api-key"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-text-muted",
                     )}
                   >
                     <input
@@ -560,7 +597,11 @@ export default function SetupPage() {
                             <input
                               type="password"
                               value={anthropicKey}
-                              onChange={(e) => { setAnthropicKey(e.target.value); setAnthropicValidated(false); setAnthropicError(""); }}
+                              onChange={(e) => {
+                                setAnthropicKey(e.target.value);
+                                setAnthropicValidated(false);
+                                setAnthropicError("");
+                              }}
                               onPaste={(e) => {
                                 const pasted = e.clipboardData.getData("text").trim();
                                 if (pasted) {
@@ -581,8 +622,16 @@ export default function SetupPage() {
                               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate"}
                             </button>
                           </div>
-                          {anthropicError && <p className="text-error text-xs flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {anthropicError}</p>}
-                          {anthropicValidated && <p className="text-success text-xs flex items-center gap-1"><CheckCircle className="w-3 h-3" /> API key valid</p>}
+                          {anthropicError && (
+                            <p className="text-error text-xs flex items-center gap-1">
+                              <AlertCircle className="w-3 h-3" /> {anthropicError}
+                            </p>
+                          )}
+                          {anthropicValidated && (
+                            <p className="text-success text-xs flex items-center gap-1">
+                              <CheckCircle className="w-3 h-3" /> API key valid
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
@@ -593,14 +642,24 @@ export default function SetupPage() {
               {/* OpenAI (unchanged) */}
               <div className="p-4 rounded-md bg-bg border border-border space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Codex (OpenAI) <span className="text-text-muted font-normal">— optional</span></span>
-                  {openaiValidated && <span className="text-success text-xs flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Valid</span>}
+                  <span className="text-sm font-medium">
+                    Codex (OpenAI) <span className="text-text-muted font-normal">— optional</span>
+                  </span>
+                  {openaiValidated && (
+                    <span className="text-success text-xs flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" /> Valid
+                    </span>
+                  )}
                 </div>
                 <div className="flex gap-2">
                   <input
                     type="password"
                     value={openaiKey}
-                    onChange={(e) => { setOpenaiKey(e.target.value); setOpenaiValidated(false); setOpenaiError(""); }}
+                    onChange={(e) => {
+                      setOpenaiKey(e.target.value);
+                      setOpenaiValidated(false);
+                      setOpenaiError("");
+                    }}
                     onPaste={(e) => {
                       const pasted = e.clipboardData.getData("text").trim();
                       if (pasted) {
@@ -621,11 +680,18 @@ export default function SetupPage() {
                     {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate"}
                   </button>
                 </div>
-                {openaiError && <p className="text-error text-xs flex items-center gap-1"><AlertCircle className="w-3 h-3" /> {openaiError}</p>}
+                {openaiError && (
+                  <p className="text-error text-xs flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {openaiError}
+                  </p>
+                )}
               </div>
 
               <div className="flex items-center justify-between">
-                <button onClick={goBack} className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover">
+                <button
+                  onClick={goBack}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover"
+                >
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <button
@@ -633,7 +699,13 @@ export default function SetupPage() {
                   disabled={(!claudeReady && !openaiValidated) || loading}
                   className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover disabled:opacity-50"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ArrowRight className="w-4 h-4" /></>}
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      Continue <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -657,7 +729,9 @@ export default function SetupPage() {
                 </div>
               ) : suggestedRepos.length > 0 ? (
                 <div>
-                  <label className="text-xs text-text-muted mb-2 block">Your recent repositories</label>
+                  <label className="text-xs text-text-muted mb-2 block">
+                    Your recent repositories
+                  </label>
                   <div className="grid gap-1.5">
                     {suggestedRepos.map((sr) => {
                       const isSelected = repos.some((r) => r.fullName === sr.fullName);
@@ -668,36 +742,49 @@ export default function SetupPage() {
                             if (isSelected) {
                               setRepos(repos.filter((r) => r.fullName !== sr.fullName));
                             } else {
-                              setRepos([...repos, {
-                                url: sr.cloneUrl,
-                                fullName: sr.fullName,
-                                defaultBranch: sr.defaultBranch,
-                                isPrivate: sr.isPrivate,
-                                validated: true,
-                              }]);
+                              setRepos([
+                                ...repos,
+                                {
+                                  url: sr.cloneUrl,
+                                  fullName: sr.fullName,
+                                  defaultBranch: sr.defaultBranch,
+                                  isPrivate: sr.isPrivate,
+                                  validated: true,
+                                },
+                              ]);
                             }
                           }}
                           className={cn(
                             "flex items-center gap-3 p-2.5 rounded-md border text-left text-sm transition-colors",
                             isSelected
                               ? "border-primary bg-primary/5"
-                              : "border-border hover:border-text-muted bg-bg"
+                              : "border-border hover:border-text-muted bg-bg",
                           )}
                         >
-                          <div className={cn(
-                            "w-5 h-5 rounded border flex items-center justify-center shrink-0",
-                            isSelected ? "bg-primary border-primary" : "border-border"
-                          )}>
+                          <div
+                            className={cn(
+                              "w-5 h-5 rounded border flex items-center justify-center shrink-0",
+                              isSelected ? "bg-primary border-primary" : "border-border",
+                            )}
+                          >
                             {isSelected && <Check className="w-3 h-3 text-white" />}
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <span className="font-medium truncate">{sr.fullName}</span>
-                              {sr.isPrivate && <span className="text-[10px] px-1 py-0.5 rounded bg-text-muted/10 text-text-muted">private</span>}
-                              {sr.language && <span className="text-[10px] text-text-muted">{sr.language}</span>}
+                              {sr.isPrivate && (
+                                <span className="text-[10px] px-1 py-0.5 rounded bg-text-muted/10 text-text-muted">
+                                  private
+                                </span>
+                              )}
+                              {sr.language && (
+                                <span className="text-[10px] text-text-muted">{sr.language}</span>
+                              )}
                             </div>
                             {sr.description && (
-                              <p className="text-xs text-text-muted truncate mt-0.5">{sr.description}</p>
+                              <p className="text-xs text-text-muted truncate mt-0.5">
+                                {sr.description}
+                              </p>
                             )}
                           </div>
                         </button>
@@ -752,7 +839,10 @@ export default function SetupPage() {
               </div>
 
               <div className="flex items-center justify-between">
-                <button onClick={goBack} className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover">
+                <button
+                  onClick={goBack}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover"
+                >
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <button
@@ -760,7 +850,13 @@ export default function SetupPage() {
                   disabled={loading}
                   className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover disabled:opacity-50"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ArrowRight className="w-4 h-4" /></>}
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      Continue <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -788,7 +884,9 @@ export default function SetupPage() {
                     <div className="flex items-center justify-between mb-1.5">
                       <label className="text-sm text-text-muted">System Prompt Template</label>
                       <button
-                        onClick={() => api.getBuiltinDefault().then((r) => setPromptTemplate(r.template))}
+                        onClick={() =>
+                          api.getBuiltinDefault().then((r) => setPromptTemplate(r.template))
+                        }
                         className="text-xs text-primary hover:underline"
                       >
                         Reset to default
@@ -820,7 +918,8 @@ export default function SetupPage() {
                     <div>
                       <span className="text-sm font-medium">Auto-merge PRs</span>
                       <p className="text-xs text-text-muted mt-0.5">
-                        When enabled, agents will merge PRs automatically after CI passes. Disable to require human review.
+                        When enabled, agents will merge PRs automatically after CI passes. Disable
+                        to require human review.
                       </p>
                     </div>
                   </label>
@@ -828,7 +927,10 @@ export default function SetupPage() {
               )}
 
               <div className="flex items-center justify-between">
-                <button onClick={goBack} className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover">
+                <button
+                  onClick={goBack}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover"
+                >
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <button
@@ -836,7 +938,13 @@ export default function SetupPage() {
                   disabled={loading || !promptTemplate.trim()}
                   className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover disabled:opacity-50"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ArrowRight className="w-4 h-4" /></>}
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      Continue <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -899,13 +1007,18 @@ export default function SetupPage() {
                     </div>
                   </div>
                   <p className="text-xs text-text-muted">
-                    Issues with the <code className="px-1 py-0.5 bg-bg-card rounded text-primary">optio</code> label will be synced automatically.
+                    Issues with the{" "}
+                    <code className="px-1 py-0.5 bg-bg-card rounded text-primary">optio</code> label
+                    will be synced automatically.
                   </p>
                 </div>
               )}
 
               <div className="flex items-center justify-between">
-                <button onClick={goBack} className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover">
+                <button
+                  onClick={goBack}
+                  className="flex items-center gap-2 px-4 py-2 rounded-md text-text-muted text-sm hover:bg-bg-hover"
+                >
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <button
@@ -913,7 +1026,13 @@ export default function SetupPage() {
                   disabled={loading}
                   className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover disabled:opacity-50"
                 >
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <>Continue <ArrowRight className="w-4 h-4" /></>}
+                  {loading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <>
+                      Continue <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -929,7 +1048,9 @@ export default function SetupPage() {
               </div>
               <div>
                 <h2 className="text-lg font-bold">You're all set!</h2>
-                <p className="text-text-muted text-sm mt-1">Optio is configured and ready to run agents.</p>
+                <p className="text-text-muted text-sm mt-1">
+                  Optio is configured and ready to run agents.
+                </p>
               </div>
 
               <div className="text-left p-4 rounded-md bg-bg border border-border space-y-2">
@@ -941,7 +1062,10 @@ export default function SetupPage() {
                 {claudeReady && (
                   <div className="flex items-center gap-2 text-sm">
                     <CheckCircle className="w-4 h-4 text-success" />
-                    <span>Claude Code: {claudeAuthMode === "max-subscription" ? "Max subscription" : "API key"}</span>
+                    <span>
+                      Claude Code:{" "}
+                      {claudeAuthMode === "max-subscription" ? "Max subscription" : "API key"}
+                    </span>
                   </div>
                 )}
                 {openaiValidated && (
@@ -958,12 +1082,16 @@ export default function SetupPage() {
                 )}
                 <div className="flex items-center gap-2 text-sm">
                   <CheckCircle className="w-4 h-4 text-success" />
-                  <span>Prompt template: {autoMerge ? "auto-merge enabled" : "review required"}</span>
+                  <span>
+                    Prompt template: {autoMerge ? "auto-merge enabled" : "review required"}
+                  </span>
                 </div>
                 {enableTickets && ticketOwner && ticketRepo && (
                   <div className="flex items-center gap-2 text-sm">
                     <CheckCircle className="w-4 h-4 text-success" />
-                    <span>GitHub Issues: {ticketOwner}/{ticketRepo}</span>
+                    <span>
+                      GitHub Issues: {ticketOwner}/{ticketRepo}
+                    </span>
                   </div>
                 )}
               </div>

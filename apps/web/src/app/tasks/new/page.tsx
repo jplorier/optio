@@ -22,7 +22,8 @@ export default function NewTaskPage() {
   });
 
   useEffect(() => {
-    api.listRepos()
+    api
+      .listRepos()
       .then((res) => {
         setRepos(res.repos);
         if (res.repos.length > 0) {
@@ -104,7 +105,10 @@ export default function NewTaskPage() {
           ) : (
             <div className="text-sm text-text-muted py-2">
               No repos configured.{" "}
-              <a href="/repos" className="text-primary hover:underline">Add a repo</a> first.
+              <a href="/repos" className="text-primary hover:underline">
+                Add a repo
+              </a>{" "}
+              first.
             </div>
           )}
         </div>

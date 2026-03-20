@@ -1,9 +1,4 @@
-import type {
-  ContainerSpec,
-  ContainerHandle,
-  ContainerStatus,
-  ExecSession,
-} from "@optio/shared";
+import type { ContainerSpec, ContainerHandle, ContainerStatus, ExecSession } from "@optio/shared";
 
 export interface LogOptions {
   follow?: boolean;

@@ -21,7 +21,8 @@ export function TaskList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.listTasks({ state: filter || undefined, limit: 100 })
+    api
+      .listTasks({ state: filter || undefined, limit: 100 })
       .then((res) => {
         setTasks(res.tasks);
       })
@@ -29,9 +30,7 @@ export function TaskList() {
       .finally(() => setLoading(false));
   }, [filter, setTasks]);
 
-  const filteredTasks = filter
-    ? tasks.filter((t) => t.state === filter)
-    : tasks;
+  const filteredTasks = filter ? tasks.filter((t) => t.state === filter) : tasks;
 
   return (
     <div>

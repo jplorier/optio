@@ -3,15 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-import {
-  LayoutDashboard,
-  ListTodo,
-  Plus,
-  KeyRound,
-  Settings,
-  Zap,
-  FolderGit2,
-} from "lucide-react";
+import { LayoutDashboard, ListTodo, Plus, KeyRound, Settings, Zap, FolderGit2 } from "lucide-react";
 
 const NAV_ITEMS = [
   { href: "/", label: "Overview", icon: LayoutDashboard, indent: false },
@@ -35,9 +27,10 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 p-2 space-y-0.5">
         {NAV_ITEMS.map((item) => {
-          const active = item.href === "/"
-            ? pathname === "/"
-            : pathname === item.href || pathname.startsWith(item.href + "/");
+          const active =
+            item.href === "/"
+              ? pathname === "/"
+              : pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.href}
@@ -47,7 +40,7 @@ export function Sidebar() {
                 item.indent ? "pl-9 pr-3" : "px-3",
                 active
                   ? "bg-primary/15 text-primary"
-                  : "text-text-muted hover:bg-bg-hover hover:text-text"
+                  : "text-text-muted hover:bg-bg-hover hover:text-text",
               )}
             >
               <item.icon className={cn("shrink-0", item.indent ? "w-3.5 h-3.5" : "w-4 h-4")} />
@@ -56,9 +49,7 @@ export function Sidebar() {
           );
         })}
       </nav>
-      <div className="p-4 border-t border-border text-xs text-text-muted">
-        Optio v0.1.0
-      </div>
+      <div className="p-4 border-t border-border text-xs text-text-muted">Optio v0.1.0</div>
     </aside>
   );
 }

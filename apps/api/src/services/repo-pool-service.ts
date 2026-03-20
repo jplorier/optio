@@ -31,17 +31,17 @@ export async function getOrCreateRepoPod(
   imageConfig?: RepoImageConfig,
 ): Promise<RepoPod> {
   // Check for existing pod
-  const [existing] = await db
-    .select()
-    .from(repoPods)
-    .where(eq(repoPods.repoUrl, repoUrl));
+  const [existing] = await db.select().from(repoPods).where(eq(repoPods.repoUrl, repoUrl));
 
   if (existing) {
     if (existing.state === "ready" && existing.podName) {
       // Verify the pod is still running
       const rt = getRuntime();
       try {
-        const status = await rt.status({ id: existing.podId ?? existing.podName, name: existing.podName });
+        const status = await rt.status({
+          id: existing.podId ?? existing.podName,
+          name: existing.podName,
+        });
         if (status.state === "running") {
           return existing as RepoPod;
         }
@@ -97,7 +97,7 @@ async function createRepoPod(
         OPTIO_REPO_BRANCH: repoBranch,
       },
       workDir: "/workspace",
-      imagePullPolicy: process.env.OPTIO_IMAGE_PULL_POLICY as any ?? "Never",
+      imagePullPolicy: (process.env.OPTIO_IMAGE_PULL_POLICY as any) ?? "Never",
       labels: {
         "optio.repo-url": repoUrl.replace(/[^a-zA-Z0-9-_.]/g, "_").slice(0, 63),
         "optio.type": "repo-pod",

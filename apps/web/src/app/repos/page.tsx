@@ -11,7 +11,8 @@ export default function ReposPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.listRepos()
+    api
+      .listRepos()
       .then((res) => setRepos(res.repos))
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -31,7 +32,13 @@ export default function ReposPage() {
         <div className="text-center py-12 text-text-muted border border-dashed border-border rounded-lg">
           <FolderGit2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
           <p>No repositories configured</p>
-          <p className="text-xs mt-1">Add repos during <Link href="/setup" className="text-primary hover:underline">setup</Link> or when creating a task.</p>
+          <p className="text-xs mt-1">
+            Add repos during{" "}
+            <Link href="/setup" className="text-primary hover:underline">
+              setup
+            </Link>{" "}
+            or when creating a task.
+          </p>
         </div>
       ) : (
         <div className="space-y-2">

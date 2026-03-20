@@ -1,7 +1,10 @@
 import { Queue, Worker } from "bullmq";
 import { logger } from "../logger.js";
 
-const connectionOpts = { url: process.env.REDIS_URL ?? "redis://localhost:6379", maxRetriesPerRequest: null };
+const connectionOpts = {
+  url: process.env.REDIS_URL ?? "redis://localhost:6379",
+  maxRetriesPerRequest: null,
+};
 
 export const ticketSyncQueue = new Queue("ticket-sync", { connection: connectionOpts });
 

@@ -1,5 +1,10 @@
 import { Octokit } from "@octokit/rest";
-import { TicketSource, DEFAULT_TICKET_LABEL, type Ticket, type TicketProviderConfig } from "@optio/shared";
+import {
+  TicketSource,
+  DEFAULT_TICKET_LABEL,
+  type Ticket,
+  type TicketProviderConfig,
+} from "@optio/shared";
 import type { TicketProvider } from "./types.js";
 
 export interface GitHubProviderConfig extends TicketProviderConfig {
@@ -66,7 +71,11 @@ export class GitHubTicketProvider implements TicketProvider {
     });
   }
 
-  async updateState(ticketId: string, state: "open" | "closed", config: TicketProviderConfig): Promise<void> {
+  async updateState(
+    ticketId: string,
+    state: "open" | "closed",
+    config: TicketProviderConfig,
+  ): Promise<void> {
     const ghConfig = asGitHubConfig(config);
     const octokit = new Octokit({ auth: ghConfig.token });
 

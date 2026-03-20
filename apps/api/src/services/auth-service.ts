@@ -19,10 +19,11 @@ const CACHE_TTL_MS = 30_000; // re-read every 30s
 
 function readCredentialsFromKeychain(): CredentialsData | null {
   try {
-    const raw = execSync(
-      'security find-generic-password -s "Claude Code-credentials" -w',
-      { encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] },
-    ).trim();
+    const raw = execSync('security find-generic-password -s "Claude Code-credentials" -w', {
+      encoding: "utf-8",
+      timeout: 5000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
     return JSON.parse(raw);
   } catch {
     return null;

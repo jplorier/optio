@@ -1,5 +1,11 @@
 import { Worker, Queue } from "bullmq";
-import { TaskState, TASK_BRANCH_PREFIX, renderPromptTemplate, renderTaskFile, TASK_FILE_PATH } from "@optio/shared";
+import {
+  TaskState,
+  TASK_BRANCH_PREFIX,
+  renderPromptTemplate,
+  renderTaskFile,
+  TASK_FILE_PATH,
+} from "@optio/shared";
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import * as taskService from "../services/task-service.js";
@@ -44,7 +50,8 @@ export function startTaskWorker() {
 
         // Get agent adapter and build config
         const adapter = getAdapter(task.agentType);
-        const claudeAuthMode = (await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null) as any) ?? "api-key";
+        const claudeAuthMode =
+          ((await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null)) as any) ?? "api-key";
         const optioApiUrl = `http://${process.env.API_HOST ?? "host.docker.internal"}:${process.env.API_PORT ?? "4000"}`;
 
         // Load and render prompt template
@@ -96,11 +103,7 @@ export function startTaskWorker() {
 
         // Get or create a repo pod for this repo
         log.info("Getting repo pod");
-        const pod = await repoPool.getOrCreateRepoPod(
-          task.repoUrl,
-          task.repoBranch,
-          allEnv,
-        );
+        const pod = await repoPool.getOrCreateRepoPod(task.repoUrl, task.repoBranch, allEnv);
         repoPodId = pod.id;
         log.info({ podName: pod.podName }, "Repo pod ready");
 
@@ -115,12 +118,7 @@ export function startTaskWorker() {
         });
 
         // Execute the task in the repo pod via worktree
-        const execSession = await repoPool.execTaskInRepoPod(
-          pod,
-          task.id,
-          agentCommand,
-          allEnv,
-        );
+        const execSession = await repoPool.execTaskInRepoPod(pod, task.id, agentCommand, allEnv);
 
         // Stream stdout with structured parsing
         let allLogs = "";
@@ -151,7 +149,9 @@ export function startTaskWorker() {
 
               // Check for PR URL in text entries
               if (parsed.entry.type === "text" || parsed.entry.type === "info") {
-                const prMatch = parsed.entry.content.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
+                const prMatch = parsed.entry.content.match(
+                  /https:\/\/github\.com\/[^\s]+\/pull\/\d+/,
+                );
                 if (prMatch) {
                   await taskService.updateTaskPr(taskId, prMatch[0]);
                 }
@@ -166,10 +166,20 @@ export function startTaskWorker() {
 
         if (result.prUrl) {
           await taskService.updateTaskPr(taskId, result.prUrl);
-          await taskService.transitionTask(taskId, TaskState.PR_OPENED, "pr_detected", result.prUrl);
+          await taskService.transitionTask(
+            taskId,
+            TaskState.PR_OPENED,
+            "pr_detected",
+            result.prUrl,
+          );
           log.info({ prUrl: result.prUrl }, "PR opened");
         } else if (result.success) {
-          await taskService.transitionTask(taskId, TaskState.COMPLETED, "agent_success", result.summary);
+          await taskService.transitionTask(
+            taskId,
+            TaskState.COMPLETED,
+            "agent_success",
+            result.summary,
+          );
           log.info("Task completed");
         } else {
           await taskService.transitionTask(taskId, TaskState.FAILED, "agent_failure", result.error);
@@ -217,12 +227,13 @@ function buildAgentCommand(
 
   switch (agentType) {
     case "claude-code": {
-      const authSetup = env.OPTIO_AUTH_MODE === "max-subscription"
-        ? [
-            `if curl -sf "${env.OPTIO_API_URL}/api/auth/claude-token" > /dev/null 2>&1; then echo "[optio] Token proxy OK"; fi`,
-            `unset ANTHROPIC_API_KEY 2>/dev/null || true`,
-          ]
-        : [];
+      const authSetup =
+        env.OPTIO_AUTH_MODE === "max-subscription"
+          ? [
+              `if curl -sf "${env.OPTIO_API_URL}/api/auth/claude-token" > /dev/null 2>&1; then echo "[optio] Token proxy OK"; fi`,
+              `unset ANTHROPIC_API_KEY 2>/dev/null || true`,
+            ]
+          : [];
 
       const resumeFlag = opts?.resumeSessionId
         ? `--resume ${JSON.stringify(opts.resumeSessionId)}`

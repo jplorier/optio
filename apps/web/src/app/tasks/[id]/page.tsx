@@ -72,13 +72,19 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
   const handleCancel = async () => {
     setActionLoading(true);
-    try { await api.cancelTask(id); await refresh(); } catch {}
+    try {
+      await api.cancelTask(id);
+      await refresh();
+    } catch {}
     setActionLoading(false);
   };
 
   const handleRetry = async () => {
     setActionLoading(true);
-    try { await api.retryTask(id); await refresh(); } catch {}
+    try {
+      await api.retryTask(id);
+      await refresh();
+    } catch {}
     setActionLoading(false);
   };
 
@@ -117,7 +123,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const canRetry = ["failed", "cancelled"].includes(task.state);
   const canResume = ["needs_attention", "failed"].includes(task.state) && !!task.sessionId;
 
-  const filteredLogs = showTools ? logs : logs.filter((l) => l.logType !== "tool_use" && l.logType !== "tool_result");
+  const filteredLogs = showTools
+    ? logs
+    : logs.filter((l) => l.logType !== "tool_use" && l.logType !== "tool_result");
 
   return (
     <div className="flex flex-col h-full">
@@ -136,9 +144,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               </span>
               <span className="flex items-center gap-1 capitalize">
                 {task.agentType === "claude-code" ? (
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                  </svg>
                 ) : (
-                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor"><path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073z"/></svg>
+                  <svg className="w-3 h-3" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073z" />
+                  </svg>
                 )}
                 {task.agentType.replace("-", " ")}
               </span>
@@ -192,41 +204,49 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Error panel */}
-      {task.errorMessage && isTerminal && (() => {
-        const classified = classifyError(task.errorMessage);
-        return (
-          <div className="shrink-0 border-b border-error/20 bg-error/5">
-            <div className="max-w-5xl mx-auto px-4 py-3">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-error shrink-0 mt-0.5" />
-                <div className="min-w-0 flex-1 space-y-2">
-                  <div>
-                    <h3 className="text-sm font-medium text-error">{classified.title}</h3>
-                    <p className="text-xs text-error/70 mt-0.5">{classified.description}</p>
-                  </div>
-                  <div className="p-2.5 rounded-md bg-bg/50 border border-border">
-                    <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Suggested fix</div>
-                    <pre className="text-xs text-text/80 whitespace-pre-wrap font-mono">{classified.remedy}</pre>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {classified.retryable && canRetry && (
-                      <button
-                        onClick={handleRetry}
-                        disabled={actionLoading}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-white text-xs hover:bg-primary-hover disabled:opacity-50"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        Retry Task
-                      </button>
-                    )}
-                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-error/10 text-error">{classified.category}</span>
+      {task.errorMessage &&
+        isTerminal &&
+        (() => {
+          const classified = classifyError(task.errorMessage);
+          return (
+            <div className="shrink-0 border-b border-error/20 bg-error/5">
+              <div className="max-w-5xl mx-auto px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-error shrink-0 mt-0.5" />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div>
+                      <h3 className="text-sm font-medium text-error">{classified.title}</h3>
+                      <p className="text-xs text-error/70 mt-0.5">{classified.description}</p>
+                    </div>
+                    <div className="p-2.5 rounded-md bg-bg/50 border border-border">
+                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                        Suggested fix
+                      </div>
+                      <pre className="text-xs text-text/80 whitespace-pre-wrap font-mono">
+                        {classified.remedy}
+                      </pre>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {classified.retryable && canRetry && (
+                        <button
+                          onClick={handleRetry}
+                          disabled={actionLoading}
+                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-white text-xs hover:bg-primary-hover disabled:opacity-50"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Retry Task
+                        </button>
+                      )}
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-error/10 text-error">
+                        {classified.category}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
-        );
-      })()}
+          );
+        })()}
 
       {/* Main content: logs + sidebar */}
       <div className="flex-1 flex overflow-hidden">
@@ -236,10 +256,12 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           <div className="shrink-0 flex items-center justify-between px-4 py-1.5 border-b border-border bg-bg">
             <div className="flex items-center gap-3 text-xs text-text-muted">
               <span className="flex items-center gap-1.5">
-                <span className={cn(
-                  "w-2 h-2 rounded-full",
-                  isActive && connected ? "bg-success" : "bg-text-muted/30"
-                )} />
+                <span
+                  className={cn(
+                    "w-2 h-2 rounded-full",
+                    isActive && connected ? "bg-success" : "bg-text-muted/30",
+                  )}
+                />
                 {isActive ? (connected ? "Live" : "Connecting...") : "Ended"}
               </span>
               <span>{logs.length} events</span>
@@ -247,13 +269,19 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
             <div className="flex items-center gap-1">
               <button
                 onClick={() => setShowTools(!showTools)}
-                className={cn("px-2 py-0.5 rounded text-xs transition-colors", showTools ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover")}
+                className={cn(
+                  "px-2 py-0.5 rounded text-xs transition-colors",
+                  showTools ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
+                )}
               >
                 Tools
               </button>
               <button
                 onClick={() => setShowEvents(!showEvents)}
-                className={cn("px-2 py-0.5 rounded text-xs transition-colors", showEvents ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover")}
+                className={cn(
+                  "px-2 py-0.5 rounded text-xs transition-colors",
+                  showEvents ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
+                )}
               >
                 Events
               </button>
@@ -261,7 +289,10 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 <button
                   onClick={() => {
                     setAutoScroll(true);
-                    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+                    logRef.current?.scrollTo({
+                      top: logRef.current.scrollHeight,
+                      behavior: "smooth",
+                    });
                   }}
                   className="p-1 rounded hover:bg-bg-hover text-text-muted"
                 >
@@ -291,24 +322,38 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 {/* Show task context */}
                 <div className="space-y-3 max-w-2xl mx-auto">
                   <div className="p-3 rounded-md border border-border bg-bg-card">
-                    <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">Task Prompt</div>
+                    <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">
+                      Task Prompt
+                    </div>
                     <pre className="text-xs text-text/70 whitespace-pre-wrap">{task.prompt}</pre>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="p-3 rounded-md border border-border bg-bg-card">
-                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Agent</div>
-                      <div className="text-xs">{task.agentType === "claude-code" ? "Claude Code" : "OpenAI Codex"}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                        Agent
+                      </div>
+                      <div className="text-xs">
+                        {task.agentType === "claude-code" ? "Claude Code" : "OpenAI Codex"}
+                      </div>
                     </div>
                     <div className="p-3 rounded-md border border-border bg-bg-card">
-                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Branch</div>
+                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                        Branch
+                      </div>
                       <div className="text-xs font-mono">optio/task-{task.id.slice(0, 8)}</div>
                     </div>
                     <div className="p-3 rounded-md border border-border bg-bg-card">
-                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Container</div>
-                      <div className="text-xs font-mono">{task.containerId ? task.containerId.slice(0, 20) : "pending"}</div>
+                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                        Container
+                      </div>
+                      <div className="text-xs font-mono">
+                        {task.containerId ? task.containerId.slice(0, 20) : "pending"}
+                      </div>
                     </div>
                     <div className="p-3 rounded-md border border-border bg-bg-card">
-                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">State</div>
+                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                        State
+                      </div>
                       <div className="text-xs capitalize">{task.state.replace("_", " ")}</div>
                     </div>
                   </div>
@@ -327,7 +372,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                           <span className="font-medium">{log.metadata.toolName as string}</span>
                           {log.metadata.toolInput ? (
                             <pre className="text-text-muted/50 mt-0.5 whitespace-pre-wrap break-all text-[10px]">
-                              {JSON.stringify(log.metadata.toolInput as Record<string, unknown>, null, 2).slice(0, 200)}
+                              {JSON.stringify(
+                                log.metadata.toolInput as Record<string, unknown>,
+                                null,
+                                2,
+                              ).slice(0, 200)}
                             </pre>
                           ) : null}
                         </div>
@@ -372,10 +421,14 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                   "px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
                   canResume
                     ? "bg-primary text-white hover:bg-primary-hover"
-                    : "bg-bg-hover text-text-muted"
+                    : "bg-bg-hover text-text-muted",
                 )}
               >
-                {actionLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {actionLoading ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4" />
+                )}
               </button>
             </div>
             {isTerminal && !task.sessionId && (
