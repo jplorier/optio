@@ -3,6 +3,7 @@ import { db } from "../db/client.js";
 import { tasks, taskEvents, taskLogs } from "../db/schema.js";
 import { TaskState, transition, type CreateTaskInput } from "@optio/shared";
 import { publishEvent } from "./event-bus.js";
+import { logger } from "../logger.js";
 
 export async function createTask(input: CreateTaskInput) {
   const [task] = await db
@@ -104,7 +105,50 @@ export async function transitionTask(
     timestamp: new Date().toISOString(),
   });
 
+  // Close linked GitHub issue when task completes
+  if (toState === TaskState.COMPLETED && task.ticketSource === "github" && task.ticketExternalId) {
+    closeGitHubIssue(task.repoUrl, task.ticketExternalId, task.prUrl).catch((err) =>
+      logger.warn({ err, taskId: id }, "Failed to close linked GitHub issue"),
+    );
+  }
+
   return { ...task, ...updateFields };
+}
+
+async function closeGitHubIssue(repoUrl: string, issueNumber: string, prUrl?: string | null) {
+  const { retrieveSecret } = await import("./secret-service.js");
+  const token = await retrieveSecret("GITHUB_TOKEN");
+  const match = repoUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
+  if (!match) return;
+  const [, owner, repo] = match;
+
+  // Post completion comment
+  const comment = prUrl
+    ? `✅ **Optio** completed this issue. Changes merged in ${prUrl}.`
+    : `✅ **Optio** completed this issue.`;
+
+  await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "Optio",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ body: comment }),
+  });
+
+  // Close the issue
+  await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`, {
+    method: "PATCH",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "User-Agent": "Optio",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ state: "closed", state_reason: "completed" }),
+  });
+
+  logger.info({ owner, repo, issueNumber }, "Closed linked GitHub issue");
 }
 
 export async function updateTaskContainer(id: string, containerId: string) {
