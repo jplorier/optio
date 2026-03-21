@@ -18,7 +18,7 @@ const VALID_TRANSITIONS: Record<TaskState, TaskState[]> = {
     TaskState.FAILED,
     TaskState.CANCELLED,
   ],
-  [TaskState.FAILED]: [TaskState.QUEUED],
+  [TaskState.FAILED]: [TaskState.QUEUED, TaskState.COMPLETED],
   [TaskState.CANCELLED]: [TaskState.QUEUED],
   [TaskState.COMPLETED]: [],
 };

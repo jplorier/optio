@@ -151,5 +151,9 @@ describe("state-machine", () => {
     it("rejects direct pr_opened → queued", () => {
       expect(canTransition(TaskState.PR_OPENED, TaskState.QUEUED)).toBe(false);
     });
+
+    it("allows failed → completed when PR merges after agent fix", () => {
+      expect(canTransition(TaskState.FAILED, TaskState.COMPLETED)).toBe(true);
+    });
   });
 });

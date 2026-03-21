@@ -30,12 +30,13 @@ export function startPrWatcherWorker() {
     "pr-watcher",
     async () => {
       // Find all tasks with open PRs
+      // Watch pr_opened tasks + failed tasks that have a PR (may need auto-merge after CI fix)
       // Only watch coding tasks, NOT review subtasks (avoid recursive reviews)
       const openPrTasks = await db
         .select()
         .from(tasks)
         .where(
-          sql`${tasks.state} = 'pr_opened' AND (${tasks.taskType} = 'coding' OR ${tasks.taskType} IS NULL)`,
+          sql`${tasks.state} IN ('pr_opened', 'failed') AND ${tasks.prUrl} IS NOT NULL AND (${tasks.taskType} = 'coding' OR ${tasks.taskType} IS NULL)`,
         );
 
       if (openPrTasks.length === 0) return;
@@ -198,6 +199,7 @@ export function startPrWatcherWorker() {
           }
 
           // Auto-merge if: CI passing + all review subtasks completed + autoMerge enabled
+          // Also handles failed tasks whose PRs are now passing (agent fixed CI and pushed)
           if (checksStatus === "passing" && prData.state === "open") {
             const [repoConf] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
 

@@ -464,7 +464,7 @@ function StatCard({
 }) {
   return (
     <div className="p-4 rounded-xl border border-border/50 bg-bg-card relative overflow-hidden">
-      <Icon className={cn("w-8 h-8 absolute top-3 right-3 opacity-[0.06]", color)} />
+      <Icon className={cn("w-8 h-8 absolute top-3 right-3 opacity-25", color)} />
       <span className="text-xs font-medium uppercase tracking-wider text-text-muted">{label}</span>
       <div className="mt-1.5">
         <span className="text-3xl font-semibold tabular-nums">{value}</span>
