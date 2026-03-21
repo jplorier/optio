@@ -125,4 +125,31 @@ describe("state-machine", () => {
       expect(canTransition(TaskState.PROVISIONING, TaskState.QUEUED)).toBe(false);
     });
   });
+
+  describe("PR lifecycle auto-resume paths", () => {
+    it("supports pr_opened → needs_attention → queued for merge conflicts", () => {
+      let state = TaskState.PR_OPENED;
+      state = transition(state, TaskState.NEEDS_ATTENTION);
+      state = transition(state, TaskState.QUEUED);
+      expect(state).toBe(TaskState.QUEUED);
+    });
+
+    it("supports pr_opened → needs_attention → queued for CI failures", () => {
+      let state = TaskState.PR_OPENED;
+      state = transition(state, TaskState.NEEDS_ATTENTION);
+      state = transition(state, TaskState.QUEUED);
+      expect(state).toBe(TaskState.QUEUED);
+    });
+
+    it("supports pr_opened → needs_attention → queued for review changes", () => {
+      let state = TaskState.PR_OPENED;
+      state = transition(state, TaskState.NEEDS_ATTENTION);
+      state = transition(state, TaskState.QUEUED);
+      expect(state).toBe(TaskState.QUEUED);
+    });
+
+    it("rejects direct pr_opened → queued", () => {
+      expect(canTransition(TaskState.PR_OPENED, TaskState.QUEUED)).toBe(false);
+    });
+  });
 });

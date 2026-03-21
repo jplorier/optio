@@ -240,6 +240,97 @@ export function startPrWatcherWorker() {
             }
           }
 
+          // Handle merge conflicts — resume agent to rebase
+          if (
+            prData.mergeable === false &&
+            prData.state === "open" &&
+            task.prChecksStatus !== "conflicts" // Don't re-trigger if already handling
+          ) {
+            // Mark the conflict state
+            await db
+              .update(tasks)
+              .set({ prChecksStatus: "conflicts", updatedAt: new Date() })
+              .where(eq(tasks.id, task.id));
+
+            const [repoConfig] = await db
+              .select()
+              .from(repos)
+              .where(eq(repos.repoUrl, task.repoUrl));
+
+            if (repoConfig?.autoResumeOnReview) {
+              try {
+                await taskService.transitionTask(
+                  task.id,
+                  TaskState.NEEDS_ATTENTION,
+                  "merge_conflicts",
+                  "PR has merge conflicts",
+                );
+                await taskService.transitionTask(
+                  task.id,
+                  TaskState.QUEUED,
+                  "auto_resume_conflicts",
+                );
+                await taskQueue.add(
+                  "process-task",
+                  {
+                    taskId: task.id,
+                    resumeSessionId: task.sessionId,
+                    resumePrompt: `Your PR has merge conflicts with the base branch. Please:\n1. Run \`git fetch origin && git rebase origin/main\`\n2. Resolve any conflicts\n3. Run the tests to make sure everything still works\n4. Force-push: \`git push --force-with-lease\``,
+                  },
+                  { jobId: `${task.id}-conflicts-${Date.now()}` },
+                );
+                logger.info({ taskId: task.id }, "Auto-resuming agent to fix merge conflicts");
+              } catch (err) {
+                logger.warn({ err, taskId: task.id }, "Failed to auto-resume for conflicts");
+              }
+            }
+          }
+
+          // Handle failing CI checks — resume agent to fix
+          if (
+            checksStatus === "failing" &&
+            task.prChecksStatus !== "failing" && // State just changed to failing
+            prData.state === "open"
+          ) {
+            const [repoConfig] = await db
+              .select()
+              .from(repos)
+              .where(eq(repos.repoUrl, task.repoUrl));
+
+            if (repoConfig?.autoResumeOnReview) {
+              // Build a summary of which checks failed
+              const failedChecks = (checksData.check_runs ?? [])
+                .filter((r: any) => r.conclusion === "failure")
+                .map((r: any) => r.name)
+                .join(", ");
+
+              try {
+                await taskService.transitionTask(
+                  task.id,
+                  TaskState.NEEDS_ATTENTION,
+                  "ci_failing",
+                  `CI checks failing: ${failedChecks}`,
+                );
+                await taskService.transitionTask(task.id, TaskState.QUEUED, "auto_resume_ci");
+                await taskQueue.add(
+                  "process-task",
+                  {
+                    taskId: task.id,
+                    resumeSessionId: task.sessionId,
+                    resumePrompt: `CI checks are failing on your PR. The following checks failed: ${failedChecks}\n\nPlease investigate the failures, fix the issues, and push the fixes.`,
+                  },
+                  { jobId: `${task.id}-ci-fix-${Date.now()}` },
+                );
+                logger.info(
+                  { taskId: task.id, failedChecks },
+                  "Auto-resuming agent to fix CI failures",
+                );
+              } catch (err) {
+                logger.warn({ err, taskId: task.id }, "Failed to auto-resume for CI failure");
+              }
+            }
+          }
+
           // Handle state transitions
           if (prData.merged) {
             // PR merged → complete the task
