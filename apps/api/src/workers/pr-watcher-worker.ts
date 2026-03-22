@@ -255,257 +255,157 @@ export function startPrWatcherWorker() {
           }
           await db.update(tasks).set(updates).where(eq(tasks.id, task.id));
 
-          // Trigger review if enabled and CI just passed
-          if (
-            checksStatus === "passing" &&
-            task.prChecksStatus !== "passing" && // State changed to passing
-            prData.state === "open"
-          ) {
-            const [repoConf] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
+          // --- Decide what action to take ---
+          const [repoConfig] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
+          const existingReview = await db
+            .select({ id: tasks.id })
+            .from(tasks)
+            .where(sql`${tasks.parentTaskId} = ${task.id} AND ${tasks.taskType} = 'review'`);
+          const { checkBlockingSubtasks } = await import("../services/subtask-service.js");
+          const subtaskStatus = await checkBlockingSubtasks(task.id);
 
-            if (repoConf?.reviewEnabled && repoConf.reviewTrigger === "on_ci_pass") {
-              // Check if a review task already exists for this task
-              const existingReview = await db
-                .select({ id: tasks.id })
-                .from(tasks)
-                .where(sql`${tasks.parentTaskId} = ${task.id} AND ${tasks.taskType} = 'review'`);
+          const action = determinePrAction({
+            prState: prData.state,
+            prMerged: !!prData.merged,
+            mergeable: prData.mergeable ?? null,
+            checksStatus,
+            prevChecksStatus: task.prChecksStatus,
+            reviewStatus,
+            autoMerge: repoConfig?.autoMerge ?? false,
+            autoResume: repoConfig?.autoResume ?? false,
+            reviewEnabled: repoConfig?.reviewEnabled ?? false,
+            reviewTrigger: repoConfig?.reviewTrigger ?? "manual",
+            hasReviewSubtask: existingReview.length > 0,
+            blockingSubtasksComplete: subtaskStatus.allComplete,
+          });
 
-              if (existingReview.length === 0) {
-                try {
-                  const { launchReview } = await import("../services/review-service.js");
-                  await launchReview(task.id);
-                  logger.info({ taskId: task.id }, "Auto-launched review agent on CI pass");
-                } catch (err) {
-                  logger.warn({ err, taskId: task.id }, "Failed to auto-launch review");
-                }
-              }
-            }
-          }
+          // --- Execute the action ---
+          const failedChecks = (checksData.check_runs ?? [])
+            .filter((r: any) => r.conclusion === "failure")
+            .map((r: any) => r.name)
+            .join(", ");
 
-          // Also trigger review on PR open if configured
-          if (
-            task.prChecksStatus === null && // First time seeing this PR
-            prData.state === "open"
-          ) {
-            const [repoConf] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
+          const resumeAgent = async (trigger: string, prompt: string, jobSuffix: string) => {
+            await taskService.transitionTask(
+              task.id,
+              TaskState.NEEDS_ATTENTION,
+              trigger,
+              prompt.slice(0, 200),
+            );
+            await taskService.transitionTask(task.id, TaskState.QUEUED, `auto_resume_${jobSuffix}`);
+            await taskQueue.add(
+              "process-task",
+              { taskId: task.id, resumeSessionId: task.sessionId, resumePrompt: prompt },
+              { jobId: `${task.id}-${jobSuffix}-${Date.now()}` },
+            );
+          };
 
-            if (repoConf?.reviewEnabled && repoConf.reviewTrigger === "on_pr") {
-              const existingReview = await db
-                .select({ id: tasks.id })
-                .from(tasks)
-                .where(sql`${tasks.parentTaskId} = ${task.id} AND ${tasks.taskType} = 'review'`);
-
-              if (existingReview.length === 0) {
-                try {
-                  const { launchReview } = await import("../services/review-service.js");
-                  await launchReview(task.id);
-                  logger.info({ taskId: task.id }, "Auto-launched review agent on PR open");
-                } catch (err) {
-                  logger.warn({ err, taskId: task.id }, "Failed to auto-launch review");
-                }
-              }
-            }
-          }
-
-          // Auto-merge if: CI passing + all review subtasks completed + autoMerge enabled
-          // Also handles failed tasks whose PRs are now passing (agent fixed CI and pushed)
-          if (checksStatus === "passing" && prData.state === "open") {
-            const [repoConf] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
-
-            if (repoConf?.autoMerge) {
-              const { checkBlockingSubtasks } = await import("../services/subtask-service.js");
-              const subtaskStatus = await checkBlockingSubtasks(task.id);
-
-              // Merge if: no blocking subtasks, or all blocking subtasks complete
-              if (subtaskStatus.allComplete) {
-                try {
-                  const mergeRes = await fetch(
-                    `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
-                    {
-                      method: "PUT",
-                      headers: { ...headers, "Content-Type": "application/json" },
-                      body: JSON.stringify({ merge_method: "squash" }),
-                    },
-                  );
-
-                  if (mergeRes.ok) {
-                    await taskService.transitionTask(
-                      task.id,
-                      TaskState.COMPLETED,
-                      "auto_merged",
-                      `PR #${prNumber} auto-merged (CI passing, reviews complete)`,
-                    );
-                    logger.info({ taskId: task.id, prNumber }, "PR auto-merged");
-                    continue; // Skip remaining state transitions for this task
-                  } else {
-                    const body = (await mergeRes.json().catch(() => ({}))) as any;
-                    logger.warn(
-                      { taskId: task.id, status: mergeRes.status, msg: body.message },
-                      "Auto-merge failed",
-                    );
-                  }
-                } catch (err) {
-                  logger.warn({ err, taskId: task.id }, "Auto-merge error");
-                }
-              }
-            }
-          }
-
-          // Handle merge conflicts — resume agent to rebase
-          if (
-            prData.mergeable === false &&
-            prData.state === "open" &&
-            task.prChecksStatus !== "conflicts" // Don't re-trigger if already handling
-          ) {
-            // Mark the conflict state
-            await db
-              .update(tasks)
-              .set({ prChecksStatus: "conflicts", updatedAt: new Date() })
-              .where(eq(tasks.id, task.id));
-
-            const [repoConfig] = await db
-              .select()
-              .from(repos)
-              .where(eq(repos.repoUrl, task.repoUrl));
-
-            if (repoConfig?.autoResume) {
-              try {
+          try {
+            switch (action.action) {
+              case "complete":
                 await taskService.transitionTask(
                   task.id,
-                  TaskState.NEEDS_ATTENTION,
-                  "merge_conflicts",
-                  "PR has merge conflicts",
+                  TaskState.COMPLETED,
+                  "pr_merged",
+                  task.prUrl,
                 );
+                logger.info({ taskId: task.id }, "Task completed via PR merge");
+                continue;
+
+              case "fail":
                 await taskService.transitionTask(
                   task.id,
-                  TaskState.QUEUED,
-                  "auto_resume_conflicts",
+                  TaskState.FAILED,
+                  "pr_closed",
+                  "PR was closed without merging",
                 );
-                await taskQueue.add(
-                  "process-task",
+                continue;
+
+              case "auto_merge": {
+                const mergeRes = await fetch(
+                  `https://api.github.com/repos/${owner}/${repo}/pulls/${prNumber}/merge`,
                   {
-                    taskId: task.id,
-                    resumeSessionId: task.sessionId,
-                    resumePrompt: `Your PR has merge conflicts with the base branch. Please:\n1. Run \`git fetch origin && git rebase origin/main\`\n2. Resolve any conflicts\n3. Run the tests to make sure everything still works\n4. Force-push: \`git push --force-with-lease\``,
+                    method: "PUT",
+                    headers: { ...headers, "Content-Type": "application/json" },
+                    body: JSON.stringify({ merge_method: "squash" }),
                   },
-                  { jobId: `${task.id}-conflicts-${Date.now()}` },
+                );
+                if (mergeRes.ok) {
+                  await taskService.transitionTask(
+                    task.id,
+                    TaskState.COMPLETED,
+                    "auto_merged",
+                    `PR #${prNumber} auto-merged`,
+                  );
+                  logger.info({ taskId: task.id, prNumber }, "PR auto-merged");
+                  continue;
+                }
+                const body = (await mergeRes.json().catch(() => ({}))) as any;
+                logger.warn(
+                  { taskId: task.id, status: mergeRes.status, msg: body.message },
+                  "Auto-merge failed",
+                );
+                break;
+              }
+
+              case "launch_review": {
+                const { launchReview } = await import("../services/review-service.js");
+                await launchReview(task.id);
+                logger.info({ taskId: task.id }, "Auto-launched review agent");
+                break;
+              }
+
+              case "resume_conflicts":
+                await db
+                  .update(tasks)
+                  .set({ prChecksStatus: "conflicts", updatedAt: new Date() })
+                  .where(eq(tasks.id, task.id));
+                await resumeAgent(
+                  "merge_conflicts",
+                  `Your PR has merge conflicts with the base branch. Please:\n1. Run \`git fetch origin && git rebase origin/main\`\n2. Resolve any conflicts\n3. Run the tests to make sure everything still works\n4. Force-push: \`git push --force-with-lease\``,
+                  "conflicts",
                 );
                 logger.info({ taskId: task.id }, "Auto-resuming agent to fix merge conflicts");
-              } catch (err) {
-                logger.warn({ err, taskId: task.id }, "Failed to auto-resume for conflicts");
-              }
-            }
-          }
+                break;
 
-          // Handle failing CI checks — resume agent to fix
-          if (
-            checksStatus === "failing" &&
-            task.prChecksStatus !== "failing" && // State just changed to failing
-            prData.state === "open"
-          ) {
-            const [repoConfig] = await db
-              .select()
-              .from(repos)
-              .where(eq(repos.repoUrl, task.repoUrl));
-
-            if (repoConfig?.autoResume) {
-              // Build a summary of which checks failed
-              const failedChecks = (checksData.check_runs ?? [])
-                .filter((r: any) => r.conclusion === "failure")
-                .map((r: any) => r.name)
-                .join(", ");
-
-              try {
-                await taskService.transitionTask(
-                  task.id,
-                  TaskState.NEEDS_ATTENTION,
+              case "resume_ci_failure":
+                await resumeAgent(
                   "ci_failing",
-                  `CI checks failing: ${failedChecks}`,
-                );
-                await taskService.transitionTask(task.id, TaskState.QUEUED, "auto_resume_ci");
-                await taskQueue.add(
-                  "process-task",
-                  {
-                    taskId: task.id,
-                    resumeSessionId: task.sessionId,
-                    resumePrompt: `CI checks are failing on your PR. The following checks failed: ${failedChecks}\n\nPlease investigate the failures, fix the issues, and push the fixes.`,
-                  },
-                  { jobId: `${task.id}-ci-fix-${Date.now()}` },
+                  `CI checks are failing on your PR. The following checks failed: ${failedChecks}\n\nPlease investigate the failures, fix the issues, and push the fixes.`,
+                  "ci-fix",
                 );
                 logger.info(
                   { taskId: task.id, failedChecks },
                   "Auto-resuming agent to fix CI failures",
                 );
-              } catch (err) {
-                logger.warn({ err, taskId: task.id }, "Failed to auto-resume for CI failure");
-              }
-            }
-          }
+                break;
 
-          // Handle state transitions
-          if (prData.merged) {
-            // PR merged → complete the task
-            try {
-              await taskService.transitionTask(
-                task.id,
-                TaskState.COMPLETED,
-                "pr_merged",
-                task.prUrl,
-              );
-              logger.info({ taskId: task.id }, "Task completed via PR merge");
-            } catch {
-              // May already be completed
-            }
-          } else if (prData.state === "closed") {
-            // PR closed without merge → fail
-            try {
-              await taskService.transitionTask(
-                task.id,
-                TaskState.FAILED,
-                "pr_closed",
-                "PR was closed without merging",
-              );
-            } catch {}
-          } else if (reviewStatus === "changes_requested") {
-            // Check if auto-resume is enabled for this repo
-            const [repoConfig] = await db
-              .select()
-              .from(repos)
-              .where(eq(repos.repoUrl, task.repoUrl));
-
-            if (repoConfig?.autoResume) {
-              // Auto-resume with review feedback
-              try {
-                await taskService.transitionTask(
-                  task.id,
-                  TaskState.NEEDS_ATTENTION,
+              case "resume_review":
+                await resumeAgent(
                   "review_changes_requested",
-                  reviewComments,
-                );
-                // Re-queue with resume
-                await taskService.transitionTask(task.id, TaskState.QUEUED, "auto_resume_review");
-                await taskQueue.add(
-                  "process-task",
-                  {
-                    taskId: task.id,
-                    resumeSessionId: task.sessionId,
-                    resumePrompt: `A reviewer requested changes on the PR. Please address the following feedback:\n\n${reviewComments}`,
-                  },
-                  { jobId: `${task.id}-review-${Date.now()}` },
+                  `A reviewer requested changes on the PR. Please address the following feedback:\n\n${reviewComments}`,
+                  "review",
                 );
                 logger.info({ taskId: task.id }, "Auto-resuming agent with review feedback");
-              } catch {}
-            } else {
-              // Just mark as needs attention
-              try {
+                break;
+
+              case "needs_attention":
                 await taskService.transitionTask(
                   task.id,
                   TaskState.NEEDS_ATTENTION,
-                  "review_changes_requested",
-                  reviewComments,
+                  action.detail ?? "unknown",
+                  reviewComments || undefined,
                 );
-              } catch {}
+                break;
+
+              case "none":
+                break;
             }
+          } catch (err) {
+            logger.warn(
+              { err, taskId: task.id, action: action.action },
+              "Failed to execute PR action",
+            );
           }
         } catch (err) {
           logger.warn({ err, taskId: task.id }, "Failed to check PR status");
