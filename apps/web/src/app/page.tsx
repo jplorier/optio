@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "@/lib/api-client";
 import { TaskCard } from "@/components/task-card";
 import Link from "next/link";
@@ -18,9 +18,11 @@ import {
   Container,
   Database,
   ChevronDown,
+  ChevronUp,
   X,
   Plus,
   DollarSign,
+  BarChart3,
 } from "lucide-react";
 import { StateBadge } from "@/components/state-badge";
 
@@ -83,6 +85,11 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [dismissedEvents, setDismissedEvents] = useState<Set<number>>(new Set());
   const [expandedPods, setExpandedPods] = useState<Set<string>>(new Set());
+  const [showMetrics, setShowMetrics] = useState(false);
+  const [metricsHistory, setMetricsHistory] = useState<
+    { time: number; cpuPercent: number; memoryPercent: number; pods: number; agents: number }[]
+  >([]);
+  const MAX_HISTORY = 60; // 10 minutes at 10s intervals
 
   const refresh = () => {
     Promise.all([api.listTasks({ limit: 100 }), api.getClusterOverview().catch(() => null)])
@@ -97,7 +104,29 @@ export default function OverviewPage() {
           failed: tasks.filter((t: any) => t.state === "failed").length,
         });
         setRecentTasks(tasks.slice(0, 5));
-        if (clusterRes) setCluster(clusterRes);
+        if (clusterRes) {
+          setCluster(clusterRes);
+          const node = clusterRes.nodes?.[0];
+          if (node) {
+            const memPercent =
+              node.memoryUsedGi && node.memoryTotalGi
+                ? Math.round((parseFloat(node.memoryUsedGi) / parseFloat(node.memoryTotalGi)) * 100)
+                : 0;
+            setMetricsHistory((prev) => {
+              const next = [
+                ...prev,
+                {
+                  time: Date.now(),
+                  cpuPercent: node.cpuPercent ?? 0,
+                  memoryPercent: memPercent,
+                  pods: clusterRes.summary?.totalPods ?? 0,
+                  agents: clusterRes.summary?.agentPods ?? 0,
+                },
+              ];
+              return next.slice(-MAX_HISTORY);
+            });
+          }
+        }
       })
       .finally(() => setLoading(false));
   };
@@ -176,8 +205,8 @@ export default function OverviewPage() {
       </div>
 
       {/* Cluster health bar */}
-      <div className="p-4 rounded-xl border border-border/50 bg-bg-card">
-        <div className="flex items-center justify-between">
+      <div className="rounded-xl border border-border/50 bg-bg-card overflow-hidden">
+        <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-4 text-xs">
             {nodes[0] && (
               <span className="flex items-center gap-1.5 text-text-muted font-mono border-r border-border pr-4 mr-1">
@@ -245,9 +274,51 @@ export default function OverviewPage() {
                   <span className="text-text-muted">total</span>
                 </span>
               )}
+              <button
+                onClick={() => setShowMetrics(!showMetrics)}
+                className="flex items-center gap-1 ml-2 pl-3 border-l border-border text-text-muted hover:text-text transition-colors"
+              >
+                <BarChart3 className="w-3 h-3" />
+                {showMetrics ? (
+                  <ChevronUp className="w-3 h-3" />
+                ) : (
+                  <ChevronDown className="w-3 h-3" />
+                )}
+              </button>
             </div>
           )}
         </div>
+
+        {/* Expandable metrics charts */}
+        {showMetrics && metricsHistory.length > 1 && (
+          <div className="border-t border-border/30 px-4 py-4">
+            <div className="grid grid-cols-3 gap-6">
+              <MiniChart
+                label="CPU"
+                data={metricsHistory.map((m) => m.cpuPercent)}
+                suffix="%"
+                color="var(--color-primary)"
+                max={100}
+              />
+              <MiniChart
+                label="Memory"
+                data={metricsHistory.map((m) => m.memoryPercent)}
+                suffix="%"
+                color="var(--color-info)"
+                max={100}
+              />
+              <MiniChart
+                label="Pods"
+                data={metricsHistory.map((m) => m.pods)}
+                suffix=""
+                color="var(--color-success)"
+              />
+            </div>
+            <div className="text-[10px] text-text-muted/40 mt-2 text-right">
+              {metricsHistory.length} samples · refreshing every 10s
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Two-column: Recent tasks + Pods */}
@@ -469,6 +540,65 @@ function StatCard({
       <div className="mt-1.5">
         <span className="text-3xl font-semibold tabular-nums">{value}</span>
       </div>
+    </div>
+  );
+}
+
+function MiniChart({
+  label,
+  data,
+  suffix,
+  color,
+  max: fixedMax,
+}: {
+  label: string;
+  data: number[];
+  suffix: string;
+  color: string;
+  max?: number;
+}) {
+  if (data.length < 2) return null;
+  const current = data[data.length - 1];
+  const max = fixedMax ?? Math.max(...data, 1);
+  const min = fixedMax != null ? 0 : Math.min(...data);
+  const range = max - min || 1;
+
+  const w = 240;
+  const h = 48;
+  const points = data.map((v, i) => ({
+    x: (i / (data.length - 1)) * w,
+    y: h - ((v - min) / range) * h,
+  }));
+
+  const linePath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
+  const areaPath = `${linePath} L ${w} ${h} L 0 ${h} Z`;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11px] font-medium text-text-muted">{label}</span>
+        <span className="text-[11px] font-medium tabular-nums">
+          {current}
+          {suffix}
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-12" preserveAspectRatio="none">
+        <defs>
+          <linearGradient id={`grad-${label}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <path d={areaPath} fill={`url(#grad-${label})`} />
+        <path d={linePath} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" />
+        {/* Current value dot */}
+        <circle
+          cx={points[points.length - 1].x}
+          cy={points[points.length - 1].y}
+          r="2.5"
+          fill={color}
+        />
+      </svg>
     </div>
   );
 }
