@@ -109,6 +109,7 @@ function IssuesBrowser() {
   const [loading, setLoading] = useState(true);
   const [selectedRepo, setSelectedRepo] = useState("");
   const [assigning, setAssigning] = useState<number | null>(null);
+  const [bulkAssigning, setBulkAssigning] = useState(false);
 
   useEffect(() => {
     api
@@ -126,19 +127,62 @@ function IssuesBrowser() {
       .finally(() => setLoading(false));
   }, [selectedRepo]);
 
+  const unassignedIssues = issues.filter((i: any) => !i.optioTask);
+
+  const handleAssignAll = async () => {
+    if (!confirm(`Assign ${unassignedIssues.length} issues to Optio?`)) return;
+    setBulkAssigning(true);
+    let assigned = 0;
+    for (const issue of unassignedIssues) {
+      try {
+        const res = await api.assignIssue({
+          issueNumber: issue.number,
+          repoId: issue.repo.id,
+          title: issue.title,
+          body: issue.body,
+        });
+        setIssues((prev) =>
+          prev.map((i) =>
+            i.number === issue.number && i.repo.fullName === issue.repo.fullName
+              ? {
+                  ...i,
+                  optioTask: { taskId: res.task?.id, state: "queued" },
+                  labels: [...(i.labels || []), "optio"],
+                }
+              : i,
+          ),
+        );
+        assigned++;
+      } catch {
+        // Continue with remaining issues
+      }
+    }
+    toast.success(`Assigned ${assigned} of ${unassignedIssues.length} issues`);
+    setBulkAssigning(false);
+  };
+
   const handleAssign = async (issue: any) => {
     setAssigning(issue.number);
     try {
-      await api.assignIssue({
+      const res = await api.assignIssue({
         issueNumber: issue.number,
         repoId: issue.repo.id,
         title: issue.title,
         body: issue.body,
       });
       toast.success(`Assigned #${issue.number} to Optio`);
-      // Refresh
-      const res = await api.listIssues({ repoId: selectedRepo || undefined });
-      setIssues(res.issues);
+      // Update in place — don't re-fetch (avoids list reorder)
+      setIssues((prev) =>
+        prev.map((i) =>
+          i.number === issue.number && i.repo.fullName === issue.repo.fullName
+            ? {
+                ...i,
+                optioTask: { taskId: res.task?.id, state: "queued" },
+                labels: [...(i.labels || []), "optio"],
+              }
+            : i,
+        ),
+      );
     } catch {
       toast.error("Failed to assign issue");
     }
@@ -162,6 +206,24 @@ function IssuesBrowser() {
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* Bulk assign */}
+      {!loading && unassignedIssues.length > 0 && (
+        <div className="mb-4">
+          <button
+            onClick={handleAssignAll}
+            disabled={bulkAssigning}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary-hover disabled:opacity-50 transition-colors"
+          >
+            {bulkAssigning ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Zap className="w-3 h-3" />
+            )}
+            {bulkAssigning ? "Assigning..." : `Assign All (${unassignedIssues.length})`}
+          </button>
         </div>
       )}
 
