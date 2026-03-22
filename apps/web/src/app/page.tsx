@@ -290,33 +290,41 @@ export default function OverviewPage() {
         </div>
 
         {/* Expandable metrics charts */}
-        {showMetrics && metricsHistory.length > 1 && (
+        {showMetrics && (
           <div className="border-t border-border/30 px-4 py-4">
-            <div className="grid grid-cols-3 gap-6">
-              <MiniChart
-                label="CPU"
-                data={metricsHistory.map((m) => m.cpuPercent)}
-                suffix="%"
-                color="var(--color-primary)"
-                max={100}
-              />
-              <MiniChart
-                label="Memory"
-                data={metricsHistory.map((m) => m.memoryPercent)}
-                suffix="%"
-                color="var(--color-info)"
-                max={100}
-              />
-              <MiniChart
-                label="Pods"
-                data={metricsHistory.map((m) => m.pods)}
-                suffix=""
-                color="var(--color-success)"
-              />
-            </div>
-            <div className="text-[10px] text-text-muted/40 mt-2 text-right">
-              {metricsHistory.length} samples · refreshing every 10s
-            </div>
+            {metricsHistory.length > 1 ? (
+              <>
+                <div className="grid grid-cols-3 gap-6">
+                  <MiniChart
+                    label="CPU"
+                    data={metricsHistory.map((m) => m.cpuPercent)}
+                    suffix="%"
+                    color="var(--color-primary)"
+                    max={100}
+                  />
+                  <MiniChart
+                    label="Memory"
+                    data={metricsHistory.map((m) => m.memoryPercent)}
+                    suffix="%"
+                    color="var(--color-info)"
+                    max={100}
+                  />
+                  <MiniChart
+                    label="Pods"
+                    data={metricsHistory.map((m) => m.pods)}
+                    suffix=""
+                    color="var(--color-success)"
+                  />
+                </div>
+                <div className="text-[10px] text-text-muted/40 mt-2 text-right">
+                  {metricsHistory.length} samples · refreshing every 10s
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-text-muted/50 text-center py-3">
+                Collecting metrics data... graphs will appear in a few seconds.
+              </div>
+            )}
           </div>
         )}
       </div>
