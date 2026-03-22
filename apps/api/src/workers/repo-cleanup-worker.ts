@@ -198,6 +198,42 @@ export function startRepoCleanupWorker() {
         }
       }
 
+      // Detect stale running/provisioning tasks (agent exec died without updating state)
+      const STALE_TASK_MS = parseInt(process.env.OPTIO_STALE_TASK_MS ?? "600000", 10); // 10 min
+      const staleTasks = await db
+        .select()
+        .from(tasks)
+        .where(
+          sql`${tasks.state} IN ('running', 'provisioning')
+              AND ${tasks.updatedAt} < NOW() - INTERVAL '1 millisecond' * ${STALE_TASK_MS}`,
+        );
+
+      for (const task of staleTasks) {
+        try {
+          await taskService.transitionTask(
+            task.id,
+            TaskState.FAILED,
+            "stale_detected",
+            "Task stalled — no activity detected. The agent process may have died.",
+          );
+          await taskService.transitionTask(
+            task.id,
+            TaskState.QUEUED,
+            "auto_retry_stale",
+            "Re-queued after stale detection",
+          );
+          const { taskQueue } = await import("./task-worker.js");
+          await taskQueue.add(
+            "process-task",
+            { taskId: task.id },
+            { jobId: `${task.id}-stale-${Date.now()}`, priority: task.priority ?? 100 },
+          );
+          logger.info({ taskId: task.id, staleSince: task.updatedAt }, "Re-queued stale task");
+        } catch (err) {
+          logger.warn({ err, taskId: task.id }, "Failed to re-queue stale task");
+        }
+      }
+
       // Clean up idle pods (existing behavior)
       const cleaned = await cleanupIdleRepoPods();
       if (cleaned > 0) {
