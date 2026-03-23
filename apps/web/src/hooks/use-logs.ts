@@ -20,9 +20,11 @@ export function useLogs(taskId: string) {
 
   // Load historical logs, then connect WebSocket for live streaming
   useEffect(() => {
-    // Buffer live events that arrive before historical logs load
+    // Buffer live events until historical logs are merged into state.
+    // `merged` flips to true only AFTER setLogs is called with historical data,
+    // closing the race where live events bypass dedup.
     const pendingLive: LogEntry[] = [];
-    let historicalLoaded = false;
+    let merged = false;
 
     const client = createLogClient(taskId);
     clientRef.current = client;
@@ -35,10 +37,22 @@ export function useLogs(taskId: string) {
         logType: event.logType,
         metadata: event.metadata,
       };
-      if (!historicalLoaded) {
+      if (!merged) {
         pendingLive.push(entry);
       } else {
-        setLogs((prev) => [...prev, entry]);
+        setLogs((prev) => {
+          // Dedup: skip if the last entry has identical content and type
+          const last = prev[prev.length - 1];
+          if (
+            last &&
+            last.content === entry.content &&
+            last.logType === entry.logType &&
+            last.timestamp === entry.timestamp
+          ) {
+            return prev;
+          }
+          return [...prev, entry];
+        });
       }
     });
 
@@ -56,21 +70,18 @@ export function useLogs(taskId: string) {
           metadata: l.metadata ?? undefined,
         }));
         historicalCountRef.current = historical.length;
-        historicalLoaded = true;
 
         // Deduplicate: drop any live events already in the historical set
-        const historicalTimestamps = new Set(
-          historical.map((l: LogEntry) => l.timestamp + l.content),
-        );
-        const uniqueLive = pendingLive.filter(
-          (l) => !historicalTimestamps.has(l.timestamp + l.content),
-        );
+        const historicalKeys = new Set(historical.map((l: LogEntry) => l.timestamp + l.content));
+        const uniqueLive = pendingLive.filter((l) => !historicalKeys.has(l.timestamp + l.content));
 
         setLogs([...historical, ...uniqueLive]);
+        // Only NOW let live events flow directly — historical merge is done
+        merged = true;
       })
       .catch(() => {
-        historicalLoaded = true;
         setLogs(pendingLive);
+        merged = true;
       });
 
     return () => {
