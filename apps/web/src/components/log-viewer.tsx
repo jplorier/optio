@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { Fragment, useEffect, useRef, useState, useCallback } from "react";
 import { useLogs, type LogEntry } from "@/hooks/use-logs";
 import { cn } from "@/lib/utils";
 import {
@@ -27,6 +27,43 @@ const TOOL_ICONS: Record<string, any> = {
   Glob: Search,
 };
 
+function formatTime(ts: string): string {
+  try {
+    return new Date(ts).toLocaleTimeString("en-US", {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+  } catch {
+    return "";
+  }
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return "<1s";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rs = s % 60;
+  if (m < 60) return rs > 0 ? `${m}m ${rs}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  const rm = m % 60;
+  return rm > 0 ? `${h}h ${rm}m` : `${h}h`;
+}
+
+function TimeGap({ ms }: { ms: number }) {
+  return (
+    <div className="flex items-center gap-2 py-1 my-0.5">
+      <div className="flex-1 border-t border-dashed border-text-muted/15" />
+      <span className="text-[10px] text-text-muted/30 font-sans tabular-nums px-1">
+        {formatDuration(ms)}
+      </span>
+      <div className="flex-1 border-t border-dashed border-text-muted/15" />
+    </div>
+  );
+}
+
 export function LogViewer({ taskId }: { taskId: string }) {
   const { logs, connected, clear } = useLogs(taskId);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -34,6 +71,12 @@ export function LogViewer({ taskId }: { taskId: string }) {
   const [showThinking, setShowThinking] = useState(false);
   const [showResults, setShowResults] = useState(true);
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (autoScroll && containerRef.current) {
@@ -104,6 +147,28 @@ export function LogViewer({ taskId }: { taskId: string }) {
           <span className="font-medium">{connected ? "Live" : "Ended"}</span>
           <span className="text-text-muted/30">&middot;</span>
           <span className="tabular-nums">{logs.length} events</span>
+          {logs.length > 1 && (
+            <>
+              <span className="text-text-muted/30">&middot;</span>
+              <span className="tabular-nums">
+                {formatDuration(
+                  new Date(logs[logs.length - 1].timestamp).getTime() -
+                    new Date(logs[0].timestamp).getTime(),
+                )}{" "}
+                elapsed
+              </span>
+            </>
+          )}
+          {logs.length > 0 &&
+            now - new Date(logs[logs.length - 1].timestamp).getTime() > 30_000 && (
+              <>
+                <span className="text-text-muted/30">&middot;</span>
+                <span className="tabular-nums">
+                  last {formatDuration(now - new Date(logs[logs.length - 1].timestamp).getTime())}{" "}
+                  ago
+                </span>
+              </>
+            )}
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -150,19 +215,41 @@ export function LogViewer({ taskId }: { taskId: string }) {
             Waiting for output...
           </div>
         ) : (
-          groups.map((group) => {
-            if (group.type === "tool_call") {
-              return (
-                <ToolCallGroup
-                  key={group.index}
-                  group={group}
-                  isCollapsed={collapsed.has(group.index)}
-                  onToggle={() => toggleCollapse(group.index)}
-                  showResults={showResults}
-                />
-              );
-            }
-            return <LogLine key={group.index} log={group.entry} />;
+          groups.map((group, gi) => {
+            const ts = group.type === "tool_call" ? group.use.timestamp : group.entry.timestamp;
+            const prevGroup = gi > 0 ? groups[gi - 1] : null;
+            const prevEnd = prevGroup
+              ? prevGroup.type === "tool_call"
+                ? (prevGroup.result?.timestamp ?? prevGroup.use.timestamp)
+                : prevGroup.entry.timestamp
+              : null;
+            const gapMs = prevEnd ? new Date(ts).getTime() - new Date(prevEnd).getTime() : 0;
+
+            return (
+              <Fragment key={group.index}>
+                {gapMs > 10000 && <TimeGap ms={gapMs} />}
+                <div className="flex gap-2.5">
+                  <span
+                    className="text-[10px] leading-6 text-text-muted/25 tabular-nums shrink-0 select-none w-[54px] text-right"
+                    title={new Date(ts).toLocaleString()}
+                  >
+                    {formatTime(ts)}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    {group.type === "tool_call" ? (
+                      <ToolCallGroup
+                        group={group}
+                        isCollapsed={collapsed.has(group.index)}
+                        onToggle={() => toggleCollapse(group.index)}
+                        showResults={showResults}
+                      />
+                    ) : (
+                      <LogLine log={group.entry} />
+                    )}
+                  </div>
+                </div>
+              </Fragment>
+            );
           })
         )}
       </div>
@@ -257,9 +344,15 @@ function LogLine({
   }
 
   if (type === "tool_result") {
+    // Tool results may contain literal \n escapes and trailing JSON metadata
+    // (e.g., structuredPatch from Edit). Clean up for display.
+    let display = log.content;
+    const patchIdx = display.indexOf('","structuredPatch":');
+    if (patchIdx !== -1) display = display.slice(0, patchIdx);
+    display = display.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\"/g, '"');
     return (
-      <div className="py-0.5 pl-5 text-text-muted/50 whitespace-pre-wrap break-all">
-        {log.content}
+      <div className="py-0.5 pl-5 text-text-muted/50 overflow-auto max-h-60">
+        <pre className="whitespace-pre-wrap break-all text-[11px] leading-relaxed">{display}</pre>
       </div>
     );
   }
