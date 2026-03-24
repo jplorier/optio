@@ -15,6 +15,7 @@ import { clusterRoutes } from "./routes/cluster.js";
 import { bulkRoutes } from "./routes/bulk.js";
 import { issueRoutes } from "./routes/issues.js";
 import { subtaskRoutes } from "./routes/subtasks.js";
+import { analyticsRoutes } from "./routes/analytics.js";
 import { logStreamWs } from "./ws/log-stream.js";
 import { eventsWs } from "./ws/events.js";
 
@@ -55,6 +56,7 @@ export async function buildServer() {
   await app.register(bulkRoutes);
   await app.register(issueRoutes);
   await app.register(subtaskRoutes);
+  await app.register(analyticsRoutes);
 
   // WebSocket routes
   await app.register(logStreamWs);

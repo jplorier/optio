@@ -11,6 +11,7 @@ import {
   KeyRound,
   Settings,
   Zap,
+  DollarSign,
 } from "lucide-react";
 
 const MAIN_NAV = [
@@ -18,6 +19,7 @@ const MAIN_NAV = [
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/repos", label: "Repos", icon: FolderGit2 },
   { href: "/cluster", label: "Cluster", icon: Server },
+  { href: "/costs", label: "Costs", icon: DollarSign },
 ];
 
 const SECONDARY_NAV = [

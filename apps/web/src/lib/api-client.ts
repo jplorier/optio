@@ -306,6 +306,37 @@ export const api = {
       failed: number;
     }>(`/api/tasks/${taskId}/subtasks/status`),
 
+  // Analytics
+  getCostAnalytics: (params?: { days?: number; repoUrl?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.days) qs.set("days", String(params.days));
+    if (params?.repoUrl) qs.set("repoUrl", params.repoUrl);
+    const query = qs.toString();
+    return request<{
+      summary: {
+        totalCost: string;
+        taskCount: number;
+        tasksWithCost: number;
+        avgCost: string;
+        costTrend: string;
+        prevPeriodCost: string;
+        days: number;
+      };
+      dailyCosts: Array<{ date: string; cost: number; taskCount: number }>;
+      costByRepo: Array<{ repoUrl: string; totalCost: number; taskCount: number }>;
+      costByType: Array<{ taskType: string; totalCost: number; taskCount: number }>;
+      topTasks: Array<{
+        id: string;
+        title: string;
+        repoUrl: string;
+        taskType: string;
+        state: string;
+        costUsd: string;
+        createdAt: string;
+      }>;
+    }>(`/api/analytics/costs${query ? `?${query}` : ""}`);
+  },
+
   assignIssue: (data: {
     issueNumber: number;
     repoId: string;
