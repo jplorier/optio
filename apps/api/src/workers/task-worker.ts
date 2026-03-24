@@ -10,6 +10,7 @@ import {
 } from "@optio/shared";
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
+import { parseCodexEvent } from "../services/codex-event-parser.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
 import { eq, sql } from "drizzle-orm";
@@ -306,8 +307,11 @@ export function startTaskWorker() {
           for (const line of text.split("\n")) {
             if (!line.trim()) continue;
 
-            // Parse as Claude stream-json event (may produce multiple entries)
-            const parsed = parseClaudeEvent(line, taskId);
+            // Parse as structured agent event (format depends on agent type)
+            const parsed =
+              task.agentType === "codex"
+                ? parseCodexEvent(line, taskId)
+                : parseClaudeEvent(line, taskId);
             if (parsed.sessionId && !sessionId) {
               sessionId = parsed.sessionId;
               await taskService.updateTaskSession(taskId, sessionId);
@@ -362,13 +366,8 @@ export function startTaskWorker() {
           return;
         }
 
-        // Detect exit code from logs: check for is_error in result event, or fatal errors
-        const hasResultError = allLogs.includes('"is_error":true');
-        const hasFatalError =
-          allLogs.includes("fatal:") ||
-          allLogs.includes("Error: authentication_failed") ||
-          allLogs.includes("exit 1");
-        const inferredExitCode = hasResultError || hasFatalError ? 1 : 0;
+        // Detect exit code from logs (agent-type-specific patterns)
+        const inferredExitCode = inferExitCode(task.agentType, allLogs);
         const result = adapter.parseResult(inferredExitCode, allLogs);
         await taskService.updateTaskResult(taskId, result.summary, result.error);
 
@@ -608,5 +607,29 @@ function buildAgentCommand(
       ];
     default:
       return [`echo "Unknown agent type: ${agentType}" && exit 1`];
+  }
+}
+
+/** Infer exit code from agent logs based on agent-specific error patterns */
+function inferExitCode(agentType: string, logs: string): number {
+  switch (agentType) {
+    case "codex": {
+      // Codex: look for error events in JSON output or OpenAI-specific failures
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasAuthError =
+        /OPENAI_API_KEY|invalid.*api.?key|unauthorized|authentication.*failed/i.test(logs);
+      const hasQuotaError = /quota|insufficient_quota|billing/i.test(logs);
+      return hasErrorEvent || hasAuthError || hasQuotaError ? 1 : 0;
+    }
+    case "claude-code":
+    default: {
+      // Claude: check for is_error in result event, or fatal errors
+      const hasResultError = logs.includes('"is_error":true');
+      const hasFatalError =
+        logs.includes("fatal:") ||
+        logs.includes("Error: authentication_failed") ||
+        logs.includes("exit 1");
+      return hasResultError || hasFatalError ? 1 : 0;
+    }
   }
 }

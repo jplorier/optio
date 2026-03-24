@@ -66,6 +66,31 @@ describe("classifyError", () => {
     expect(result.retryable).toBe(true);
   });
 
+  it("classifies missing OPENAI_API_KEY", () => {
+    const result = classifyError("Secret not found: OPENAI_API_KEY");
+    expect(result.category).toBe("auth");
+    expect(result.title).toContain("OPENAI_API_KEY");
+  });
+
+  it("classifies OpenAI API key error directly", () => {
+    const result = classifyError("Error: OPENAI_API_KEY is not set or invalid");
+    expect(result.category).toBe("auth");
+    expect(result.title).toBe("OpenAI API key missing");
+  });
+
+  it("classifies OpenAI quota exceeded", () => {
+    const result = classifyError("Error: insufficient_quota - You exceeded your current quota");
+    expect(result.category).toBe("auth");
+    expect(result.title).toBe("OpenAI quota exceeded");
+    expect(result.retryable).toBe(false);
+  });
+
+  it("classifies OpenAI billing limit", () => {
+    const result = classifyError("billing hard limit reached");
+    expect(result.category).toBe("auth");
+    expect(result.title).toBe("OpenAI quota exceeded");
+  });
+
   it("handles null/undefined input", () => {
     expect(classifyError(null).category).toBe("unknown");
     expect(classifyError(undefined).category).toBe("unknown");

@@ -67,6 +67,29 @@ const ERROR_PATTERNS: Array<{
     }),
   },
   {
+    pattern: /OPENAI_API_KEY/i,
+    classify: () => ({
+      category: "auth",
+      title: "OpenAI API key missing",
+      description:
+        "No OpenAI API key is configured and the Codex agent cannot authenticate with the OpenAI API.",
+      remedy: "Go to Secrets and add OPENAI_API_KEY with a valid OpenAI API key.",
+      retryable: true,
+    }),
+  },
+  {
+    pattern: /insufficient_quota|billing.*hard.*limit|exceeded.*current.*quota/i,
+    classify: () => ({
+      category: "auth",
+      title: "OpenAI quota exceeded",
+      description:
+        "The OpenAI API key has exceeded its usage quota. The Codex agent cannot make API calls.",
+      remedy:
+        "Check your OpenAI billing dashboard and increase your spending limit, or use a different API key.",
+      retryable: false,
+    }),
+  },
+  {
     pattern: /InvalidTransitionError.*(\w+) -> (\w+)/i,
     classify: (match) => ({
       category: "state",
