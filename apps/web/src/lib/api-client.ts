@@ -51,6 +51,9 @@ export const api = {
 
   retryTask: (id: string) => request<{ task: any }>(`/api/tasks/${id}/retry`, { method: "POST" }),
 
+  forceRedoTask: (id: string) =>
+    request<{ task: any }>(`/api/tasks/${id}/force-redo`, { method: "POST" }),
+
   resumeTask: (id: string, prompt?: string) =>
     request<{ task: any }>(`/api/tasks/${id}/resume`, {
       method: "POST",
@@ -229,6 +232,24 @@ export const api = {
     request<{
       subscription: { available: boolean; expiresAt?: string; error?: string };
     }>("/api/auth/refresh", { method: "POST" }),
+
+  getUsage: () =>
+    request<{
+      usage: {
+        available: boolean;
+        fiveHour?: { utilization: number | null; resetsAt: string | null };
+        sevenDay?: { utilization: number | null; resetsAt: string | null };
+        sevenDaySonnet?: { utilization: number | null; resetsAt: string | null };
+        sevenDayOpus?: { utilization: number | null; resetsAt: string | null };
+        extraUsage?: {
+          isEnabled: boolean;
+          monthlyLimit: number | null;
+          usedCredits: number | null;
+          utilization: number | null;
+        };
+        error?: string;
+      };
+    }>("/api/auth/usage"),
 
   // Bulk operations
   bulkRetryFailed: () =>

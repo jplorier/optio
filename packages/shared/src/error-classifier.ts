@@ -44,6 +44,18 @@ const ERROR_PATTERNS: Array<{
     }),
   },
   {
+    pattern: /OAuth token has expired|authentication_failed|token.*expired|401.*authentication/i,
+    classify: () => ({
+      category: "auth",
+      title: "Authentication token expired",
+      description:
+        "The Claude Code OAuth token has expired. The agent cannot authenticate with the Anthropic API.",
+      remedy:
+        "Run 'claude auth login' on the host machine to refresh your credentials, then retry the failed tasks.",
+      retryable: true,
+    }),
+  },
+  {
     pattern: /ANTHROPIC_API_KEY/i,
     classify: () => ({
       category: "auth",

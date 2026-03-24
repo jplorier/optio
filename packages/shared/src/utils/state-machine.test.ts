@@ -148,8 +148,8 @@ describe("state-machine", () => {
       expect(state).toBe(TaskState.QUEUED);
     });
 
-    it("rejects direct pr_opened → queued", () => {
-      expect(canTransition(TaskState.PR_OPENED, TaskState.QUEUED)).toBe(false);
+    it("allows pr_opened → queued for force-restart", () => {
+      expect(canTransition(TaskState.PR_OPENED, TaskState.QUEUED)).toBe(true);
     });
 
     it("allows failed → completed when PR merges after agent fix", () => {

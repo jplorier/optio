@@ -7,10 +7,13 @@ export interface TaskSummary {
   agentType: string;
   repoUrl: string;
   prUrl?: string;
+  prChecksStatus?: string;
+  prReviewStatus?: string;
   costUsd?: string;
   errorMessage?: string;
   taskType?: string;
   parentTaskId?: string;
+  ticketExternalId?: string;
   createdAt: string;
   updatedAt: string;
 }

@@ -1,5 +1,9 @@
 import type { FastifyInstance } from "fastify";
-import { getClaudeAuthToken, invalidateCredentialsCache } from "../services/auth-service.js";
+import {
+  getClaudeAuthToken,
+  getClaudeUsage,
+  invalidateCredentialsCache,
+} from "../services/auth-service.js";
 
 export async function authRoutes(app: FastifyInstance) {
   // Get the current Claude auth token (called by agent containers via apiKeyHelper)
@@ -23,6 +27,12 @@ export async function authRoutes(app: FastifyInstance) {
         error: result.error,
       },
     });
+  });
+
+  // Get Claude Max usage (5h / 7d utilization)
+  app.get("/api/auth/usage", async (_req, reply) => {
+    const usage = await getClaudeUsage();
+    reply.send({ usage });
   });
 
   // Force refresh the cached credentials

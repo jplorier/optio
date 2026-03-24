@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { eq, and, lt, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { repoPods } from "../db/schema.js";
@@ -231,6 +232,9 @@ export async function execTaskInRepoPod(
   // Encode env as base64 JSON, decode in the script to handle multi-line values safely
   const envJson = JSON.stringify({ ...env, OPTIO_TASK_ID: taskId });
   const envB64 = Buffer.from(envJson).toString("base64");
+  // Unique token for this run — used to prevent stale cleanup traps from
+  // deleting a retry's worktree (see Bug 3 in the cleanup trap below)
+  const runToken = randomUUID();
 
   const script = [
     "set -e",
@@ -251,7 +255,7 @@ export async function execTaskInRepoPod(
     `[ -f /home/agent/.optio-env-ready ] && ENV_FRESH="false"`,
     `export ENV_FRESH`,
     `if [ "$ENV_FRESH" = "true" ]; then echo "[optio] Fresh environment — tools may need to be installed"; else echo "[optio] Warm environment — tools from previous tasks should be available"; fi`,
-    // Create worktree from the latest main branch
+    // Create worktree — either from the PR branch (force-restart) or fresh from main
     // Use flock to serialize git operations in the shared /workspace/repo directory —
     // concurrent execs doing fetch/checkout/reset will corrupt each other without this.
     `echo "[optio] Acquiring repo lock..."`,
@@ -263,23 +267,40 @@ export async function execTaskInRepoPod(
     `git checkout ${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null || true`,
     `git reset --hard origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
     `git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true`,
-    `git branch -D optio/task-${taskId} 2>/dev/null || true`,
-    // Try creating fresh worktree; if branch already exists (Claude Code may create
-    // extra worktrees like -wt that hold the branch), clean up stale refs and retry
-    `if ! git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null; then`,
-    `  echo "[optio] Cleaning up stale worktree references..."`,
-    `  git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true`,
+    `rm -rf /workspace/tasks/${taskId}`,
+    // Force-restart: reuse the existing PR branch instead of creating fresh from main
+    `if [ "\${OPTIO_RESTART_FROM_BRANCH:-}" = "true" ] && git rev-parse --verify origin/optio/task-${taskId} >/dev/null 2>&1; then`,
+    `  echo "[optio] Force-restart: checking out existing PR branch"`,
+    // Clean up any worktrees holding the branch (Claude Code creates its own in .claude/worktrees/)
     `  for wt_path in $(git worktree list --porcelain | grep -B1 "branch refs/heads/optio/task-${taskId}$" | grep "^worktree " | cut -d" " -f2-); do`,
     `    git worktree remove --force "$wt_path" 2>/dev/null || true`,
     `  done`,
     `  git worktree prune`,
     `  git branch -D optio/task-${taskId} 2>/dev/null || true`,
-    `  git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
+    `  git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/optio/task-${taskId}`,
+    `else`,
+    `  git branch -D optio/task-${taskId} 2>/dev/null || true`,
+    // Try creating fresh worktree; if branch already exists (Claude Code may create
+    // extra worktrees like -wt that hold the branch), clean up stale refs and retry
+    `  if ! git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null; then`,
+    `    echo "[optio] Cleaning up stale worktree references..."`,
+    `    git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true`,
+    `    for wt_path in $(git worktree list --porcelain | grep -B1 "branch refs/heads/optio/task-${taskId}$" | grep "^worktree " | cut -d" " -f2-); do`,
+    `      git worktree remove --force "$wt_path" 2>/dev/null || true`,
+    `    done`,
+    `    git worktree prune`,
+    `    git branch -D optio/task-${taskId} 2>/dev/null || true`,
+    `    git worktree add /workspace/tasks/${taskId} -b optio/task-${taskId} origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
+    `  fi`,
     `fi`,
     // Release the repo lock — worktree is created, safe to run in parallel from here
     `flock -u 9`,
     `exec 9>&-`,
     `cd /workspace/tasks/${taskId}`,
+    // Write a run token so the cleanup trap can verify ownership — if a retry
+    // creates a new worktree before this run's trap fires, the trap will see
+    // a different token and skip cleanup (preventing it from deleting the retry's worktree)
+    `echo "${runToken}" > /workspace/tasks/${taskId}/.optio-run-token`,
     `export OPTIO_TASK_ID="${taskId}"`,
     // Write setup files if provided
     // Paths starting with / are absolute; relative paths are within the worktree
@@ -307,8 +328,10 @@ export async function execTaskInRepoPod(
     `"`,
     `fi`,
     // Set up cleanup trap before running the agent — ensures worktree is removed
-    // even if the agent exits non-zero (set -e would otherwise kill the script)
-    `trap 'cd /workspace/repo; git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true; git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true; git worktree prune 2>/dev/null || true; git branch -D optio/task-${taskId} 2>/dev/null || true' EXIT`,
+    // even if the agent exits non-zero (set -e would otherwise kill the script).
+    // Only clean up if our run token still matches — a retry may have already
+    // replaced the worktree with a new run, and we must not delete it.
+    `trap 'CURRENT_TOKEN=$(cat /workspace/tasks/${taskId}/.optio-run-token 2>/dev/null); if [ "$CURRENT_TOKEN" = "${runToken}" ]; then cd /workspace/repo; git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true; git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true; git worktree prune 2>/dev/null || true; git branch -D optio/task-${taskId} 2>/dev/null || true; fi' EXIT`,
     `set +e`,
     // Run the agent command
     ...agentCommand,

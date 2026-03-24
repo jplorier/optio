@@ -40,6 +40,24 @@ export function useGlobalWebSocket() {
       }
     });
 
+    client.on("auth:failed", (event) => {
+      useStore.getState().addNotification({
+        id: "auth-failed",
+        type: "error",
+        title: "Authentication Failed",
+        message:
+          event.message ||
+          "Claude Code OAuth token has expired. Run 'claude auth login' to re-authenticate.",
+        timestamp: event.timestamp,
+      });
+
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        new Notification("Optio: Authentication Failed", {
+          body: "Claude Code OAuth token expired — tasks will fail until re-authenticated.",
+        });
+      }
+    });
+
     client.on("task:created", (event) => {
       useStore.getState().addTask({
         id: event.taskId,

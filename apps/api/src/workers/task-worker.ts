@@ -15,6 +15,7 @@ import { tasks } from "../db/schema.js";
 import { eq, sql } from "drizzle-orm";
 import * as taskService from "../services/task-service.js";
 import * as repoPool from "../services/repo-pool-service.js";
+import { publishEvent } from "../services/event-bus.js";
 import { resolveSecretsForTask, retrieveSecret } from "../services/secret-service.js";
 import { getPromptTemplate } from "../services/prompt-template-service.js";
 import { logger } from "../logger.js";
@@ -28,17 +29,19 @@ export function startTaskWorker() {
   const worker = new Worker(
     "tasks",
     async (job) => {
-      const { taskId, resumeSessionId, resumePrompt, reviewOverride } = job.data as {
-        taskId: string;
-        resumeSessionId?: string;
-        resumePrompt?: string;
-        reviewOverride?: {
-          renderedPrompt: string;
-          taskFileContent: string;
-          taskFilePath: string;
-          claudeModel?: string;
+      const { taskId, resumeSessionId, resumePrompt, restartFromBranch, reviewOverride } =
+        job.data as {
+          taskId: string;
+          resumeSessionId?: string;
+          resumePrompt?: string;
+          restartFromBranch?: boolean;
+          reviewOverride?: {
+            renderedPrompt: string;
+            taskFileContent: string;
+            taskFilePath: string;
+            claudeModel?: string;
+          };
         };
-      };
       const log = logger.child({ taskId, jobId: job.id });
       let repoPodId: string | null = null;
 
@@ -51,15 +54,22 @@ export function startTaskWorker() {
           return;
         }
 
-        // Check global concurrency limit
-        const [{ count: activeCount }] = await db
+        // ── Pre-check concurrency BEFORE claiming the task ─────────────
+        // When limits are persistently saturated, transitioning to
+        // provisioning just to check and then back to queued creates
+        // 2 state events per cycle (every 10s = hundreds of events).
+        // Pre-checking lets us re-schedule the BullMQ job without
+        // touching task state at all.
+        const globalMax = parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10);
+        const [{ count: preActiveCount }] = await db
           .select({ count: sql<number>`count(*)` })
           .from(tasks)
           .where(sql`${tasks.state} IN ('provisioning', 'running')`);
-        const globalMax = parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10);
-        if (Number(activeCount) >= globalMax) {
-          log.info({ activeCount, globalMax }, "Global concurrency limit reached, re-queuing");
-          // Re-add with a delay so it tries again later
+        if (Number(preActiveCount) >= globalMax) {
+          log.info(
+            { activeCount: preActiveCount, globalMax },
+            "Global concurrency saturated, re-scheduling",
+          );
           await taskQueue.add("process-task", job.data, {
             jobId: `${taskId}-delayed-${Date.now()}`,
             priority: currentTask.priority ?? 100,
@@ -68,20 +78,19 @@ export function startTaskWorker() {
           return;
         }
 
-        // Check per-repo concurrency limit
         const { getRepoByUrl } = await import("../services/repo-service.js");
         const repoConfig = await getRepoByUrl(currentTask.repoUrl);
         if (repoConfig?.maxConcurrentTasks) {
-          const [{ count: repoActiveCount }] = await db
+          const [{ count: preRepoCount }] = await db
             .select({ count: sql<number>`count(*)` })
             .from(tasks)
             .where(
               sql`${tasks.repoUrl} = ${currentTask.repoUrl} AND ${tasks.state} IN ('provisioning', 'running')`,
             );
-          if (Number(repoActiveCount) >= repoConfig.maxConcurrentTasks) {
+          if (Number(preRepoCount) >= repoConfig.maxConcurrentTasks) {
             log.info(
-              { repoActiveCount, max: repoConfig.maxConcurrentTasks },
-              "Repo concurrency limit reached, re-queuing",
+              { repoActiveCount: preRepoCount, max: repoConfig.maxConcurrentTasks },
+              "Repo concurrency saturated, re-scheduling",
             );
             await taskQueue.add("process-task", job.data, {
               jobId: `${taskId}-delayed-${Date.now()}`,
@@ -92,9 +101,61 @@ export function startTaskWorker() {
           }
         }
 
-        // Transition to provisioning
-        await taskService.transitionTask(taskId, TaskState.PROVISIONING, "worker_pickup");
+        // Transition to provisioning FIRST so concurrent workers see us in the count.
+        // Without this, two workers can both query, both see 0 running, and both proceed.
+        // Use tryTransitionTask — if another worker already claimed this task, skip it.
+        const claimed = await taskService.tryTransitionTask(
+          taskId,
+          TaskState.PROVISIONING,
+          "worker_pickup",
+        );
+        if (!claimed) {
+          log.info("Task already claimed by another worker, skipping");
+          return;
+        }
         log.info("Provisioning");
+
+        // Post-transition safety net: handles rare races where multiple
+        // workers pass the pre-check simultaneously
+        const [{ count: activeCount }] = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(tasks)
+          .where(sql`${tasks.state} IN ('provisioning', 'running')`);
+        if (Number(activeCount) > globalMax) {
+          log.info(
+            { activeCount, globalMax },
+            "Global concurrency exceeded after claim, re-queuing",
+          );
+          await taskService.transitionTask(taskId, TaskState.QUEUED, "concurrency_limit");
+          await taskQueue.add("process-task", job.data, {
+            jobId: `${taskId}-delayed-${Date.now()}`,
+            priority: currentTask.priority ?? 100,
+            delay: 10000,
+          });
+          return;
+        }
+
+        if (repoConfig?.maxConcurrentTasks) {
+          const [{ count: repoActiveCount }] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(tasks)
+            .where(
+              sql`${tasks.repoUrl} = ${currentTask.repoUrl} AND ${tasks.state} IN ('provisioning', 'running')`,
+            );
+          if (Number(repoActiveCount) > repoConfig.maxConcurrentTasks) {
+            log.info(
+              { repoActiveCount, max: repoConfig.maxConcurrentTasks },
+              "Repo concurrency exceeded after claim, re-queuing",
+            );
+            await taskService.transitionTask(taskId, TaskState.QUEUED, "concurrency_limit");
+            await taskQueue.add("process-task", job.data, {
+              jobId: `${taskId}-delayed-${Date.now()}`,
+              priority: currentTask.priority ?? 100,
+              delay: 10000,
+            });
+            return;
+          }
+        }
 
         // Get task details
         const task = await taskService.getTask(taskId);
@@ -169,6 +230,11 @@ export function startTaskWorker() {
         );
         const allEnv = { ...agentConfig.env, ...resolvedSecrets };
 
+        // Force-restart: tell the exec script to use the existing PR branch
+        if (restartFromBranch) {
+          allEnv.OPTIO_RESTART_FROM_BRANCH = "true";
+        }
+
         // Inject repo-level setup config into pod env
         if (repoConfig?.extraPackages) {
           allEnv.OPTIO_EXTRA_PACKAGES = repoConfig.extraPackages;
@@ -217,10 +283,25 @@ export function startTaskWorker() {
         // Stream stdout with structured parsing
         let allLogs = "";
         let sessionId: string | undefined;
+        // For force-restart, preserve the existing PR URL so agent output
+        // referencing other repos' PRs doesn't overwrite it
+        let capturedPrUrl: string | undefined = restartFromBranch
+          ? (task.prUrl ?? undefined)
+          : undefined;
+        let lastHeartbeat = Date.now();
+        const HEARTBEAT_INTERVAL_MS = 60_000;
 
         for await (const chunk of execSession.stdout as AsyncIterable<Buffer>) {
           const text = chunk.toString();
           allLogs += text;
+
+          // Periodically bump tasks.updatedAt so the stale detector
+          // knows this task is still actively streaming
+          const now = Date.now();
+          if (now - lastHeartbeat > HEARTBEAT_INTERVAL_MS) {
+            await taskService.touchTaskHeartbeat(taskId);
+            lastHeartbeat = now;
+          }
 
           for (const line of text.split("\n")) {
             if (!line.trim()) continue;
@@ -241,25 +322,28 @@ export function startTaskWorker() {
                 entry.metadata,
               );
 
-              // Check for PR URL — only capture URLs likely from this task's own gh pr create.
-              // Reject URLs embedded in JSON arrays (from gh pr list of other tasks).
-              const prUrlPattern = /https:\/\/github\.com\/[^\s"]+\/pull\/\d+/g;
-              const prMatches = entry.content.match(prUrlPattern);
-              if (prMatches) {
-                const taskBranch = `optio/task-${taskId}`;
-                const content = entry.content.trim();
-                const looksLikeJsonArray = content.startsWith("[") && content.includes('"number"');
-                if (!looksLikeJsonArray) {
-                  // Accept: standalone URL (gh pr create), text mentioning our branch,
-                  // or any non-JSON context (agent narrative text)
-                  const url = prMatches[prMatches.length - 1]; // last URL is usually the created one
-                  await taskService.updateTaskPr(taskId, url);
-                  log.info({ prUrl: url }, "PR URL detected in logs");
-                } else if (entry.content.includes(taskBranch)) {
-                  // JSON output but mentions our branch — safe to capture
-                  const url = prMatches[prMatches.length - 1];
-                  await taskService.updateTaskPr(taskId, url);
-                  log.info({ prUrl: url }, "PR URL detected in logs (own branch in JSON)");
+              // Check for PR URL — only capture the first PR URL from agent output.
+              // Once captured, don't overwrite with later mentions (the agent may
+              // reference other PRs in its output text).
+              if (!capturedPrUrl) {
+                const prUrlPattern = /https:\/\/github\.com\/[^\s"]+\/pull\/\d+/g;
+                const prMatches = entry.content.match(prUrlPattern);
+                if (prMatches) {
+                  const taskBranch = `optio/task-${taskId}`;
+                  const content = entry.content.trim();
+                  const looksLikeJsonArray =
+                    content.startsWith("[") && content.includes('"number"');
+                  if (!looksLikeJsonArray) {
+                    const url = prMatches[prMatches.length - 1];
+                    capturedPrUrl = url;
+                    await taskService.updateTaskPr(taskId, url);
+                    log.info({ prUrl: url }, "PR URL detected in logs");
+                  } else if (entry.content.includes(taskBranch)) {
+                    const url = prMatches[prMatches.length - 1];
+                    capturedPrUrl = url;
+                    await taskService.updateTaskPr(taskId, url);
+                    log.info({ prUrl: url }, "PR URL detected in logs (own branch in JSON)");
+                  }
                 }
               }
             }
@@ -267,6 +351,17 @@ export function startTaskWorker() {
         }
 
         // Exec finished — determine result
+        // Before processing results, verify this worker still owns the task.
+        // A force-redo may have reset the task while we were streaming.
+        const taskAfterExec = await taskService.getTask(taskId);
+        if (!taskAfterExec || taskAfterExec.state !== TaskState.RUNNING) {
+          log.info(
+            { currentState: taskAfterExec?.state },
+            "Task state changed during execution — skipping final transition (likely force-redo)",
+          );
+          return;
+        }
+
         // Detect exit code from logs: check for is_error in result event, or fatal errors
         const hasResultError = allLogs.includes('"is_error":true');
         const hasFatalError =
@@ -285,10 +380,20 @@ export function startTaskWorker() {
         }
 
         // Check if a PR URL was detected during streaming (may not be in final result)
-        const taskAfterExec = await taskService.getTask(taskId);
         const detectedPrUrl = result.prUrl || taskAfterExec?.prUrl;
 
-        if (detectedPrUrl && !isReviewTask) {
+        if (!sessionId && !isReviewTask) {
+          // Agent never started — no session ID means no agent output was produced.
+          // Check this FIRST: a stale prUrl from a previous run would otherwise
+          // cause a ghost-completion to be treated as pr_opened.
+          await taskService.transitionTask(
+            taskId,
+            TaskState.FAILED,
+            "agent_no_output",
+            "Agent process exited without producing any output",
+          );
+          log.warn("Agent exited without output — no session ID captured");
+        } else if (detectedPrUrl && !isReviewTask) {
           // PR exists — go to pr_opened regardless of exit code.
           // The PR watcher will track CI status and handle merge/failure from here.
           if (result.prUrl) await taskService.updateTaskPr(taskId, result.prUrl);
@@ -310,6 +415,19 @@ export function startTaskWorker() {
         } else {
           await taskService.transitionTask(taskId, TaskState.FAILED, "agent_failure", result.error);
           log.warn({ error: result.error }, "Task failed");
+
+          // Publish global alert for auth failures so the UI can show a banner
+          if (
+            result.error &&
+            /OAuth token|authentication_failed|token.*expired/i.test(result.error)
+          ) {
+            await publishEvent({
+              type: "auth:failed",
+              message:
+                "Claude Code OAuth token has expired. Re-authenticate with 'claude auth login' and retry failed tasks.",
+              timestamp: new Date().toISOString(),
+            });
+          }
         }
 
         // If this is a subtask, check if parent should advance
@@ -321,10 +439,25 @@ export function startTaskWorker() {
           );
         }
       } catch (err) {
+        // State race errors mean another worker claimed the task — not a real failure
+        if (err instanceof taskService.StateRaceError) {
+          log.info({ err: String(err) }, "Lost state race, skipping");
+          return;
+        }
         log.error({ err }, "Task worker error");
         try {
-          await taskService.updateTaskResult(taskId, undefined, String(err));
-          await taskService.transitionTask(taskId, TaskState.FAILED, "worker_error", String(err));
+          // Only try to fail the task if it's still in a state we own.
+          // A force-redo may have reset the task to queued while we were running.
+          const currentTask = await taskService.getTask(taskId);
+          if (currentTask && ["provisioning", "running"].includes(currentTask.state)) {
+            await taskService.updateTaskResult(taskId, undefined, String(err));
+            await taskService.transitionTask(taskId, TaskState.FAILED, "worker_error", String(err));
+          } else {
+            log.info(
+              { currentState: currentTask?.state },
+              "Task state changed — not marking as failed (likely force-redo)",
+            );
+          }
         } catch {
           // May fail if already terminal
         }

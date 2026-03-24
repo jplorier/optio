@@ -23,6 +23,8 @@ import {
   Plus,
   DollarSign,
   BarChart3,
+  Gauge,
+  Clock,
 } from "lucide-react";
 import { StateBadge } from "@/components/state-badge";
 
@@ -85,6 +87,13 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
   const [dismissedEvents, setDismissedEvents] = useState<Set<number>>(new Set());
   const [expandedPods, setExpandedPods] = useState<Set<string>>(new Set());
+  const [usage, setUsage] = useState<{
+    available: boolean;
+    fiveHour?: { utilization: number | null; resetsAt: string | null };
+    sevenDay?: { utilization: number | null; resetsAt: string | null };
+    sevenDaySonnet?: { utilization: number | null; resetsAt: string | null };
+    sevenDayOpus?: { utilization: number | null; resetsAt: string | null };
+  } | null>(null);
   const [showMetrics, setShowMetrics] = useState(false);
   const [metricsHistory, setMetricsHistory] = useState<
     { time: number; cpuPercent: number; memoryPercent: number; pods: number; agents: number }[]
@@ -131,10 +140,23 @@ export default function OverviewPage() {
       .finally(() => setLoading(false));
   };
 
+  const refreshUsage = () => {
+    api
+      .getUsage()
+      .then((res) => setUsage(res.usage))
+      .catch(() => {});
+  };
+
   useEffect(() => {
     refresh();
+    refreshUsage();
     const interval = setInterval(refresh, 10000);
-    return () => clearInterval(interval);
+    // Usage endpoint is rate-limited — poll every 5 minutes
+    const usageInterval = setInterval(refreshUsage, 5 * 60 * 1000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(usageInterval);
+    };
   }, []);
 
   if (loading) {
@@ -198,11 +220,51 @@ export default function OverviewPage() {
         />
         <StatCard
           icon={CheckCircle}
-          label="Completed"
+          label="Done"
           value={taskStats?.completed ?? 0}
           color="text-success"
         />
       </div>
+
+      {/* Claude Max usage */}
+      {usage?.available && (
+        <div className="rounded-xl border border-border/50 bg-bg-card p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Gauge className="w-3.5 h-3.5 text-text-muted" />
+            <span className="text-xs font-medium text-text-heading">Claude Max Usage</span>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {usage.fiveHour && usage.fiveHour.utilization != null && (
+              <UsageMeter
+                label="5-hour"
+                utilization={usage.fiveHour.utilization}
+                resetsAt={usage.fiveHour.resetsAt}
+              />
+            )}
+            {usage.sevenDay && usage.sevenDay.utilization != null && (
+              <UsageMeter
+                label="7-day"
+                utilization={usage.sevenDay.utilization}
+                resetsAt={usage.sevenDay.resetsAt}
+              />
+            )}
+            {usage.sevenDaySonnet && usage.sevenDaySonnet.utilization != null && (
+              <UsageMeter
+                label="7d Sonnet"
+                utilization={usage.sevenDaySonnet.utilization}
+                resetsAt={usage.sevenDaySonnet.resetsAt}
+              />
+            )}
+            {usage.sevenDayOpus && usage.sevenDayOpus.utilization != null && (
+              <UsageMeter
+                label="7d Opus"
+                utilization={usage.sevenDayOpus.utilization}
+                resetsAt={usage.sevenDayOpus.resetsAt}
+              />
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Cluster health bar */}
       <div className="rounded-xl border border-border/50 bg-bg-card overflow-hidden">
@@ -548,6 +610,53 @@ function StatCard({
       <div className="mt-1.5">
         <span className="text-3xl font-semibold tabular-nums">{value}</span>
       </div>
+    </div>
+  );
+}
+
+function UsageMeter({
+  label,
+  utilization,
+  resetsAt,
+}: {
+  label: string;
+  utilization: number;
+  resetsAt: string | null;
+}) {
+  const pct = Math.min(utilization, 100);
+  const color = pct >= 80 ? "bg-error" : pct >= 50 ? "bg-warning" : "bg-primary";
+  const textColor = pct >= 80 ? "text-error" : pct >= 50 ? "text-warning" : "text-primary";
+
+  let resetLabel: string | null = null;
+  if (resetsAt) {
+    const diff = new Date(resetsAt).getTime() - Date.now();
+    if (diff > 0) {
+      const h = Math.floor(diff / 3_600_000);
+      const m = Math.floor((diff % 3_600_000) / 60_000);
+      resetLabel = h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-[11px] font-medium text-text-muted">{label}</span>
+        <span className={cn("text-[11px] font-medium tabular-nums", textColor)}>
+          {pct.toFixed(0)}%
+        </span>
+      </div>
+      <div className="h-1.5 rounded-full bg-border/50 overflow-hidden">
+        <div
+          className={cn("h-full rounded-full transition-all duration-500", color)}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+      {resetLabel && (
+        <div className="flex items-center gap-1 mt-1">
+          <Clock className="w-2.5 h-2.5 text-text-muted/50" />
+          <span className="text-[10px] text-text-muted/50">resets in {resetLabel}</span>
+        </div>
+      )}
     </div>
   );
 }

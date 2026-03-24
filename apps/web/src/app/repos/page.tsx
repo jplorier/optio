@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
 import Link from "next/link";
-import { Loader2, FolderGit2, Lock, Globe, ChevronRight, Settings2 } from "lucide-react";
+import { Loader2, FolderGit2, Lock, Globe, ChevronRight, Settings2, Plus } from "lucide-react";
 
 export default function ReposPage() {
   const [repos, setRepos] = useState<any[]>([]);
@@ -21,6 +21,13 @@ export default function ReposPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-semibold tracking-tight">Repositories</h1>
+        <Link
+          href="/repos/new"
+          className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover transition-colors"
+        >
+          <Plus className="w-4 h-4" />
+          Add Repository
+        </Link>
       </div>
 
       {loading ? (
@@ -32,11 +39,10 @@ export default function ReposPage() {
           <FolderGit2 className="w-8 h-8 mx-auto mb-2 opacity-50" />
           <p>No repositories configured</p>
           <p className="text-xs mt-1">
-            Add repos during{" "}
-            <Link href="/setup" className="text-primary hover:underline">
-              setup
+            <Link href="/repos/new" className="text-primary hover:underline">
+              Add a repository
             </Link>{" "}
-            or when creating a task.
+            to get started.
           </p>
         </div>
       ) : (

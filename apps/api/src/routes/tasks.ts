@@ -81,6 +81,30 @@ export async function taskRoutes(app: FastifyInstance) {
     reply.send({ task });
   });
 
+  // Force redo task — reset everything and re-queue from any state
+  app.post("/api/tasks/:id/force-redo", async (req, reply) => {
+    const { id } = req.params as { id: string };
+
+    // Remove any existing BullMQ jobs for this task (waiting/delayed) to prevent duplicates
+    const existingJobs = await taskQueue.getJobs(["waiting", "delayed", "prioritized"]);
+    for (const job of existingJobs) {
+      if (job.data?.taskId === id) {
+        await job.remove().catch(() => {});
+      }
+    }
+
+    const task = await taskService.forceRedoTask(id);
+    await taskQueue.add(
+      "process-task",
+      { taskId: id },
+      {
+        jobId: `${id}-redo-${Date.now()}`,
+        attempts: 1,
+      },
+    );
+    reply.send({ task });
+  });
+
   // Get task logs
   app.get("/api/tasks/:id/logs", async (req, reply) => {
     const { id } = req.params as { id: string };

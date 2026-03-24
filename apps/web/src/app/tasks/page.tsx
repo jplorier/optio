@@ -299,10 +299,10 @@ function IssuesBrowser() {
                     >
                       <Check className="w-3 h-3" />
                       {issue.optioTask.state === "completed"
-                        ? "Completed"
+                        ? "Done"
                         : issue.optioTask.state === "pr_opened"
-                          ? "PR Open"
-                          : "In Progress"}
+                          ? "PR"
+                          : "Running"}
                     </Link>
                   ) : (
                     <button

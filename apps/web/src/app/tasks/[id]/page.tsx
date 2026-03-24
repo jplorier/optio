@@ -4,7 +4,7 @@ import Link from "next/link";
 import { use, useState, useEffect } from "react";
 import { useTask } from "@/hooks/use-task";
 import { LogViewer } from "@/components/log-viewer";
-import { EventTimeline } from "@/components/event-timeline";
+import { PipelineTimeline } from "@/components/pipeline-timeline";
 import { StateBadge } from "@/components/state-badge";
 import { api } from "@/lib/api-client";
 import { classifyError } from "@optio/shared";
@@ -72,6 +72,22 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       await api.retryTask(id);
       await refresh();
     } catch {}
+    setActionLoading(false);
+  };
+
+  const handleForceRedo = async () => {
+    if (
+      !confirm("This will clear all logs and results and re-run the task from scratch. Continue?")
+    )
+      return;
+    setActionLoading(true);
+    try {
+      await api.forceRedoTask(id);
+      toast.success("Task reset and re-queued");
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to force redo");
+    }
     setActionLoading(false);
   };
 
@@ -192,6 +208,14 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 Retry
               </button>
             )}
+            <button
+              onClick={handleForceRedo}
+              disabled={actionLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-warning/10 text-warning text-xs hover:bg-warning/20 transition-colors disabled:opacity-50"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Force Redo
+            </button>
             <button
               onClick={refresh}
               className="p-1.5 rounded-md hover:bg-bg-hover text-text-muted transition-colors"
@@ -465,7 +489,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       {/* Main content: logs + sidebar */}
       <div className="flex-1 flex overflow-hidden">
         {/* Log panel */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 min-w-0 flex flex-col">
           {/* Log viewer + events toggle */}
           <div className="shrink-0 flex items-center justify-end px-4 py-1 border-b border-border bg-bg">
             <button
@@ -536,8 +560,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         {/* Timeline sidebar */}
         {showTimeline && (
           <div className="w-72 shrink-0 border-l border-border overflow-auto p-3 bg-bg-card">
-            <h3 className="text-xs font-medium text-text-muted mb-3">Timeline</h3>
-            <EventTimeline events={events} />
+            <h3 className="text-xs font-medium text-text-muted mb-3">Pipeline</h3>
+            <PipelineTimeline task={task} events={events} subtasks={subtasks} />
           </div>
         )}
       </div>

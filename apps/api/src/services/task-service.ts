@@ -1,9 +1,26 @@
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks, taskEvents, taskLogs } from "../db/schema.js";
 import { TaskState, transition, type CreateTaskInput } from "@optio/shared";
 import { publishEvent } from "./event-bus.js";
 import { logger } from "../logger.js";
+
+/**
+ * Thrown when a state transition fails because another worker changed the
+ * state between our read and write (atomic conditional update returned 0 rows).
+ */
+export class StateRaceError extends Error {
+  constructor(
+    public readonly attemptedFrom: TaskState,
+    public readonly attemptedTo: TaskState,
+    public readonly actualState: TaskState | undefined,
+  ) {
+    super(
+      `State race: expected ${attemptedFrom} → ${attemptedTo}, but state is now ${actualState ?? "unknown"}`,
+    );
+    this.name = "StateRaceError";
+  }
+}
 
 export async function createTask(input: CreateTaskInput) {
   const [task] = await db
@@ -92,7 +109,18 @@ export async function transitionTask(
     updateFields.containerId = null;
   }
 
-  await db.update(tasks).set(updateFields).where(eq(tasks.id, id));
+  // Atomic conditional update — only succeeds if state hasn't changed since we read it
+  const updated = await db
+    .update(tasks)
+    .set(updateFields)
+    .where(and(eq(tasks.id, id), eq(tasks.state, currentState as any)))
+    .returning();
+
+  if (updated.length === 0) {
+    // Another worker changed the state between our read and write
+    const fresh = await getTask(id);
+    throw new StateRaceError(currentState, toState, fresh?.state as TaskState);
+  }
 
   await db.insert(taskEvents).values({
     taskId: id,
@@ -117,7 +145,7 @@ export async function transitionTask(
     );
   }
 
-  return { ...task, ...updateFields };
+  return updated[0];
 }
 
 async function closeGitHubIssue(repoUrl: string, issueNumber: string, prUrl?: string | null) {
@@ -156,12 +184,47 @@ async function closeGitHubIssue(repoUrl: string, issueNumber: string, prUrl?: st
   logger.info({ owner, repo, issueNumber }, "Closed linked GitHub issue");
 }
 
+/**
+ * Like transitionTask, but returns null instead of throwing when another
+ * worker wins the race. Used by the task worker at the critical
+ * queued → provisioning claim point.
+ */
+export async function tryTransitionTask(
+  id: string,
+  toState: TaskState,
+  trigger: string,
+  message?: string,
+) {
+  try {
+    return await transitionTask(id, toState, trigger, message);
+  } catch (err) {
+    if (err instanceof StateRaceError) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+/**
+ * Bump tasks.updatedAt without a state transition or event.
+ * Called periodically during log streaming so the stale detector
+ * knows the task is still active.
+ */
+export async function touchTaskHeartbeat(id: string) {
+  await db.update(tasks).set({ updatedAt: new Date() }).where(eq(tasks.id, id));
+}
+
 export async function updateTaskContainer(id: string, containerId: string) {
   await db.update(tasks).set({ containerId, updatedAt: new Date() }).where(eq(tasks.id, id));
 }
 
 export async function updateTaskPr(id: string, prUrl: string) {
-  await db.update(tasks).set({ prUrl, updatedAt: new Date() }).where(eq(tasks.id, id));
+  const prNumberMatch = prUrl.match(/\/pull\/(\d+)/);
+  const prNumber = prNumberMatch ? parseInt(prNumberMatch[1], 10) : undefined;
+  await db
+    .update(tasks)
+    .set({ prUrl, ...(prNumber != null && { prNumber }), updatedAt: new Date() })
+    .where(eq(tasks.id, id));
 }
 
 export async function updateTaskSession(id: string, sessionId: string) {
@@ -202,6 +265,56 @@ export async function getTaskLogs(taskId: string, opts?: { limit?: number; offse
   if (opts?.limit) query = query.limit(opts.limit) as typeof query;
   if (opts?.offset) query = query.offset(opts.offset) as typeof query;
   return query;
+}
+
+export async function forceRedoTask(id: string) {
+  const task = await getTask(id);
+  if (!task) throw new Error(`Task not found: ${id}`);
+
+  // Clear all execution data and reset to queued
+  await db
+    .update(tasks)
+    .set({
+      state: TaskState.QUEUED,
+      sessionId: null,
+      containerId: null,
+      prUrl: null,
+      prNumber: null,
+      prState: null,
+      prChecksStatus: null,
+      prReviewStatus: null,
+      prReviewComments: null,
+      resultSummary: null,
+      costUsd: null,
+      errorMessage: null,
+      startedAt: null,
+      completedAt: null,
+      updatedAt: new Date(),
+    })
+    .where(eq(tasks.id, id));
+
+  // Delete all logs
+  await db.delete(taskLogs).where(eq(taskLogs.taskId, id));
+
+  // Record the force-redo event (keep event history for audit)
+  const fromState = task.state as TaskState;
+  await db.insert(taskEvents).values({
+    taskId: id,
+    fromState,
+    toState: TaskState.QUEUED,
+    trigger: "force_redo",
+    message: `Force redo from ${fromState}`,
+  });
+
+  await publishEvent({
+    type: "task:state_changed",
+    taskId: id,
+    fromState,
+    toState: TaskState.QUEUED,
+    timestamp: new Date().toISOString(),
+  });
+
+  return await getTask(id);
 }
 
 export async function getTaskEvents(taskId: string) {

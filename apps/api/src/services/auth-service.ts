@@ -137,3 +137,90 @@ export function invalidateCredentialsCache(): void {
   cachedCredentials = null;
   lastRead = 0;
 }
+
+// --- Claude Max usage tracking ---
+
+export interface UsageBucket {
+  utilization: number | null;
+  resetsAt: string | null;
+}
+
+export interface ExtraUsage {
+  isEnabled: boolean;
+  monthlyLimit: number | null;
+  usedCredits: number | null;
+  utilization: number | null;
+}
+
+export interface ClaudeUsageResult {
+  available: boolean;
+  fiveHour?: UsageBucket;
+  sevenDay?: UsageBucket;
+  sevenDaySonnet?: UsageBucket;
+  sevenDayOpus?: UsageBucket;
+  extraUsage?: ExtraUsage;
+  error?: string;
+}
+
+let cachedUsage: ClaudeUsageResult | null = null;
+let usageCacheTime = 0;
+const USAGE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes — endpoint is aggressively rate-limited
+
+function mapBucket(
+  raw: { utilization: number | null; resets_at: string | null } | null,
+): UsageBucket | undefined {
+  if (!raw) return undefined;
+  return { utilization: raw.utilization, resetsAt: raw.resets_at };
+}
+
+export async function getClaudeUsage(): Promise<ClaudeUsageResult> {
+  const now = Date.now();
+  if (cachedUsage && now - usageCacheTime < USAGE_CACHE_TTL_MS) {
+    return cachedUsage;
+  }
+
+  const auth = getClaudeAuthToken();
+  if (!auth.available || !auth.token) {
+    return { available: false, error: auth.error ?? "No OAuth token available" };
+  }
+
+  try {
+    const res = await fetch("https://api.anthropic.com/api/oauth/usage", {
+      headers: {
+        Authorization: `Bearer ${auth.token}`,
+        "anthropic-beta": "oauth-2025-04-20",
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      logger.warn({ status: res.status, body }, "Failed to fetch Claude usage");
+      return { available: false, error: `Usage API returned ${res.status}` };
+    }
+
+    const data = await res.json();
+    const result: ClaudeUsageResult = {
+      available: true,
+      fiveHour: mapBucket(data.five_hour),
+      sevenDay: mapBucket(data.seven_day),
+      sevenDaySonnet: mapBucket(data.seven_day_sonnet),
+      sevenDayOpus: mapBucket(data.seven_day_opus),
+      extraUsage: data.extra_usage
+        ? {
+            isEnabled: data.extra_usage.is_enabled,
+            monthlyLimit: data.extra_usage.monthly_limit,
+            usedCredits: data.extra_usage.used_credits,
+            utilization: data.extra_usage.utilization,
+          }
+        : undefined,
+    };
+
+    cachedUsage = result;
+    usageCacheTime = now;
+    return result;
+  } catch (err) {
+    logger.warn({ err }, "Error fetching Claude usage");
+    return { available: false, error: "Failed to reach usage API" };
+  }
+}

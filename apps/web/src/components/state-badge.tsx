@@ -4,9 +4,9 @@ const STATE_CONFIG: Record<
   string,
   { label: string; color: string; dotColor: string; pulse?: boolean; emphasis?: boolean }
 > = {
-  pending: { label: "Pending", color: "text-text-muted", dotColor: "bg-text-muted" },
+  pending: { label: "Queued", color: "text-text-muted", dotColor: "bg-text-muted" },
   queued: { label: "Queued", color: "text-info", dotColor: "bg-info" },
-  provisioning: { label: "Provisioning", color: "text-info", dotColor: "bg-info", pulse: true },
+  provisioning: { label: "Setup", color: "text-info", dotColor: "bg-info", pulse: true },
   running: { label: "Running", color: "text-primary", dotColor: "bg-primary", pulse: true },
   needs_attention: {
     label: "Attention",
@@ -14,8 +14,8 @@ const STATE_CONFIG: Record<
     dotColor: "bg-warning",
     emphasis: true,
   },
-  pr_opened: { label: "PR Opened", color: "text-success", dotColor: "bg-success" },
-  completed: { label: "Completed", color: "text-success", dotColor: "bg-success" },
+  pr_opened: { label: "PR", color: "text-success", dotColor: "bg-success" },
+  completed: { label: "Done", color: "text-success", dotColor: "bg-success" },
   failed: { label: "Failed", color: "text-error", dotColor: "bg-error" },
   cancelled: { label: "Cancelled", color: "text-text-muted", dotColor: "bg-text-muted" },
 };
