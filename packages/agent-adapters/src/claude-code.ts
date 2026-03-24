@@ -80,7 +80,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   parseResult(exitCode: number, logs: string): AgentResult {
-    const prMatch = logs.match(/https:\/\/github\.com\/[^\s]+\/pull\/\d+/);
+    const prMatch = logs.match(/https:\/\/github\.com\/[^\s"]+\/pull\/\d+/);
     const costMatch = logs.match(/"total_cost_usd":\s*([\d.]+)/);
 
     // Extract the actual error message from Claude's NDJSON result event

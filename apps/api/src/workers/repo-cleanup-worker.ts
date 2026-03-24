@@ -1,7 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { repoPods, podHealthEvents, tasks } from "../db/schema.js";
+import { repoPods, podHealthEvents, tasks, taskEvents } from "../db/schema.js";
 import { cleanupIdleRepoPods } from "../services/repo-pool-service.js";
 import { getRuntime } from "../services/container-service.js";
 import { TaskState } from "@optio/shared";
@@ -200,6 +200,7 @@ export function startRepoCleanupWorker() {
 
       // Detect stale running/provisioning tasks (agent exec died without updating state)
       const STALE_TASK_MS = parseInt(process.env.OPTIO_STALE_TASK_MS ?? "600000", 10); // 10 min
+      const MAX_STALE_RETRIES = 3;
       const staleTasks = await db
         .select()
         .from(tasks)
@@ -210,6 +211,27 @@ export function startRepoCleanupWorker() {
 
       for (const task of staleTasks) {
         try {
+          // Cap stale retries to prevent infinite cycling
+          const [{ count: staleRetryCount }] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(taskEvents)
+            .where(
+              sql`${taskEvents.taskId} = ${task.id} AND ${taskEvents.trigger} = 'auto_retry_stale'`,
+            );
+          if (Number(staleRetryCount) >= MAX_STALE_RETRIES) {
+            logger.info(
+              { taskId: task.id, staleRetryCount },
+              "Stale retry limit reached — failing permanently",
+            );
+            await taskService.transitionTask(
+              task.id,
+              TaskState.FAILED,
+              "stale_limit_reached",
+              `Task stalled ${MAX_STALE_RETRIES} times — giving up`,
+            );
+            continue;
+          }
+
           await taskService.transitionTask(
             task.id,
             TaskState.FAILED,

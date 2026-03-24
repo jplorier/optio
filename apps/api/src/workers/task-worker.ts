@@ -26,6 +26,26 @@ const connectionOpts = { url: redisUrl, maxRetriesPerRequest: null };
 
 export const taskQueue = new Queue("tasks", { connection: connectionOpts });
 
+/**
+ * Serialized claim lock.
+ * Prevents concurrent BullMQ workers from all passing the concurrency
+ * pre-check simultaneously (seeing 0 running), all claiming their tasks,
+ * and then all failing the post-check — which creates a storm of
+ * provisioning→queued state events that repeats every 10s.
+ *
+ * With the lock, only one worker at a time checks counts + claims,
+ * so the counts are always accurate.
+ */
+let claimLockChain: Promise<void> = Promise.resolve();
+
+function withClaimLock<T>(fn: () => Promise<T>): Promise<T> {
+  let releaseLock!: () => void;
+  const nextLink = new Promise<void>((r) => (releaseLock = r));
+  const prev = claimLockChain;
+  claimLockChain = nextLink;
+  return prev.then(fn).finally(releaseLock);
+}
+
 export function startTaskWorker() {
   const worker = new Worker(
     "tasks",
@@ -55,108 +75,60 @@ export function startTaskWorker() {
           return;
         }
 
-        // ── Pre-check concurrency BEFORE claiming the task ─────────────
-        // When limits are persistently saturated, transitioning to
-        // provisioning just to check and then back to queued creates
-        // 2 state events per cycle (every 10s = hundreds of events).
-        // Pre-checking lets us re-schedule the BullMQ job without
-        // touching task state at all.
-        const globalMax = parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10);
-        const [{ count: preActiveCount }] = await db
-          .select({ count: sql<number>`count(*)` })
-          .from(tasks)
-          .where(sql`${tasks.state} IN ('provisioning', 'running')`);
-        if (Number(preActiveCount) >= globalMax) {
-          log.info(
-            { activeCount: preActiveCount, globalMax },
-            "Global concurrency saturated, re-scheduling",
-          );
+        // ── Serialized concurrency check + claim ─────────────────────
+        // The claim lock ensures only one worker at a time checks
+        // counts and claims a task. Without this, N workers all see
+        // 0 running (pre-check race), all claim (provisioning), then
+        // all fail the post-check and re-queue — creating 2N state
+        // events per cycle that repeat every 10s ("event storm") and
+        // preventing ANY task from ever running.
+        const { getRepoByUrl } = await import("../services/repo-service.js");
+        const repoConfig = await getRepoByUrl(currentTask.repoUrl);
+
+        const claimed = await withClaimLock(async () => {
+          const globalMax = parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10);
+
+          // Global concurrency check
+          const [{ count: activeCount }] = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(tasks)
+            .where(sql`${tasks.state} IN ('provisioning', 'running')`);
+          if (Number(activeCount) >= globalMax) {
+            log.info({ activeCount, globalMax }, "Global concurrency saturated, re-scheduling");
+            return null;
+          }
+
+          // Per-repo concurrency check
+          if (repoConfig?.maxConcurrentTasks) {
+            const [{ count: repoCount }] = await db
+              .select({ count: sql<number>`count(*)` })
+              .from(tasks)
+              .where(
+                sql`${tasks.repoUrl} = ${currentTask.repoUrl} AND ${tasks.state} IN ('provisioning', 'running')`,
+              );
+            if (Number(repoCount) >= repoConfig.maxConcurrentTasks) {
+              log.info(
+                { repoActiveCount: repoCount, max: repoConfig.maxConcurrentTasks },
+                "Repo concurrency saturated, re-scheduling",
+              );
+              return null;
+            }
+          }
+
+          // Claim — atomic conditional update (queued → provisioning)
+          return taskService.tryTransitionTask(taskId, TaskState.PROVISIONING, "worker_pickup");
+        });
+
+        if (!claimed) {
+          const jitter = Math.floor(Math.random() * 5000);
           await taskQueue.add("process-task", job.data, {
             jobId: `${taskId}-delayed-${Date.now()}`,
             priority: currentTask.priority ?? 100,
-            delay: 10000,
+            delay: 10000 + jitter,
           });
-          return;
-        }
-
-        const { getRepoByUrl } = await import("../services/repo-service.js");
-        const repoConfig = await getRepoByUrl(currentTask.repoUrl);
-        if (repoConfig?.maxConcurrentTasks) {
-          const [{ count: preRepoCount }] = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(tasks)
-            .where(
-              sql`${tasks.repoUrl} = ${currentTask.repoUrl} AND ${tasks.state} IN ('provisioning', 'running')`,
-            );
-          if (Number(preRepoCount) >= repoConfig.maxConcurrentTasks) {
-            log.info(
-              { repoActiveCount: preRepoCount, max: repoConfig.maxConcurrentTasks },
-              "Repo concurrency saturated, re-scheduling",
-            );
-            await taskQueue.add("process-task", job.data, {
-              jobId: `${taskId}-delayed-${Date.now()}`,
-              priority: currentTask.priority ?? 100,
-              delay: 10000,
-            });
-            return;
-          }
-        }
-
-        // Transition to provisioning FIRST so concurrent workers see us in the count.
-        // Without this, two workers can both query, both see 0 running, and both proceed.
-        // Use tryTransitionTask — if another worker already claimed this task, skip it.
-        const claimed = await taskService.tryTransitionTask(
-          taskId,
-          TaskState.PROVISIONING,
-          "worker_pickup",
-        );
-        if (!claimed) {
-          log.info("Task already claimed by another worker, skipping");
           return;
         }
         log.info("Provisioning");
-
-        // Post-transition safety net: handles rare races where multiple
-        // workers pass the pre-check simultaneously
-        const [{ count: activeCount }] = await db
-          .select({ count: sql<number>`count(*)` })
-          .from(tasks)
-          .where(sql`${tasks.state} IN ('provisioning', 'running')`);
-        if (Number(activeCount) > globalMax) {
-          log.info(
-            { activeCount, globalMax },
-            "Global concurrency exceeded after claim, re-queuing",
-          );
-          await taskService.transitionTask(taskId, TaskState.QUEUED, "concurrency_limit");
-          await taskQueue.add("process-task", job.data, {
-            jobId: `${taskId}-delayed-${Date.now()}`,
-            priority: currentTask.priority ?? 100,
-            delay: 10000,
-          });
-          return;
-        }
-
-        if (repoConfig?.maxConcurrentTasks) {
-          const [{ count: repoActiveCount }] = await db
-            .select({ count: sql<number>`count(*)` })
-            .from(tasks)
-            .where(
-              sql`${tasks.repoUrl} = ${currentTask.repoUrl} AND ${tasks.state} IN ('provisioning', 'running')`,
-            );
-          if (Number(repoActiveCount) > repoConfig.maxConcurrentTasks) {
-            log.info(
-              { repoActiveCount, max: repoConfig.maxConcurrentTasks },
-              "Repo concurrency exceeded after claim, re-queuing",
-            );
-            await taskService.transitionTask(taskId, TaskState.QUEUED, "concurrency_limit");
-            await taskQueue.add("process-task", job.data, {
-              jobId: `${taskId}-delayed-${Date.now()}`,
-              priority: currentTask.priority ?? 100,
-              delay: 10000,
-            });
-            return;
-          }
-        }
 
         // Get task details
         const task = await taskService.getTask(taskId);
@@ -326,9 +298,10 @@ export function startTaskWorker() {
                 entry.metadata,
               );
 
-              // Check for PR URL — only capture the first PR URL from agent output.
-              // Once captured, don't overwrite with later mentions (the agent may
-              // reference other PRs in its output text).
+              // Check for PR URL — only capture the first PR URL from agent output
+              // that matches the task's own repo. Without repo validation, the
+              // agent referencing another repo's PR (e.g. via gh pr list on a
+              // dependency) would store the wrong URL.
               if (!capturedPrUrl) {
                 const prUrlPattern = /https:\/\/github\.com\/[^\s"]+\/pull\/\d+/g;
                 const prMatches = entry.content.match(prUrlPattern);
@@ -337,16 +310,30 @@ export function startTaskWorker() {
                   const content = entry.content.trim();
                   const looksLikeJsonArray =
                     content.startsWith("[") && content.includes('"number"');
-                  if (!looksLikeJsonArray) {
-                    const url = prMatches[prMatches.length - 1];
-                    capturedPrUrl = url;
-                    await taskService.updateTaskPr(taskId, url);
-                    log.info({ prUrl: url }, "PR URL detected in logs");
-                  } else if (entry.content.includes(taskBranch)) {
-                    const url = prMatches[prMatches.length - 1];
-                    capturedPrUrl = url;
-                    await taskService.updateTaskPr(taskId, url);
-                    log.info({ prUrl: url }, "PR URL detected in logs (own branch in JSON)");
+                  // Filter to only URLs matching the task's repo
+                  const expectedRepo = task.repoUrl
+                    .replace(/.*github\.com[/:]/, "")
+                    .replace(/\.git$/, "")
+                    .toLowerCase();
+                  const repoMatches = prMatches.filter((url) => {
+                    const urlRepo = url
+                      .replace(/.*github\.com\//, "")
+                      .replace(/\/pull\/.*/, "")
+                      .toLowerCase();
+                    return urlRepo === expectedRepo;
+                  });
+                  if (repoMatches.length > 0) {
+                    if (!looksLikeJsonArray) {
+                      const url = repoMatches[repoMatches.length - 1];
+                      capturedPrUrl = url;
+                      await taskService.updateTaskPr(taskId, url);
+                      log.info({ prUrl: url }, "PR URL detected in logs");
+                    } else if (entry.content.includes(taskBranch)) {
+                      const url = repoMatches[repoMatches.length - 1];
+                      capturedPrUrl = url;
+                      await taskService.updateTaskPr(taskId, url);
+                      log.info({ prUrl: url }, "PR URL detected in logs (own branch in JSON)");
+                    }
                   }
                 }
               }
@@ -379,13 +366,32 @@ export function startTaskWorker() {
         }
 
         // Pick the best PR URL.  Priority:
-        //   1. capturedPrUrl — detected during streaming with heuristics (branch
-        //      matching, JSON-array filtering) so it's the most reliable.
+        //   1. capturedPrUrl — detected during streaming with repo validation
+        //      and heuristics (branch matching, JSON-array filtering).
         //   2. taskAfterExec.prUrl — already persisted, e.g. preserved across
         //      a force-restart.
-        //   3. result.prUrl — raw regex on the full NDJSON log; can match
-        //      placeholder URLs inside code the agent wrote (e.g. test fixtures).
-        const detectedPrUrl = capturedPrUrl || taskAfterExec?.prUrl || result.prUrl;
+        //   3. result.prUrl — raw regex on the full NDJSON log; only used if
+        //      it matches the task's repo (can otherwise match placeholder URLs
+        //      inside code the agent wrote, or PRs from other repos).
+        let fallbackPrUrl = result.prUrl;
+        if (fallbackPrUrl) {
+          const expectedRepo = task.repoUrl
+            .replace(/.*github\.com[/:]/, "")
+            .replace(/\.git$/, "")
+            .toLowerCase();
+          const urlRepo = fallbackPrUrl
+            .replace(/.*github\.com\//, "")
+            .replace(/\/pull\/.*/, "")
+            .toLowerCase();
+          if (urlRepo !== expectedRepo) {
+            log.info(
+              { resultPrUrl: fallbackPrUrl, expectedRepo },
+              "Ignoring result.prUrl — wrong repo",
+            );
+            fallbackPrUrl = undefined;
+          }
+        }
+        const detectedPrUrl = capturedPrUrl || taskAfterExec?.prUrl || fallbackPrUrl;
 
         if (!sessionId && !isReviewTask) {
           // Agent never started — no session ID means no agent output was produced.

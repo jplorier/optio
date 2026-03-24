@@ -64,8 +64,12 @@ export function determinePrAction(opts: {
   // PR merged
   if (opts.prMerged) return { action: "complete", detail: "pr_merged" };
 
-  // PR closed without merge
-  if (opts.prState === "closed") return { action: "fail", detail: "pr_closed" };
+  // PR closed without merge — skip if task is already failed
+  // (failed→failed is not a valid state transition)
+  if (opts.prState === "closed") {
+    if (opts.taskState === "failed") return { action: "none" };
+    return { action: "fail", detail: "pr_closed" };
+  }
 
   // Failed tasks can be completed/failed via PR events above, but cannot be resumed
   const canResume = opts.taskState !== "failed";
