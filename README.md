@@ -35,7 +35,7 @@ Optio manages the full lifecycle: task intake → container provisioning → age
 
 ```bash
 # Clone and install
-git clone https://github.com/your-org/optio.git && cd optio
+git clone https://github.com/jonwiggins/optio.git && cd optio
 pnpm install
 
 # Bootstrap infrastructure (Postgres + Redis in K8s, migrations, .env)
