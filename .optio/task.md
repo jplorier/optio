@@ -1,27 +1,33 @@
-# feat: Cost optimization insights and forecasting
+# fix: Page titles should reflect current page, not project name
 
-feat: Cost optimization insights and forecasting
+fix: Page titles should reflect current page, not project name
 
 ## Problem
 
-Cost tracking shows totals but doesn't help users optimize. No way to compare models, detect anomalies, or forecast spending.
+The browser tab/title bar shows the project name and description on every page (e.g. "Optio — AI Agent Orchestration") instead of the current page context. When multiple Optio tabs are open, they all look identical.
 
-## Features
+## Fix
 
-- **Per-model cost comparison**: Show cost breakdown by model (Opus vs Sonnet vs Haiku) with success rates
-- **"Try cheaper model" suggestions**: If a task succeeded with Opus, suggest trying Sonnet next time
-- **Cost anomaly alerts**: Flag tasks that cost 3x+ the repo average
-- **Forecasting**: "At current rate, you'll spend $X this month"
-- **Per-task cost breakdown**: Input tokens, output tokens, thinking tokens (where available)
-- **Token tracking**: Store `inputTokens`, `outputTokens` on tasks for detailed analysis
+Set dynamic page titles based on the current route:
+
+- `/` → "Overview — Optio"
+- `/tasks` → "Tasks — Optio"
+- `/tasks/[id]` → "{task title} — Optio"
+- `/repos` → "Repositories — Optio"
+- `/repos/[id]` → "{repo name} — Optio"
+- `/cluster` → "Cluster — Optio"
+- `/costs` → "Costs — Optio"
+- `/secrets` → "Secrets — Optio"
+- `/settings` → "Settings — Optio"
+
+Use Next.js `metadata` exports or `<title>` in each page for static titles, and `generateMetadata()` for dynamic ones (task detail, repo detail).
 
 ## Acceptance Criteria
 
-- [ ] Cost breakdown by model on analytics page
-- [ ] Anomaly detection with visual indicators
-- [ ] Monthly forecast based on rolling average
-- [ ] Token-level cost breakdown per task
+- [ ] Each page has a unique, descriptive title
+- [ ] Task and repo detail pages show the entity name in the title
+- [ ] "Optio" appears as suffix for brand recognition
 
 ---
 
-_Optio Task ID: 428ee0d9-6ba2-482e-aed6-2b6b74b44baa_
+_Optio Task ID: 4bdee718-0e03-48d5-ad1e-909e5f6c3103_

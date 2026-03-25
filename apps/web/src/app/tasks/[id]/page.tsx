@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { use, useState, useEffect } from "react";
+import { usePageTitle } from "@/hooks/use-page-title";
 import { useTask } from "@/hooks/use-task";
 import { LogViewer } from "@/components/log-viewer";
 import { PipelineTimeline } from "@/components/pipeline-timeline";
@@ -28,6 +29,7 @@ import { toast } from "sonner";
 export default function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { task, events, loading, error, refresh } = useTask(id);
+  usePageTitle(task?.title ?? "Task");
   const [actionLoading, setActionLoading] = useState(false);
   const [resumePrompt, setResumePrompt] = useState("");
   const [showTimeline, setShowTimeline] = useState(true);

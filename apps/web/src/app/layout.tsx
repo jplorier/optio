@@ -15,7 +15,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Optio — AI Agent Orchestration",
+  title: "Optio",
   description: "Workflow orchestration for AI coding agents",
   icons: {
     icon: "/favicon.svg",
