@@ -1,33 +1,45 @@
-# fix: Page titles should reflect current page, not project name
+# feat: Scheduled and recurring tasks
 
-fix: Page titles should reflect current page, not project name
+feat: Scheduled and recurring tasks
 
 ## Problem
 
-The browser tab/title bar shows the project name and description on every page (e.g. "Optio — AI Agent Orchestration") instead of the current page context. When multiple Optio tabs are open, they all look identical.
+No way to run tasks on a schedule (nightly tests, weekly refactors, periodic dependency updates).
 
-## Fix
+## Solution
 
-Set dynamic page titles based on the current route:
+### API
 
-- `/` → "Overview — Optio"
-- `/tasks` → "Tasks — Optio"
-- `/tasks/[id]` → "{task title} — Optio"
-- `/repos` → "Repositories — Optio"
-- `/repos/[id]` → "{repo name} — Optio"
-- `/cluster` → "Cluster — Optio"
-- `/costs` → "Costs — Optio"
-- `/secrets` → "Secrets — Optio"
-- `/settings` → "Settings — Optio"
+- `POST /api/schedules` — create schedule (name, cron expression, task template or inline config)
+- `GET /api/schedules` — list schedules
+- `PATCH /api/schedules/:id` — update (enable/disable, change cron)
+- `DELETE /api/schedules/:id`
+- `POST /api/schedules/:id/trigger` — manually trigger a scheduled run
 
-Use Next.js `metadata` exports or `<title>` in each page for static titles, and `generateMetadata()` for dynamic ones (task detail, repo detail).
+### Implementation
+
+- New BullMQ repeating job that checks schedules every minute
+- On cron match, creates a task from the schedule's template
+- Track last run time, next run time, run history
+
+### Web UI
+
+- Schedule management page (create, edit, enable/disable, view history)
+- Cron expression builder with human-readable preview
+- Schedule indicator on task cards ("triggered by: nightly-tests")
+
+### Database
+
+- New `schedules` table (id, name, cron, taskConfig JSON, enabled, lastRunAt, nextRunAt, createdAt)
 
 ## Acceptance Criteria
 
-- [ ] Each page has a unique, descriptive title
-- [ ] Task and repo detail pages show the entity name in the title
-- [ ] "Optio" appears as suffix for brand recognition
+- [ ] CRUD for schedules with cron expressions
+- [ ] Automatic task creation on schedule
+- [ ] Manual trigger support
+- [ ] Web UI for schedule management
+- [ ] Run history tracking
 
 ---
 
-_Optio Task ID: 4bdee718-0e03-48d5-ad1e-909e5f6c3103_
+_Optio Task ID: 54ddc6e6-2e2a-4361-80fe-6030ed625c23_

@@ -12,6 +12,7 @@ import {
   Settings,
   Zap,
   DollarSign,
+  Clock,
 } from "lucide-react";
 import { UserMenu } from "./user-menu";
 
@@ -21,6 +22,7 @@ const MAIN_NAV = [
   { href: "/repos", label: "Repos", icon: FolderGit2 },
   { href: "/cluster", label: "Cluster", icon: Server },
   { href: "/costs", label: "Costs", icon: DollarSign },
+  { href: "/schedules", label: "Schedules", icon: Clock },
 ];
 
 const SECONDARY_NAV = [

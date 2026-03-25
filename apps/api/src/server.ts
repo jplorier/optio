@@ -17,6 +17,7 @@ import { issueRoutes } from "./routes/issues.js";
 import { subtaskRoutes } from "./routes/subtasks.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { webhookRoutes } from "./routes/webhooks.js";
+import { scheduleRoutes } from "./routes/schedules.js";
 import { logStreamWs } from "./ws/log-stream.js";
 import { eventsWs } from "./ws/events.js";
 import authPlugin from "./plugins/auth.js";
@@ -67,6 +68,7 @@ export async function buildServer() {
   await app.register(subtaskRoutes);
   await app.register(analyticsRoutes);
   await app.register(webhookRoutes);
+  await app.register(scheduleRoutes);
 
   // WebSocket routes
   await app.register(logStreamWs);
