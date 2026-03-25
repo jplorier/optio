@@ -75,6 +75,7 @@ import {
   releaseRepoPodTask,
   cleanupIdleRepoPods,
   listRepoPods,
+  reconcileActiveTaskCounts,
 } from "./repo-pool-service.js";
 
 // ── resolveImage ────────────────────────────────────────────────────
@@ -272,5 +273,54 @@ describe("listRepoPods", () => {
 
     const result = await listRepoPods();
     expect(result).toEqual(mockPods);
+  });
+});
+
+// ── reconcileActiveTaskCounts ───────────────────────────────────────
+
+describe("reconcileActiveTaskCounts", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns 0 when no pods exist", async () => {
+    // First call: select pods
+    vi.mocked(db.select().from as any).mockResolvedValueOnce([]);
+
+    const result = await reconcileActiveTaskCounts();
+    expect(result).toBe(0);
+  });
+
+  it("corrects inflated activeTaskCount to match actual running tasks", async () => {
+    const pods = [
+      { id: "pod-1", activeTaskCount: 13 },
+      { id: "pod-2", activeTaskCount: 5 },
+    ];
+
+    // The mock chain uses mockReturnThis, so all methods return the same db mock.
+    // where() calls are interleaved: SELECT count, UPDATE, SELECT count, UPDATE
+    const dbMock = db as any;
+    dbMock.from.mockResolvedValueOnce(pods);
+    dbMock.where
+      .mockResolvedValueOnce([{ count: 1 }]) // SELECT: pod-1 has 1 running task
+      .mockResolvedValueOnce([]) // UPDATE: correct pod-1
+      .mockResolvedValueOnce([{ count: 0 }]) // SELECT: pod-2 has 0 running tasks
+      .mockResolvedValueOnce([]); // UPDATE: correct pod-2
+
+    const result = await reconcileActiveTaskCounts();
+    // Both pods should be corrected: pod-1 from 13→1, pod-2 from 5→0
+    expect(result).toBe(2);
+    expect(db.update).toHaveBeenCalled();
+  });
+
+  it("does not update pods that already have the correct count", async () => {
+    const pods = [{ id: "pod-1", activeTaskCount: 0 }];
+
+    const dbMock = db as any;
+    dbMock.from.mockResolvedValueOnce(pods);
+    dbMock.where.mockResolvedValueOnce([{ count: 0 }]);
+
+    const result = await reconcileActiveTaskCounts();
+    expect(result).toBe(0);
   });
 });

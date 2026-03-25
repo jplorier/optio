@@ -595,6 +595,14 @@ export async function reconcileOrphanedTasks() {
   if (enqueued > 0) {
     logger.info({ count: enqueued }, "Reconciled orphaned tasks after startup");
   }
+
+  // Reset activeTaskCount on all repo pods to match actual running tasks.
+  // The counter can drift if the server crashes before the finally block
+  // in the task worker decrements it.
+  const corrected = await repoPool.reconcileActiveTaskCounts();
+  if (corrected > 0) {
+    logger.info({ corrected }, "Reconciled repo pod activeTaskCounts on startup");
+  }
 }
 
 export function buildAgentCommand(

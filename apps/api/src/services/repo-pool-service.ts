@@ -502,3 +502,39 @@ export async function listRepoPods(): Promise<RepoPod[]> {
 export async function listRepoPodsForRepo(repoUrl: string): Promise<RepoPod[]> {
   return db.select().from(repoPods).where(eq(repoPods.repoUrl, repoUrl)) as Promise<RepoPod[]>;
 }
+
+/**
+ * Reconcile activeTaskCount on all repo pods to match actual running/provisioning tasks.
+ *
+ * The stored counter can drift if the worker process is killed before the finally
+ * block decrements it. This function resets each pod's counter to the real count
+ * of tasks in running/provisioning state that reference that pod via lastPodId.
+ */
+export async function reconcileActiveTaskCounts(): Promise<number> {
+  const allPods = await db
+    .select({ id: repoPods.id, activeTaskCount: repoPods.activeTaskCount })
+    .from(repoPods);
+  if (allPods.length === 0) return 0;
+
+  let corrected = 0;
+  for (const pod of allPods) {
+    const [{ count: actual }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(tasks)
+      .where(sql`${tasks.state} IN ('running', 'provisioning') AND ${tasks.lastPodId} = ${pod.id}`);
+
+    if (pod.activeTaskCount !== actual) {
+      await db
+        .update(repoPods)
+        .set({ activeTaskCount: actual, updatedAt: new Date() })
+        .where(eq(repoPods.id, pod.id));
+      logger.info(
+        { podId: pod.id, was: pod.activeTaskCount, now: actual },
+        "Reconciled activeTaskCount",
+      );
+      corrected++;
+    }
+  }
+
+  return corrected;
+}

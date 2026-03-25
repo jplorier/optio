@@ -1,30 +1,32 @@
-# Fix tasks view flash/flicker on auto-update
+# fix: Pod overview shows incorrect active agent count
 
-Fix tasks view flash/flicker on auto-update
+fix: Pod overview shows incorrect active agent count
 
-## Description
+## Problem
 
-The tasks list view visibly flashes or flickers when it auto-updates via WebSocket events. This likely happens because the component re-renders the entire list when new data arrives, causing a brief flash as the DOM is replaced.
+The overview dashboard "Pods" section shows workspace pods with inflated active agent counts (e.g. 13 agents running) when there are actually 0 running tasks. This gives operators a false picture of cluster utilization.
 
-## Steps to reproduce
+## Likely Cause
 
-1. Navigate to `/tasks`
-2. Have tasks running or state transitions occurring
-3. Observe the list flickering as updates arrive
+The `activeTaskCount` field on `repo_pods` is incremented in `execTaskInRepoPod()` when a task starts, and decremented in `releaseRepoPodTask()` in the `finally` block. However, if the worker process is killed (server restart, crash) before the `finally` block runs, the count is never decremented. Over multiple restarts and retries, the count accumulates.
 
-## Possible causes
+The startup reconciler resets task states but does not reset `activeTaskCount` on repo pods.
 
-- Full list re-render on each WebSocket event (no stable keys or diffing)
-- Loading state briefly shown during data refresh
-- Zustand store update triggering unmount/remount of list items
-- Race between WebSocket updates and historical data fetch (see prior fix in 547098f for log deduplication — similar pattern may apply here)
+## Fix
 
-## Acceptance criteria
+Either:
 
-- Task list updates smoothly without visible flash
-- Individual task cards update in-place when their state changes
-- No layout shift when tasks are added or removed
+1. **Reconcile on startup**: Reset `activeTaskCount` on all repo pods based on the actual number of tasks in `running` state for that repo
+2. **Derive instead of track**: Replace the stored counter with a live query that counts tasks in `running`/`provisioning` state per repo pod
+
+Option 2 is more robust since it can never drift, but may have performance implications if queried frequently.
+
+## Acceptance Criteria
+
+- [ ] Pod active agent count matches actual running tasks
+- [ ] Count stays accurate across server restarts
+- [ ] Overview dashboard reflects correct pod utilization
 
 ---
 
-_Optio Task ID: 8ae54510-7225-41d6-8e03-23658f76c6ea_
+_Optio Task ID: b8ea6ea2-1948-4197-b90d-4b559c08423c_
