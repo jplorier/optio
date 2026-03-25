@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
-import { Loader2, Bell, RefreshCw } from "lucide-react";
+import { Loader2, Bell, RefreshCw, Shield, CheckCircle2, XCircle } from "lucide-react";
 
 function PromptTemplateEditor() {
   const [template, setTemplate] = useState("");
@@ -298,6 +298,92 @@ function DefaultReviewEditor() {
   );
 }
 
+function AuthenticationSettings() {
+  const [providers, setProviders] = useState<Array<{ name: string; displayName: string }>>([]);
+  const [authDisabled, setAuthDisabled] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api
+      .getAuthProviders()
+      .then((res) => {
+        setProviders(res.providers);
+        setAuthDisabled(res.authDisabled);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="p-5 rounded-xl border border-border/50 bg-bg-card text-center text-text-muted text-sm">
+        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading...
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-4">
+      {authDisabled && (
+        <div className="flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+          <Shield className="w-4 h-4 shrink-0" />
+          <div>
+            <p className="font-medium">Authentication is disabled</p>
+            <p className="text-amber-400/70 mt-0.5">
+              Set{" "}
+              <code className="px-1 py-0.5 bg-amber-500/10 rounded">OPTIO_AUTH_DISABLED=false</code>{" "}
+              and configure OAuth providers to enable authentication.
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div>
+        <p className="text-xs text-text-muted mb-3">
+          OAuth providers are auto-detected from environment variables. Configure the client ID and
+          secret for each provider you want to enable.
+        </p>
+
+        <div className="space-y-2">
+          {(["github", "google", "gitlab"] as const).map((name) => {
+            const enabled = providers.some((p) => p.name === name);
+            const displayName =
+              name === "github" ? "GitHub" : name === "google" ? "Google" : "GitLab";
+            const envPrefix = name.toUpperCase();
+            return (
+              <div
+                key={name}
+                className="flex items-center justify-between p-3 rounded-lg border border-border"
+              >
+                <div className="flex items-center gap-3">
+                  {enabled ? (
+                    <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+                  ) : (
+                    <XCircle className="w-4 h-4 text-text-muted/40 shrink-0" />
+                  )}
+                  <div>
+                    <p className="text-sm font-medium">{displayName}</p>
+                    <p className="text-[10px] text-text-muted">
+                      {`${envPrefix}_OAUTH_CLIENT_ID`} / {`${envPrefix}_OAUTH_CLIENT_SECRET`}
+                    </p>
+                  </div>
+                </div>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full ${
+                    enabled ? "bg-success/10 text-success" : "bg-text-muted/10 text-text-muted"
+                  }`}
+                >
+                  {enabled ? "Configured" : "Not configured"}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -339,6 +425,12 @@ export default function SettingsPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+
+      {/* Authentication */}
+      <section>
+        <h2 className="text-sm font-medium text-text-muted mb-3">Authentication</h2>
+        <AuthenticationSettings />
+      </section>
 
       {/* Notifications */}
       <section>

@@ -18,6 +18,7 @@ import { subtaskRoutes } from "./routes/subtasks.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { logStreamWs } from "./ws/log-stream.js";
 import { eventsWs } from "./ws/events.js";
+import authPlugin from "./plugins/auth.js";
 
 const loggerConfig =
   process.env.NODE_ENV !== "production"
@@ -41,6 +42,9 @@ export async function buildServer() {
     allowList: ["127.0.0.1", "::1"],
   });
   await app.register(websocket);
+
+  // Auth plugin (validates session cookie on protected routes)
+  await app.register(authPlugin);
 
   // REST routes
   await app.register(healthRoutes);

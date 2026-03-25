@@ -49,7 +49,13 @@ cd apps/api && npx drizzle-kit migrate && cd "$ROOT_DIR"
 echo "[7/7] Creating .env file..."
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo "   Created .env from .env.example"
+  # Ensure auth is disabled for local dev
+  if ! grep -q "OPTIO_AUTH_DISABLED" .env; then
+    echo "" >> .env
+    echo "# Auth disabled for local development" >> .env
+    echo "OPTIO_AUTH_DISABLED=true" >> .env
+  fi
+  echo "   Created .env from .env.example (auth disabled for local dev)"
 else
   echo "   .env already exists, skipping"
 fi

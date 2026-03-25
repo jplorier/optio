@@ -54,6 +54,7 @@ export const tasks = pgTable("tasks", {
   blocksParent: boolean("blocks_parent").notNull().default(false), // if true, parent waits for this
   worktreeState: text("worktree_state"), // "active" | "dirty" | "reset" | "preserved" | "removed"
   lastPodId: uuid("last_pod_id"), // last pod this task ran on (for same-pod retry affinity)
+  createdBy: uuid("created_by"), // nullable FK to users (null when auth is disabled)
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -174,6 +175,28 @@ export const podHealthEvents = pgTable("pod_health_events", {
   eventType: text("event_type").notNull(), // "crashed" | "oom_killed" | "restarted" | "healthy" | "orphan_cleaned"
   podName: text("pod_name"),
   message: text("message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const users = pgTable("users", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  provider: text("provider").notNull(), // "github" | "google" | "gitlab"
+  externalId: text("external_id").notNull(),
+  email: text("email").notNull(),
+  displayName: text("display_name").notNull(),
+  avatarUrl: text("avatar_url"),
+  lastLoginAt: timestamp("last_login_at", { withTimezone: true }).notNull().defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const sessions = pgTable("sessions", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id),
+  tokenHash: text("token_hash").notNull().unique(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
