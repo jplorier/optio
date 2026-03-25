@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { StateBadge } from "./state-badge";
@@ -29,7 +30,7 @@ interface TaskCardProps {
   subtasks?: TaskSummary[];
 }
 
-export function TaskCard({ task, subtasks }: TaskCardProps) {
+export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCardProps) {
   const router = useRouter();
   const repoName = task.repoUrl.replace(/.*\/\/[^/]+\//, "").replace(/\.git$/, "");
   const [owner, repo] = repoName.includes("/") ? repoName.split("/") : ["", repoName];
@@ -146,4 +147,4 @@ export function TaskCard({ task, subtasks }: TaskCardProps) {
       )}
     </div>
   );
-}
+});

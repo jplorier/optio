@@ -1,12 +1,13 @@
 "use client";
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { api } from "@/lib/api-client";
 import { useStore, type TaskSummary } from "@/hooks/use-store";
 import { TaskCard } from "./task-card";
 import { Loader2, ChevronUp, ChevronDown, ChevronRight, GripVertical, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { useShallow } from "zustand/react/shallow";
 
 // ---------------------------------------------------------------------------
 // Pipeline stage derivation — mirrors the logic in pipeline-timeline.tsx
@@ -103,7 +104,8 @@ const TERMINAL_STAGES: PipelineStage[] = ["done", "failed"];
 // ---------------------------------------------------------------------------
 
 export function TaskList() {
-  const { tasks, setTasks } = useStore();
+  const tasks = useStore(useShallow((state) => state.tasks));
+  const setTasks = useStore((state) => state.setTasks);
   const [filter, setFilter] = useState("");
   const [timeFilter, setTimeFilter] = useState("1d");
   const [searchQuery, setSearchQuery] = useState("");
@@ -121,84 +123,97 @@ export function TaskList() {
     refresh();
   }, [refresh]);
 
-  // Build parent→subtask map first (needed for stage derivation)
-  const reviewMap = new Map<string, TaskSummary[]>();
-  const topLevelAll: TaskSummary[] = [];
+  // Memoize parent→subtask map (only recalculated when tasks change)
+  const { reviewMap, topLevelAll } = useMemo(() => {
+    const map = new Map<string, TaskSummary[]>();
+    const topLevel: TaskSummary[] = [];
 
-  for (const t of tasks) {
-    if (t.parentTaskId) {
-      const existing = reviewMap.get(t.parentTaskId) ?? [];
-      existing.push(t);
-      reviewMap.set(t.parentTaskId, existing);
-    } else {
-      topLevelAll.push(t);
+    for (const t of tasks) {
+      if (t.parentTaskId) {
+        const existing = map.get(t.parentTaskId) ?? [];
+        existing.push(t);
+        map.set(t.parentTaskId, existing);
+      } else {
+        topLevel.push(t);
+      }
     }
-  }
 
-  const subtaskStatus = (taskId: string) => {
-    const subs = reviewMap.get(taskId) ?? [];
-    return {
-      hasRunning: subs.some((s) => ["running", "provisioning"].includes(s.state)),
-      hasQueued: subs.some((s) => ["queued", "pending"].includes(s.state)),
-      hasAny: subs.length > 0,
-      allDone:
-        subs.length > 0 &&
-        subs.every((s) => ["completed", "failed", "cancelled"].includes(s.state)),
-    };
-  };
+    return { reviewMap: map, topLevelAll: topLevel };
+  }, [tasks]);
 
-  // Derive pipeline stage for each top-level task
-  const taskStages = new Map<string, PipelineStage>();
-  for (const t of topLevelAll) {
-    taskStages.set(t.id, getTaskStage(t, subtaskStatus(t.id)));
-  }
+  // Memoize stage derivation
+  const taskStages = useMemo(() => {
+    const stages = new Map<string, PipelineStage>();
+    for (const t of topLevelAll) {
+      const subs = reviewMap.get(t.id) ?? [];
+      const status = {
+        hasRunning: subs.some((s) => ["running", "provisioning"].includes(s.state)),
+        hasQueued: subs.some((s) => ["queued", "pending"].includes(s.state)),
+        hasAny: subs.length > 0,
+        allDone:
+          subs.length > 0 &&
+          subs.every((s) => ["completed", "failed", "cancelled"].includes(s.state)),
+      };
+      stages.set(t.id, getTaskStage(t, status));
+    }
+    return stages;
+  }, [topLevelAll, reviewMap]);
 
-  // Apply stage filter
-  let visibleTasks = filter
-    ? topLevelAll.filter((t) => taskStages.get(t.id) === filter)
-    : topLevelAll;
+  // Memoize filtered + sectioned data
+  const { attention, running, ci, review, queued, failed, completed, visibleTasks, stageCounts } =
+    useMemo(() => {
+      const sinceDate = getSinceDate(timeFilter);
+      const query = searchQuery.trim().toLowerCase();
 
-  // Apply time filter — only constrains terminal tasks
-  const sinceDate = getSinceDate(timeFilter);
-  if (sinceDate) {
-    visibleTasks = visibleTasks.filter((t) => {
-      const stage = taskStages.get(t.id)!;
-      if (!TERMINAL_STAGES.includes(stage)) return true;
-      return new Date(t.createdAt) >= sinceDate;
-    });
-  }
+      // Apply stage filter
+      let visible = filter
+        ? topLevelAll.filter((t) => taskStages.get(t.id) === filter)
+        : topLevelAll;
 
-  // Apply text search
-  const query = searchQuery.trim().toLowerCase();
-  if (query) {
-    visibleTasks = visibleTasks.filter((t) => {
-      if (t.title.toLowerCase().includes(query)) return true;
-      if (t.id.toLowerCase().startsWith(query)) return true;
-      if (t.ticketExternalId && t.ticketExternalId.toLowerCase().includes(query)) return true;
-      return false;
-    });
-  }
+      // Apply time filter — only constrains terminal tasks
+      if (sinceDate) {
+        visible = visible.filter((t) => {
+          const stage = taskStages.get(t.id)!;
+          if (!TERMINAL_STAGES.includes(stage)) return true;
+          return new Date(t.createdAt) >= sinceDate;
+        });
+      }
 
-  // Split into sections by stage
-  const attention = visibleTasks.filter((t) => taskStages.get(t.id) === "attention");
-  const running = visibleTasks.filter((t) => {
-    const s = taskStages.get(t.id);
-    return s === "running" || s === "setup";
-  });
-  const ci = visibleTasks.filter((t) => taskStages.get(t.id) === "ci");
-  const review = visibleTasks.filter((t) => taskStages.get(t.id) === "review");
-  const queued = visibleTasks.filter((t) => taskStages.get(t.id) === "queue");
-  const failed = visibleTasks.filter((t) => taskStages.get(t.id) === "failed");
-  const completed = visibleTasks.filter((t) => taskStages.get(t.id) === "done");
+      // Apply text search
+      if (query) {
+        visible = visible.filter((t) => {
+          if (t.title.toLowerCase().includes(query)) return true;
+          if (t.id.toLowerCase().startsWith(query)) return true;
+          if (t.ticketExternalId && t.ticketExternalId.toLowerCase().includes(query)) return true;
+          return false;
+        });
+      }
 
-  // Compute counts per stage for filter badges (from unfiltered + unsearched data)
-  const stageCounts = new Map<string, number>();
-  for (const t of topLevelAll) {
-    const stage = taskStages.get(t.id)!;
-    // Apply time filter for counting too
-    if (sinceDate && TERMINAL_STAGES.includes(stage) && new Date(t.createdAt) < sinceDate) continue;
-    stageCounts.set(stage, (stageCounts.get(stage) ?? 0) + 1);
-  }
+      // Split into sections by stage
+      const sections = {
+        attention: visible.filter((t) => taskStages.get(t.id) === "attention"),
+        running: visible.filter((t) => {
+          const s = taskStages.get(t.id);
+          return s === "running" || s === "setup";
+        }),
+        ci: visible.filter((t) => taskStages.get(t.id) === "ci"),
+        review: visible.filter((t) => taskStages.get(t.id) === "review"),
+        queued: visible.filter((t) => taskStages.get(t.id) === "queue"),
+        failed: visible.filter((t) => taskStages.get(t.id) === "failed"),
+        completed: visible.filter((t) => taskStages.get(t.id) === "done"),
+      };
+
+      // Compute counts per stage for filter badges (from unfiltered + unsearched data)
+      const counts = new Map<string, number>();
+      for (const t of topLevelAll) {
+        const stage = taskStages.get(t.id)!;
+        if (sinceDate && TERMINAL_STAGES.includes(stage) && new Date(t.createdAt) < sinceDate)
+          continue;
+        counts.set(stage, (counts.get(stage) ?? 0) + 1);
+      }
+
+      return { ...sections, visibleTasks: visible, stageCounts: counts };
+    }, [topLevelAll, taskStages, filter, timeFilter, searchQuery]);
 
   const moveTask = async (index: number, direction: "up" | "down") => {
     const newIndex = direction === "up" ? index - 1 : index + 1;
@@ -280,7 +295,7 @@ export function TaskList() {
         </select>
       </div>
 
-      {loading ? (
+      {loading && tasks.length === 0 ? (
         <div className="flex items-center justify-center py-16 text-text-muted">
           <Loader2 className="w-5 h-5 animate-spin mr-2" />
           Loading tasks...

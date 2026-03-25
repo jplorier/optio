@@ -1,24 +1,30 @@
-# Add demo screenshot or GIF to README
+# Fix tasks view flash/flicker on auto-update
 
-Add demo screenshot or GIF to README
+Fix tasks view flash/flicker on auto-update
 
 ## Description
 
-Add visual media (screenshot, GIF, or short video) to the README showing Optio in action. Most popular dev tools repos have visuals near the top that immediately communicate what the tool does.
+The tasks list view visibly flashes or flickers when it auto-updates via WebSocket events. This likely happens because the component re-renders the entire list when new data arrives, causing a brief flash as the DOM is replaced.
 
-Suggested visuals:
+## Steps to reproduce
 
-- The dashboard with a few tasks in various states
-- A task detail view showing streaming logs
-- The repo/cluster management views
+1. Navigate to `/tasks`
+2. Have tasks running or state transitions occurring
+3. Observe the list flickering as updates arrive
+
+## Possible causes
+
+- Full list re-render on each WebSocket event (no stable keys or diffing)
+- Loading state briefly shown during data refresh
+- Zustand store update triggering unmount/remount of list items
+- Race between WebSocket updates and historical data fetch (see prior fix in 547098f for log deduplication — similar pattern may apply here)
 
 ## Acceptance criteria
 
-- At least one screenshot or GIF near the top of README.md
-- Images stored in a `docs/` or `.github/` directory (not a third-party host)
-- Alt text included for accessibility
+- Task list updates smoothly without visible flash
+- Individual task cards update in-place when their state changes
+- No layout shift when tasks are added or removed
 
 ---
 
-_Optio Task ID: c519ec95-5d5c-4e95-98da-acfd27d5db77_
-_Source: [github](https://github.com/jonwiggins/optio/issues/6)_
+_Optio Task ID: 8ae54510-7225-41d6-8e03-23658f76c6ea_
