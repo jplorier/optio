@@ -2,7 +2,11 @@ import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { repoPods, podHealthEvents, tasks, taskEvents } from "../db/schema.js";
-import { cleanupIdleRepoPods, updateWorktreeState } from "../services/repo-pool-service.js";
+import {
+  cleanupIdleRepoPods,
+  updateWorktreeState,
+  reconcileActiveTaskCounts,
+} from "../services/repo-pool-service.js";
 import { getRuntime } from "../services/container-service.js";
 import { TaskState } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
@@ -306,6 +310,12 @@ export function startRepoCleanupWorker() {
         } catch (err) {
           logger.warn({ err, taskId: task.id }, "Failed to re-queue stale task");
         }
+      }
+
+      // Reconcile activeTaskCount on all repo pods to catch any drift
+      const reconciled = await reconcileActiveTaskCounts();
+      if (reconciled > 0) {
+        logger.info({ reconciled }, "Reconciled repo pod activeTaskCounts");
       }
 
       // Clean up idle pods (existing behavior)

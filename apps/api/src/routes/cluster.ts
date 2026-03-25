@@ -211,6 +211,20 @@ export async function clusterRoutes(app: FastifyInstance) {
 
       const queuedMap = new Map(queuedCounts.map((r) => [r.repoUrl, r.count]));
 
+      // Live running/provisioning task count per pod (derived from actual task states)
+      const runningCounts = await db
+        .select({
+          podId: tasks.lastPodId,
+          count: sql<number>`count(*)::int`,
+        })
+        .from(tasks)
+        .where(
+          sql`${tasks.state} IN ('running', 'provisioning') AND ${tasks.lastPodId} IS NOT NULL`,
+        )
+        .groupBy(tasks.lastPodId);
+
+      const runningCountMap = new Map(runningCounts.map((r) => [r.podId, r.count]));
+
       // Scaling config per repo
       const repoConfigs =
         repoUrls.length > 0
@@ -228,10 +242,13 @@ export async function clusterRoutes(app: FastifyInstance) {
       const repoConfigMap = new Map(repoConfigs.map((r) => [r.repoUrl, r]));
 
       // Enrich repo pod records with task indicators and scaling config
+      // Use the live-derived running count instead of the stored counter, which can drift
       const enrichedRepoPods = repoPodRecords.map((rp) => {
         const config = repoConfigMap.get(rp.repoUrl);
+        const liveCount = runningCountMap.get(rp.id) ?? 0;
         return {
           ...rp,
+          activeTaskCount: liveCount,
           queuedTaskCount: queuedMap.get(rp.repoUrl) ?? 0,
           maxConcurrentTasks: config?.maxConcurrentTasks ?? 2,
           maxPodInstances: config?.maxPodInstances ?? 1,
@@ -322,7 +339,13 @@ export async function clusterRoutes(app: FastifyInstance) {
       }
     }
 
-    reply.send({ pod: { ...pod, tasks: podTasks, k8sPod } });
+    // Derive the live active task count from actual running/provisioning tasks
+    const [{ count: liveActiveCount }] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(tasks)
+      .where(sql`${tasks.state} IN ('running', 'provisioning') AND ${tasks.lastPodId} = ${pod.id}`);
+
+    reply.send({ pod: { ...pod, activeTaskCount: liveActiveCount, tasks: podTasks, k8sPod } });
   });
 
   // Pod health events
