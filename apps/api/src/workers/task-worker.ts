@@ -103,9 +103,11 @@ export function startTaskWorker() {
             return null;
           }
 
-          // Per-repo concurrency check using effective concurrency (pods * agents)
+          // Per-repo concurrency: use pod-based limit (pods * agents per pod).
+          // maxConcurrentTasks is a legacy field — if set, take the lower of
+          // the two to respect both the pod capacity and the explicit cap.
           const repoMax = repoConfig?.maxConcurrentTasks
-            ? Math.max(repoConfig.maxConcurrentTasks, effectiveRepoConcurrency)
+            ? Math.min(repoConfig.maxConcurrentTasks, effectiveRepoConcurrency)
             : effectiveRepoConcurrency;
           const [{ count: repoCount }] = await db
             .select({ count: sql<number>`count(*)` })
