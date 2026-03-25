@@ -652,7 +652,9 @@ export function buildAgentCommand(
     maxTurnsReview?: number;
   },
 ): string[] {
-  const prompt = opts?.resumePrompt ?? env.OPTIO_PROMPT;
+  const prompt = opts?.resumePrompt
+    ? `${opts.resumePrompt}\n\n---\n\nOriginal task prompt for context:\n${env.OPTIO_PROMPT}`
+    : env.OPTIO_PROMPT;
   const maxTurns = opts?.isReview
     ? (opts.maxTurnsReview ?? DEFAULT_MAX_TURNS_REVIEW)
     : (opts?.maxTurnsCoding ?? DEFAULT_MAX_TURNS_CODING);
