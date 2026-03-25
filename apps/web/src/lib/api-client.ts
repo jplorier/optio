@@ -87,6 +87,12 @@ export const api = {
       body: JSON.stringify({ prompt }),
     }),
 
+  forceRestartTask: (id: string, prompt?: string) =>
+    request<{ task: any }>(`/api/tasks/${id}/force-restart`, {
+      method: "POST",
+      body: JSON.stringify(prompt ? { prompt } : {}),
+    }),
+
   getTaskLogs: (id: string, params?: { limit?: number; offset?: number }) => {
     const qs = new URLSearchParams();
     if (params?.limit) qs.set("limit", String(params.limit));

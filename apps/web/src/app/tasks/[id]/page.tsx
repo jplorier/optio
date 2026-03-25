@@ -14,6 +14,7 @@ import {
   RefreshCw,
   XCircle,
   RotateCcw,
+  Play,
   ExternalLink,
   GitBranch,
   Clock,
@@ -102,6 +103,18 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     setActionLoading(false);
   };
 
+  const handleForceRestart = async () => {
+    setActionLoading(true);
+    try {
+      await api.forceRestartTask(id);
+      toast.success("Task re-queued on existing PR branch");
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to restart task");
+    }
+    setActionLoading(false);
+  };
+
   const handleCreateSubtask = async () => {
     if (!newSubtask.title.trim() || !newSubtask.prompt.trim()) return;
     setActionLoading(true);
@@ -148,6 +161,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const canCancel = ["running", "queued", "provisioning", "needs_attention"].includes(task.state);
   const canRetry = ["failed", "cancelled"].includes(task.state);
   const canResume = ["needs_attention", "failed"].includes(task.state) && !!task.sessionId;
+  const canForceRestart = ["needs_attention", "failed", "pr_opened"].includes(task.state);
 
   // (log filtering is handled by LogViewer component)
 
@@ -206,6 +220,17 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               >
                 <RotateCcw className="w-3 h-3" />
                 Retry
+              </button>
+            )}
+            {canForceRestart && (
+              <button
+                onClick={handleForceRestart}
+                disabled={actionLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-success/10 text-success text-xs hover:bg-success/20 transition-colors disabled:opacity-50"
+                title="Start a fresh agent session on the existing PR branch"
+              >
+                <Play className="w-3 h-3" />
+                Attempt Resume
               </button>
             )}
             <button
