@@ -16,15 +16,17 @@ function getK8sApi() {
 
 const NAMESPACE = "optio";
 
-/** Fetch metrics from the K8s Metrics API using kubectl proxy approach */
+/** Fetch metrics from the K8s Metrics API (non-blocking) */
 async function fetchMetrics<T>(path: string): Promise<T | null> {
   try {
-    const { execSync } = await import("node:child_process");
-    const raw = execSync(`kubectl get --raw "${path}" 2>/dev/null`, {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync("kubectl", ["get", "--raw", path], {
       encoding: "utf-8",
-      timeout: 5000,
+      timeout: 3000,
     });
-    return JSON.parse(raw) as T;
+    return JSON.parse(stdout) as T;
   } catch {
     return null;
   }
