@@ -64,4 +64,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t optio-agent:latest -f Dockerfile.agent .
+      - name: Build base image
+        run: docker build -t optio-base:latest -f images/base.Dockerfile .
+      - name: Build node image
+        run: docker build -t optio-node:latest -f images/node.Dockerfile .
