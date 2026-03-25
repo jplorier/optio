@@ -9,6 +9,7 @@ import {
   boolean,
   customType,
   unique,
+  index,
 } from "drizzle-orm/pg-core";
 
 export const taskStateEnum = pgEnum("task_state", [
@@ -23,67 +24,84 @@ export const taskStateEnum = pgEnum("task_state", [
   "cancelled",
 ]);
 
-export const tasks = pgTable("tasks", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  title: text("title").notNull(),
-  prompt: text("prompt").notNull(),
-  repoUrl: text("repo_url").notNull(),
-  repoBranch: text("repo_branch").notNull().default("main"),
-  state: taskStateEnum("state").notNull().default("pending"),
-  agentType: text("agent_type").notNull(),
-  containerId: text("container_id"),
-  sessionId: text("session_id"),
-  prUrl: text("pr_url"),
-  prNumber: integer("pr_number"),
-  prState: text("pr_state"), // "open" | "merged" | "closed"
-  prChecksStatus: text("pr_checks_status"), // "pending" | "passing" | "failing" | "none"
-  prReviewStatus: text("pr_review_status"), // "approved" | "changes_requested" | "pending" | "none"
-  prReviewComments: text("pr_review_comments"), // latest review comments (for resume)
-  resultSummary: text("result_summary"),
-  costUsd: text("cost_usd"), // stored as string to avoid float precision issues
-  errorMessage: text("error_message"),
-  ticketSource: text("ticket_source"),
-  ticketExternalId: text("ticket_external_id"),
-  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  retryCount: integer("retry_count").notNull().default(0),
-  maxRetries: integer("max_retries").notNull().default(3),
-  priority: integer("priority").notNull().default(100), // lower = higher priority
-  parentTaskId: uuid("parent_task_id"), // for review tasks linked to a coding task
-  taskType: text("task_type").notNull().default("coding"), // "coding" | "review"
-  subtaskOrder: integer("subtask_order").default(0), // ordering within parent's subtasks
-  blocksParent: boolean("blocks_parent").notNull().default(false), // if true, parent waits for this
-  worktreeState: text("worktree_state"), // "active" | "dirty" | "reset" | "preserved" | "removed"
-  lastPodId: uuid("last_pod_id"), // last pod this task ran on (for same-pod retry affinity)
-  createdBy: uuid("created_by"), // nullable FK to users (null when auth is disabled)
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  startedAt: timestamp("started_at", { withTimezone: true }),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-});
+export const tasks = pgTable(
+  "tasks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    title: text("title").notNull(),
+    prompt: text("prompt").notNull(),
+    repoUrl: text("repo_url").notNull(),
+    repoBranch: text("repo_branch").notNull().default("main"),
+    state: taskStateEnum("state").notNull().default("pending"),
+    agentType: text("agent_type").notNull(),
+    containerId: text("container_id"),
+    sessionId: text("session_id"),
+    prUrl: text("pr_url"),
+    prNumber: integer("pr_number"),
+    prState: text("pr_state"), // "open" | "merged" | "closed"
+    prChecksStatus: text("pr_checks_status"), // "pending" | "passing" | "failing" | "none"
+    prReviewStatus: text("pr_review_status"), // "approved" | "changes_requested" | "pending" | "none"
+    prReviewComments: text("pr_review_comments"), // latest review comments (for resume)
+    resultSummary: text("result_summary"),
+    costUsd: text("cost_usd"), // stored as string to avoid float precision issues
+    errorMessage: text("error_message"),
+    ticketSource: text("ticket_source"),
+    ticketExternalId: text("ticket_external_id"),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    retryCount: integer("retry_count").notNull().default(0),
+    maxRetries: integer("max_retries").notNull().default(3),
+    priority: integer("priority").notNull().default(100), // lower = higher priority
+    parentTaskId: uuid("parent_task_id"), // for review tasks linked to a coding task
+    taskType: text("task_type").notNull().default("coding"), // "coding" | "review"
+    subtaskOrder: integer("subtask_order").default(0), // ordering within parent's subtasks
+    blocksParent: boolean("blocks_parent").notNull().default(false), // if true, parent waits for this
+    worktreeState: text("worktree_state"), // "active" | "dirty" | "reset" | "preserved" | "removed"
+    lastPodId: uuid("last_pod_id"), // last pod this task ran on (for same-pod retry affinity)
+    createdBy: uuid("created_by"), // nullable FK to users (null when auth is disabled)
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("tasks_repo_url_state_idx").on(table.repoUrl, table.state),
+    index("tasks_state_idx").on(table.state),
+    index("tasks_parent_task_id_idx").on(table.parentTaskId),
+    index("tasks_created_at_idx").on(table.createdAt.desc()),
+  ],
+);
 
-export const taskEvents = pgTable("task_events", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  taskId: uuid("task_id")
-    .notNull()
-    .references(() => tasks.id),
-  fromState: taskStateEnum("from_state"),
-  toState: taskStateEnum("to_state").notNull(),
-  trigger: text("trigger").notNull(),
-  message: text("message"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const taskEvents = pgTable(
+  "task_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    fromState: taskStateEnum("from_state"),
+    toState: taskStateEnum("to_state").notNull(),
+    trigger: text("trigger").notNull(),
+    message: text("message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("task_events_task_id_idx").on(table.taskId)],
+);
 
-export const taskLogs = pgTable("task_logs", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  taskId: uuid("task_id")
-    .notNull()
-    .references(() => tasks.id),
-  stream: text("stream").notNull().default("stdout"),
-  content: text("content").notNull(),
-  logType: text("log_type"), // "text" | "tool_use" | "tool_result" | "thinking" | "system" | "error" | "info"
-  metadata: jsonb("metadata").$type<Record<string, unknown>>(),
-  timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
-});
+export const taskLogs = pgTable(
+  "task_logs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id),
+    stream: text("stream").notNull().default("stdout"),
+    content: text("content").notNull(),
+    logType: text("log_type"), // "text" | "tool_use" | "tool_result" | "thinking" | "system" | "error" | "info"
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    timestamp: timestamp("timestamp", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("task_logs_task_id_timestamp_idx").on(table.taskId, table.timestamp)],
+);
 
 const bytea = customType<{ data: Buffer }>({
   dataType() {
@@ -153,20 +171,24 @@ export const repoPodStateEnum = pgEnum("repo_pod_state", [
   "terminating",
 ]);
 
-export const repoPods = pgTable("repo_pods", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  repoUrl: text("repo_url").notNull(),
-  repoBranch: text("repo_branch").notNull().default("main"),
-  instanceIndex: integer("instance_index").notNull().default(0),
-  podName: text("pod_name"),
-  podId: text("pod_id"),
-  state: repoPodStateEnum("state").notNull().default("provisioning"),
-  activeTaskCount: integer("active_task_count").notNull().default(0),
-  lastTaskAt: timestamp("last_task_at", { withTimezone: true }),
-  errorMessage: text("error_message"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const repoPods = pgTable(
+  "repo_pods",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    repoUrl: text("repo_url").notNull(),
+    repoBranch: text("repo_branch").notNull().default("main"),
+    instanceIndex: integer("instance_index").notNull().default(0),
+    podName: text("pod_name"),
+    podId: text("pod_id"),
+    state: repoPodStateEnum("state").notNull().default("provisioning"),
+    activeTaskCount: integer("active_task_count").notNull().default(0),
+    lastTaskAt: timestamp("last_task_at", { withTimezone: true }),
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("repo_pods_repo_url_idx").on(table.repoUrl)],
+);
 
 export const podHealthEvents = pgTable("pod_health_events", {
   id: uuid("id").primaryKey().defaultRandom(),

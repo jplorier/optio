@@ -1,61 +1,26 @@
-# fix: Auth security hardening before production
+# perf: Add database indexes for common query patterns
 
-fix: Auth security hardening before production
+perf: Add database indexes for common query patterns
 
-## Summary
+## Problem
 
-The OAuth auth system (#29) is functionally complete but has several security gaps that need addressing before production use.
+No indexes exist on frequently queried columns. As task volume grows, queries will degrade to full table scans.
 
-## Issues
+## Missing Indexes
 
-### Critical: CORS accepts any origin
-
-- **File**: `apps/api/src/server.ts`
-- CORS is configured with `origin: true`, allowing requests from any origin
-- **Fix**: Whitelist specific origins via `OPTIO_ALLOWED_ORIGINS` env var (e.g. `http://localhost:3100,https://optio.example.com`)
-
-### High: No `Secure` flag on session cookie
-
-- **File**: `apps/api/src/routes/auth.ts`
-- Session cookies are set with `HttpOnly` and `SameSite=Lax` but no `Secure` flag
-- In production over HTTPS, cookies could be transmitted over unencrypted connections
-- **Fix**: Conditionally add `Secure` when `NODE_ENV=production` or behind a config flag
-
-### High: No expired session cleanup
-
-- Sessions accumulate in the DB indefinitely — `validateSession()` checks expiry but never deletes old rows
-- **Fix**: Add periodic cleanup (e.g. in `repo-cleanup-worker`) to delete sessions where `expires_at < now()`
-
-### High: OAuth providers don't check response status
-
-- **Files**: `apps/api/src/services/oauth/github.ts`, `google.ts`, `gitlab.ts`
-- `exchangeCode` and `fetchUser` call `.json()` without checking `res.ok` first
-- Non-2xx responses (rate limits, server errors) will throw confusing parse errors
-- **Fix**: Add `if (!res.ok) throw new Error(...)` before parsing
-
-### Medium: Unbounded in-memory OAuth state map
-
-- **File**: `apps/api/src/routes/auth.ts`
-- The `oauthStates` Map has a 10-minute TTL cleanup but no size limit
-- An attacker could flood login requests to grow the map unboundedly
-- **Fix**: Use a size-limited LRU cache or move state to Redis
-
-### Medium: Error messages in redirect URLs
-
-- **File**: `apps/api/src/routes/auth.ts`
-- Raw error strings (including potential stack traces) are URL-encoded in redirect query params
-- Visible in browser history and server logs
-- **Fix**: Use generic error codes in redirects, fetch details via API if needed
+- `tasks(repoUrl, state)` — filtering tasks by repo and state
+- `tasks(state)` — state-based filtering on task list
+- `tasks(parentTaskId)` — finding subtasks
+- `tasks(createdAt DESC)` — sorting by creation time
+- `taskLogs(taskId, timestamp)` — fetching logs for a task
+- `repoPods(repoUrl)` — finding pods by repo
+- `taskEvents(taskId)` — fetching event history
 
 ## Acceptance Criteria
 
-- [ ] CORS restricted to configured origins
-- [ ] Session cookie has `Secure` flag in production
-- [ ] Expired sessions are cleaned up periodically
-- [ ] OAuth HTTP responses validated before parsing
-- [ ] OAuth state map bounded or moved to Redis
-- [ ] Error messages not leaked in URLs
+- [ ] Migration adds indexes for the above columns
+- [ ] No noticeable regression on write performance
 
 ---
 
-_Optio Task ID: b5043ba0-5447-434b-aa87-e3baf712629d_
+_Optio Task ID: e0c05c2e-9c70-4ea1-82c7-06f3f931c7b5_
