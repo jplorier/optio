@@ -1,7 +1,7 @@
 import { eq, desc, and } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks, taskEvents, taskLogs } from "../db/schema.js";
-import { TaskState, transition, type CreateTaskInput } from "@optio/shared";
+import { TaskState, transition, normalizeRepoUrl, type CreateTaskInput } from "@optio/shared";
 import { publishEvent } from "./event-bus.js";
 import { logger } from "../logger.js";
 
@@ -28,7 +28,7 @@ export async function createTask(input: CreateTaskInput) {
     .values({
       title: input.title,
       prompt: input.prompt,
-      repoUrl: input.repoUrl,
+      repoUrl: normalizeRepoUrl(input.repoUrl),
       repoBranch: input.repoBranch ?? "main",
       agentType: input.agentType,
       ticketSource: input.ticketSource,

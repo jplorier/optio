@@ -20,33 +20,33 @@ if ! kubectl cluster-info >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[1/7] Installing dependencies..."
+echo "[1/8] Installing dependencies..."
 pnpm install
 
-echo "[2/7] Creating optio namespace..."
+echo "[2/8] Creating optio namespace..."
 kubectl apply -f k8s/namespace.yaml
 
-echo "[3/7] Pre-pulling infrastructure images..."
+echo "[3/8] Pre-pulling infrastructure images..."
 docker pull postgres:16 -q
 docker pull redis:7-alpine -q
 
-echo "[4/7] Deploying Postgres and Redis to K8s..."
+echo "[4/8] Deploying Postgres and Redis to K8s..."
 kubectl apply -f k8s/infrastructure.yaml
 kubectl wait --namespace optio --for=condition=available deployment/postgres --timeout=120s
 kubectl wait --namespace optio --for=condition=available deployment/redis --timeout=60s
 echo "   Infrastructure ready."
 
-echo "[5/7] Setting up port-forwards..."
+echo "[5/8] Setting up port-forwards..."
 pkill -f "kubectl port-forward.*optio" 2>/dev/null || true
 sleep 1
 kubectl port-forward -n optio svc/postgres 5432:5432 &>/dev/null &
 kubectl port-forward -n optio svc/redis 6379:6379 &>/dev/null &
 sleep 2
 
-echo "[6/7] Running database migrations..."
+echo "[6/8] Running database migrations..."
 cd apps/api && npx drizzle-kit migrate && cd "$ROOT_DIR"
 
-echo "[7/7] Creating .env file..."
+echo "[7/8] Creating .env file..."
 if [ ! -f .env ]; then
   cp .env.example .env
   # Ensure auth is disabled for local dev
@@ -60,12 +60,17 @@ else
   echo "   .env already exists, skipping"
 fi
 
+echo "[8/8] Building agent container image..."
+docker build -t optio-agent:latest -f Dockerfile.agent . -q
+echo "   Agent image built (optio-agent:latest)"
+
 echo ""
 echo "=== Setup Complete ==="
 echo ""
 echo "Infrastructure:"
 echo "  Postgres .... localhost:5432 (K8s pod in optio namespace)"
 echo "  Redis ...... localhost:6379 (K8s pod in optio namespace)"
+echo "  Agent image . optio-agent:latest (local)"
 echo ""
 echo "Next steps:"
 echo ""
@@ -78,10 +83,7 @@ echo ""
 echo "  3. Add your API keys (or use curl):"
 echo "     http://localhost:3000/secrets"
 echo ""
-echo "  4. Build the agent container image:"
-echo "     docker build -t optio-agent:latest -f Dockerfile.agent ."
-echo ""
-echo "  5. Create a task:"
+echo "  4. Create a task:"
 echo "     http://localhost:3000/tasks/new"
 echo ""
 echo "To tear down:"

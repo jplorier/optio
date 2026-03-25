@@ -1,6 +1,3 @@
-import { eq } from "drizzle-orm";
-import { db } from "../db/client.js";
-import { repos } from "../db/schema.js";
 import {
   TaskState,
   DEFAULT_REVIEW_PROMPT_TEMPLATE,
@@ -25,7 +22,8 @@ export async function launchReview(parentTaskId: string): Promise<string> {
   const prNumber = parseInt(prMatch[1], 10);
 
   // Get repo config
-  const [repoConfig] = await db.select().from(repos).where(eq(repos.repoUrl, parentTask.repoUrl));
+  const { getRepoByUrl } = await import("./repo-service.js");
+  const repoConfig = await getRepoByUrl(parentTask.repoUrl);
 
   // Create the review task as a subtask
   const { createSubtask, queueSubtask } = await import("./subtask-service.js");

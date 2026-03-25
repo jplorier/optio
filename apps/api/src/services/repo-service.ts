@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { repos } from "../db/schema.js";
+import { normalizeRepoUrl } from "@optio/shared";
 
 export interface RepoRecord {
   id: string;
@@ -43,7 +44,8 @@ export async function getRepo(id: string): Promise<RepoRecord | null> {
 }
 
 export async function getRepoByUrl(repoUrl: string): Promise<RepoRecord | null> {
-  const [repo] = await db.select().from(repos).where(eq(repos.repoUrl, repoUrl));
+  const normalized = normalizeRepoUrl(repoUrl);
+  const [repo] = await db.select().from(repos).where(eq(repos.repoUrl, normalized));
   return (repo as RepoRecord) ?? null;
 }
 
@@ -56,7 +58,7 @@ export async function createRepo(data: {
   const [repo] = await db
     .insert(repos)
     .values({
-      repoUrl: data.repoUrl,
+      repoUrl: normalizeRepoUrl(data.repoUrl),
       fullName: data.fullName,
       defaultBranch: data.defaultBranch ?? "main",
       isPrivate: data.isPrivate ?? false,

@@ -1,7 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks, repos, taskEvents } from "../db/schema.js";
+import { tasks, taskEvents } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
 import { retrieveSecret } from "../services/secret-service.js";
 import * as taskService from "../services/task-service.js";
@@ -265,7 +265,8 @@ export function startPrWatcherWorker() {
           await db.update(tasks).set(updates).where(eq(tasks.id, task.id));
 
           // --- Decide what action to take ---
-          const [repoConfig] = await db.select().from(repos).where(eq(repos.repoUrl, task.repoUrl));
+          const { getRepoByUrl } = await import("../services/repo-service.js");
+          const repoConfig = await getRepoByUrl(task.repoUrl);
           const existingReview = await db
             .select({ id: tasks.id })
             .from(tasks)

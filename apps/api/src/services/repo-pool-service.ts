@@ -4,7 +4,12 @@ import { db } from "../db/client.js";
 import { repoPods, tasks } from "../db/schema.js";
 import { getRuntime } from "./container-service.js";
 import type { ContainerHandle, ContainerSpec, ExecSession, RepoImageConfig } from "@optio/shared";
-import { DEFAULT_AGENT_IMAGE, PRESET_IMAGES, generateRepoPodName } from "@optio/shared";
+import {
+  DEFAULT_AGENT_IMAGE,
+  PRESET_IMAGES,
+  generateRepoPodName,
+  normalizeRepoUrl,
+} from "@optio/shared";
 import { logger } from "../logger.js";
 
 const IDLE_TIMEOUT_MS = parseInt(process.env.OPTIO_REPO_POD_IDLE_MS ?? "600000", 10); // 10 min default
@@ -30,12 +35,13 @@ export interface RepoPod {
  *   4. If at the instance limit, return the least-loaded ready pod.
  */
 export async function getOrCreateRepoPod(
-  repoUrl: string,
+  rawRepoUrl: string,
   repoBranch: string,
   env: Record<string, string>,
   imageConfig?: RepoImageConfig,
   opts?: { preferredPodId?: string; maxAgentsPerPod?: number; maxPodInstances?: number },
 ): Promise<RepoPod> {
+  const repoUrl = normalizeRepoUrl(rawRepoUrl);
   const maxAgentsPerPod = opts?.maxAgentsPerPod ?? 2;
   const maxPodInstances = opts?.maxPodInstances ?? 1;
 
@@ -157,16 +163,18 @@ async function createRepoPod(
 
   const pvcSuffix = instanceIndex > 0 ? `-${instanceIndex}` : "";
   const pvcName = `optio-home-${repoUrl.replace(/[^a-zA-Z0-9]/g, "-").slice(0, 40)}${pvcSuffix}`;
+  let pvcReady = false;
   try {
     const { execFile } = await import("node:child_process");
     const { promisify } = await import("node:util");
     const execFileAsync = promisify(execFile);
 
-    const { stdout: existsOut } = await execFileAsync("bash", [
-      "-c",
-      `kubectl get pvc ${pvcName} -n optio 2>/dev/null && echo "yes" || echo "no"`,
-    ]);
-    if (existsOut.trim() !== "yes") {
+    // Check if PVC already exists
+    try {
+      await execFileAsync("kubectl", ["get", "pvc", pvcName, "-n", "optio"]);
+      pvcReady = true;
+    } catch {
+      // PVC doesn't exist, create it
       const pvcManifest = `apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -180,9 +188,9 @@ spec:
   resources:
     requests:
       storage: 5Gi`;
-      await execFileAsync("kubectl", ["apply", "-f", "-", "-n", "optio"], {
-        input: pvcManifest,
-      } as any);
+      // Use bash -c with heredoc since execFile doesn't support stdin input
+      await execFileAsync("bash", ["-c", `echo '${pvcManifest}' | kubectl apply -f - -n optio`]);
+      pvcReady = true;
       logger.info({ pvcName }, "Created PVC for repo pod home directory");
     }
   } catch (err) {
@@ -191,6 +199,9 @@ spec:
 
   try {
     const podName = generateRepoPodName(repoUrl);
+    const volumes = pvcReady
+      ? [{ persistentVolumeClaim: pvcName, mountPath: "/home/agent" }]
+      : undefined;
     const spec: ContainerSpec = {
       name: podName,
       image,
@@ -202,12 +213,7 @@ spec:
       },
       workDir: "/workspace",
       imagePullPolicy: (process.env.OPTIO_IMAGE_PULL_POLICY as any) ?? "Never",
-      volumes: [
-        {
-          persistentVolumeClaim: pvcName,
-          mountPath: "/home/agent",
-        },
-      ],
+      volumes,
       labels: {
         "optio.repo-url": repoUrl.replace(/[^a-zA-Z0-9-_.]/g, "_").slice(0, 63),
         "optio.type": "repo-pod",

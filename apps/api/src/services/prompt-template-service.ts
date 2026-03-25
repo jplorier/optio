@@ -1,7 +1,7 @@
 import { eq, and, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { promptTemplates, repos } from "../db/schema.js";
-import { DEFAULT_PROMPT_TEMPLATE } from "@optio/shared";
+import { DEFAULT_PROMPT_TEMPLATE, normalizeRepoUrl } from "@optio/shared";
 
 /**
  * Get the prompt template for a repo. Priority:
@@ -16,7 +16,8 @@ export async function getPromptTemplate(repoUrl?: string): Promise<{
 }> {
   // Check repo-level override first
   if (repoUrl) {
-    const [repo] = await db.select().from(repos).where(eq(repos.repoUrl, repoUrl));
+    const normalized = normalizeRepoUrl(repoUrl);
+    const [repo] = await db.select().from(repos).where(eq(repos.repoUrl, normalized));
     if (repo?.promptTemplateOverride) {
       return {
         id: repo.id,
@@ -93,10 +94,11 @@ export async function saveDefaultPromptTemplate(
  * Save or update a repo-specific prompt template.
  */
 export async function saveRepoPromptTemplate(
-  repoUrl: string,
+  rawRepoUrl: string,
   template: string,
   autoMerge: boolean,
 ): Promise<void> {
+  const repoUrl = normalizeRepoUrl(rawRepoUrl);
   const [existing] = await db
     .select()
     .from(promptTemplates)

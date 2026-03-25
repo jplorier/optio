@@ -1,6 +1,6 @@
 import { eq, and, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks, repos } from "../db/schema.js";
+import { tasks } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
 import * as taskService from "./task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
@@ -152,7 +152,8 @@ export async function onSubtaskComplete(subtaskId: string) {
       logger.info({ taskId: parent.id }, "All blocking subtasks complete, review approved");
 
       // Auto-merge if enabled on the repo
-      const [repoConfig] = await db.select().from(repos).where(eq(repos.repoUrl, parent.repoUrl));
+      const { getRepoByUrl } = await import("./repo-service.js");
+      const repoConfig = await getRepoByUrl(parent.repoUrl);
 
       if (repoConfig?.autoMerge) {
         try {

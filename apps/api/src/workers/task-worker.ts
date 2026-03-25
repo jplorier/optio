@@ -487,6 +487,27 @@ export function startTaskWorker() {
           const currentTask = await taskService.getTask(taskId);
           if (currentTask && ["provisioning", "running"].includes(currentTask.state)) {
             await repoPool.updateWorktreeState(taskId, "dirty").catch(() => {});
+            // If the task is still provisioning (pod never started), re-queue
+            // instead of failing — the pod may become available later (e.g.
+            // image pull in progress, node scaling up).
+            if (currentTask.state === "provisioning") {
+              const errStr = String(err);
+              log.warn({ err: errStr }, "Pod provisioning failed, re-queuing task");
+              await taskService.updateTaskResult(taskId, undefined, errStr);
+              await taskService.transitionTask(
+                taskId,
+                TaskState.QUEUED,
+                "provisioning_retry",
+                errStr,
+              );
+              const jitter = Math.floor(Math.random() * 5000);
+              await taskQueue.add("process-task", job.data, {
+                jobId: `${taskId}-provretry-${Date.now()}`,
+                priority: currentTask.priority ?? 100,
+                delay: 30_000 + jitter,
+              });
+              return;
+            }
             await taskService.updateTaskResult(taskId, undefined, String(err));
             await taskService.transitionTask(taskId, TaskState.FAILED, "worker_error", String(err));
           } else {
@@ -535,6 +556,16 @@ export function startTaskWorker() {
  * detects those orphans and re-adds them to the queue.
  */
 export async function reconcileOrphanedTasks() {
+  // Drain all BullMQ jobs from the previous worker instance.
+  // On restart, any existing jobs are orphans — the worker that owned them
+  // is gone. We wipe the queue and re-enqueue from DB state below.
+  try {
+    await taskQueue.obliterate({ force: true });
+    logger.info("Obliterated stale task queue from previous worker");
+  } catch (err) {
+    logger.warn({ err }, "Failed to obliterate stale task queue");
+  }
+
   const orphanedQueued = await db
     .select()
     .from(tasks)
