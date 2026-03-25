@@ -102,6 +102,10 @@ auth:
     clientSecret: ""
     # baseUrl: https://gitlab.com  # Self-hosted GitLab URL
 
+# GitHub webhook signature validation
+webhook:
+  githubSecret: ""  # Generate with: openssl rand -hex 32. Must match GitHub's webhook config.
+
 # Secrets encryption
 encryption:
   key: ""  # Generate with: openssl rand -hex 32. Required.
