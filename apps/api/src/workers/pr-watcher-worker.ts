@@ -307,7 +307,11 @@ export function startPrWatcherWorker() {
             await taskService.transitionTask(task.id, TaskState.QUEUED, `auto_resume_${jobSuffix}`);
             await taskQueue.add(
               "process-task",
-              { taskId: task.id, resumeSessionId: task.sessionId, resumePrompt: prompt },
+              {
+                taskId: task.id,
+                resumePrompt: prompt,
+                restartFromBranch: !!task.prUrl,
+              },
               { jobId: `${task.id}-${jobSuffix}-${Date.now()}` },
             );
           };
