@@ -8,12 +8,13 @@ import { SetupCheck } from "./setup-check";
 export function LayoutShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const isSetup = pathname === "/setup";
+  const isLogin = pathname === "/login";
 
   return (
     <>
-      <SetupCheck />
-      <GlobalWebSocketProvider />
-      {isSetup ? (
+      {!isLogin && <SetupCheck />}
+      {!isLogin && <GlobalWebSocketProvider />}
+      {isSetup || isLogin ? (
         <main className="min-h-screen">{children}</main>
       ) : (
         <div className="flex h-screen">

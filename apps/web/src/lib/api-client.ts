@@ -8,6 +8,7 @@ async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, {
     ...opts,
     headers,
+    credentials: "include",
   });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -348,4 +349,25 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  // OAuth / User Auth
+  getAuthProviders: () =>
+    request<{
+      providers: Array<{ name: string; displayName: string }>;
+      authDisabled: boolean;
+    }>("/api/auth/providers"),
+
+  getCurrentUser: () =>
+    request<{
+      user: {
+        id: string;
+        provider: string;
+        email: string;
+        displayName: string;
+        avatarUrl: string | null;
+      };
+      authDisabled: boolean;
+    }>("/api/auth/me"),
+
+  logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
 };

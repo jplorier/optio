@@ -86,6 +86,22 @@ externalDatabase:
 externalRedis:
   url: ""  # e.g., redis://host:6379
 
+# Authentication
+auth:
+  # Set to true to disable authentication (not recommended for production)
+  disabled: false
+  # OAuth provider credentials
+  github:
+    clientId: ""
+    clientSecret: ""
+  google:
+    clientId: ""
+    clientSecret: ""
+  gitlab:
+    clientId: ""
+    clientSecret: ""
+    # baseUrl: https://gitlab.com  # Self-hosted GitLab URL
+
 # Secrets encryption
 encryption:
   key: ""  # Generate with: openssl rand -hex 32. Required.

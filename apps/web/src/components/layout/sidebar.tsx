@@ -13,6 +13,7 @@ import {
   Zap,
   DollarSign,
 } from "lucide-react";
+import { UserMenu } from "./user-menu";
 
 const MAIN_NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -86,9 +87,10 @@ export function Sidebar() {
           ))}
         </div>
       </nav>
-      <div className="px-5 py-4 border-t border-border text-[11px] text-text-muted/50">
-        Optio v0.1.0
+      <div className="border-t border-border px-3 py-3">
+        <UserMenu />
       </div>
+      <div className="px-5 py-2 text-[11px] text-text-muted/50">Optio v0.1.0</div>
     </aside>
   );
 }
