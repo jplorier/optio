@@ -36,6 +36,9 @@ export class GitHubOAuthProvider implements OAuthProvider {
         redirect_uri: getCallbackUrl("github"),
       }),
     });
+    if (!res.ok) {
+      throw new Error(`GitHub token exchange failed: ${res.status} ${res.statusText}`);
+    }
     const data = (await res.json()) as Record<string, string>;
     if (data.error) {
       throw new Error(`GitHub OAuth error: ${data.error_description ?? data.error}`);
@@ -53,6 +56,12 @@ export class GitHubOAuthProvider implements OAuthProvider {
       }),
     ]);
 
+    if (!userRes.ok) {
+      throw new Error(`GitHub user fetch failed: ${userRes.status} ${userRes.statusText}`);
+    }
+    if (!emailsRes.ok) {
+      throw new Error(`GitHub emails fetch failed: ${emailsRes.status} ${emailsRes.statusText}`);
+    }
     const user = (await userRes.json()) as Record<string, any>;
     const emails = (await emailsRes.json()) as Array<{
       email: string;

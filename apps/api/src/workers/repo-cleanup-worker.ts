@@ -10,6 +10,7 @@ import {
 import { getRuntime } from "../services/container-service.js";
 import { TaskState } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
+import { cleanupExpiredSessions } from "../services/session-service.js";
 import { logger } from "../logger.js";
 
 const connectionOpts = {
@@ -322,6 +323,16 @@ export function startRepoCleanupWorker() {
       const cleaned = await cleanupIdleRepoPods();
       if (cleaned > 0) {
         logger.info({ cleaned }, "Cleaned up idle repo pods");
+      }
+
+      // Clean up expired auth sessions
+      try {
+        const expiredSessions = await cleanupExpiredSessions();
+        if (expiredSessions > 0) {
+          logger.info({ expiredSessions }, "Cleaned up expired sessions");
+        }
+      } catch (err) {
+        logger.warn({ err }, "Failed to clean up expired sessions");
       }
     },
     {

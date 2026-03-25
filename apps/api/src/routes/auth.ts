@@ -10,17 +10,41 @@ import { createSession, revokeSession, validateSession } from "../services/sessi
 import { SESSION_COOKIE_NAME } from "../plugins/auth.js";
 
 const WEB_URL = process.env.WEB_PUBLIC_URL ?? "http://localhost:3000";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
-// In-memory state store for CSRF protection (short-lived, 10 min TTL)
+// In-memory state store for CSRF protection (short-lived, 10 min TTL, bounded size)
+const OAUTH_STATE_MAX_SIZE = 10_000;
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const oauthStates = new Map<string, { provider: string; createdAt: number }>();
 
 // Clean expired states periodically
 setInterval(() => {
   const now = Date.now();
   for (const [key, val] of oauthStates) {
-    if (now - val.createdAt > 10 * 60 * 1000) oauthStates.delete(key);
+    if (now - val.createdAt > OAUTH_STATE_TTL_MS) oauthStates.delete(key);
   }
 }, 60_000);
+
+function addOAuthState(state: string, provider: string): void {
+  // Evict oldest entries if at capacity
+  if (oauthStates.size >= OAUTH_STATE_MAX_SIZE) {
+    let oldest: string | undefined;
+    let oldestTime = Infinity;
+    for (const [key, val] of oauthStates) {
+      if (val.createdAt < oldestTime) {
+        oldestTime = val.createdAt;
+        oldest = key;
+      }
+    }
+    if (oldest) oauthStates.delete(oldest);
+  }
+  oauthStates.set(state, { provider, createdAt: Date.now() });
+}
+
+function buildSessionCookie(token: string): string {
+  const secure = IS_PRODUCTION ? "; Secure" : "";
+  return `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}${secure}`;
+}
 
 export async function authRoutes(app: FastifyInstance) {
   // ─── Existing Claude auth endpoints ───
@@ -80,7 +104,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const state = randomBytes(16).toString("hex");
-    oauthStates.set(state, { provider: providerName, createdAt: Date.now() });
+    addOAuthState(state, providerName);
 
     const url = provider.authorizeUrl(state);
     reply.redirect(url);
@@ -95,7 +119,7 @@ export async function authRoutes(app: FastifyInstance) {
     const { code, state, error } = req.query;
 
     if (error) {
-      return reply.redirect(`${WEB_URL}/login?error=${encodeURIComponent(error)}`);
+      return reply.redirect(`${WEB_URL}/login?error=provider_error`);
     }
 
     if (!code || !state) {
@@ -120,16 +144,10 @@ export async function authRoutes(app: FastifyInstance) {
       const { token } = await createSession(providerName, profile);
 
       // Set session cookie and redirect to web app
-      reply
-        .header(
-          "Set-Cookie",
-          `${SESSION_COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`,
-        )
-        .redirect(`${WEB_URL}/`);
+      reply.header("Set-Cookie", buildSessionCookie(token)).redirect(`${WEB_URL}/`);
     } catch (err) {
       app.log.error(err, "OAuth callback failed");
-      const msg = err instanceof Error ? err.message : "unknown_error";
-      reply.redirect(`${WEB_URL}/login?error=${encodeURIComponent(msg)}`);
+      reply.redirect(`${WEB_URL}/login?error=auth_failed`);
     }
   });
 

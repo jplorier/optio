@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from "node:crypto";
 import { db } from "../db/client.js";
 import { users, sessions } from "../db/schema.js";
-import { eq, and, gt } from "drizzle-orm";
+import { eq, and, gt, lt } from "drizzle-orm";
 import type { OAuthUser } from "./oauth/provider.js";
 
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
@@ -122,4 +122,10 @@ export async function revokeSession(token: string): Promise<void> {
 /** Revoke all sessions for a user. */
 export async function revokeAllUserSessions(userId: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.userId, userId));
+}
+
+/** Delete all expired sessions. Returns count of deleted rows. */
+export async function cleanupExpiredSessions(): Promise<number> {
+  const result = await db.delete(sessions).where(lt(sessions.expiresAt, new Date())).returning();
+  return result.length;
 }

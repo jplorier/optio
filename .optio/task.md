@@ -1,124 +1,61 @@
-# feat: Add authentication with multi-provider OAuth support
+# fix: Auth security hardening before production
 
-feat: Add authentication with multi-provider OAuth support
+fix: Auth security hardening before production
 
 ## Summary
 
-Optio currently has no authentication on the web UI or API — all endpoints are open to anyone with network access. We need a proper auth layer that supports multiple OAuth providers, is admin-configurable, and can be disabled for local development.
+The OAuth auth system (#29) is functionally complete but has several security gaps that need addressing before production use.
 
-## Motivation
+## Issues
 
-- **Security**: Anyone with network access can submit tasks, view logs, cancel jobs, and read secrets
-- **Audit trail**: No way to know who submitted a task or performed an action
-- **Production readiness**: Auth is a prerequisite for any non-localhost deployment
+### Critical: CORS accepts any origin
 
-## Design
+- **File**: `apps/api/src/server.ts`
+- CORS is configured with `origin: true`, allowing requests from any origin
+- **Fix**: Whitelist specific origins via `OPTIO_ALLOWED_ORIGINS` env var (e.g. `http://localhost:3100,https://optio.example.com`)
 
-### Multi-Provider OAuth
+### High: No `Secure` flag on session cookie
 
-Support GitHub, Google, and GitLab as OAuth providers. All three use standard OAuth2 flows and share a common interface:
+- **File**: `apps/api/src/routes/auth.ts`
+- Session cookies are set with `HttpOnly` and `SameSite=Lax` but no `Secure` flag
+- In production over HTTPS, cookies could be transmitted over unencrypted connections
+- **Fix**: Conditionally add `Secure` when `NODE_ENV=production` or behind a config flag
 
-```ts
-interface OAuthProvider {
-  name: string;
-  authorizeUrl(state: string): string;
-  exchangeCode(code: string): Promise<{ accessToken: string; refreshToken?: string }>;
-  fetchUser(
-    accessToken: string,
-  ): Promise<{ externalId: string; email: string; displayName: string; avatarUrl?: string }>;
-}
-```
+### High: No expired session cleanup
 
-Auth flow:
+- Sessions accumulate in the DB indefinitely — `validateSession()` checks expiry but never deletes old rows
+- **Fix**: Add periodic cleanup (e.g. in `repo-cleanup-worker`) to delete sessions where `expires_at < now()`
 
-1. User clicks "Sign in with {Provider}" on `/login`
-2. Redirected to `/api/auth/:provider/login` → provider's OAuth consent screen
-3. Provider redirects back to `/api/auth/:provider/callback`
-4. API exchanges code for token, fetches user profile, creates/updates user record, creates session
-5. Session cookie set, user redirected to `/`
+### High: OAuth providers don't check response status
 
-### Admin Configuration
+- **Files**: `apps/api/src/services/oauth/github.ts`, `google.ts`, `gitlab.ts`
+- `exchangeCode` and `fetchUser` call `.json()` without checking `res.ok` first
+- Non-2xx responses (rate limits, server errors) will throw confusing parse errors
+- **Fix**: Add `if (!res.ok) throw new Error(...)` before parsing
 
-Provider credentials are stored as env vars or in the existing secrets system:
+### Medium: Unbounded in-memory OAuth state map
 
-```
-GITHUB_OAUTH_CLIENT_ID / GITHUB_OAUTH_CLIENT_SECRET
-GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET
-GITLAB_OAUTH_CLIENT_ID / GITLAB_OAUTH_CLIENT_SECRET
-```
+- **File**: `apps/api/src/routes/auth.ts`
+- The `oauthStates` Map has a 10-minute TTL cleanup but no size limit
+- An attacker could flood login requests to grow the map unboundedly
+- **Fix**: Use a size-limited LRU cache or move state to Redis
 
-A new "Authentication" section on the `/settings` page allows admins to:
+### Medium: Error messages in redirect URLs
 
-- See which providers are available (auto-detected from configured client IDs)
-- Toggle individual providers on/off
-- Set an allowed email domain filter (e.g. `@yourcompany.com`)
-- Set a GitHub org restriction (e.g. only members of `my-org` can log in)
-
-### Disable Auth for Local Dev
-
-A single env var disables all auth checks:
-
-```
-OPTIO_AUTH_DISABLED=true
-```
-
-- The Fastify auth `preHandler` hook short-circuits when this is set
-- `setup-local.sh` sets this in `.env` by default
-- The Helm chart defaults it to `false`
-- The web UI shows a "Authentication is disabled" banner and a "Local Dev" placeholder avatar
-- The Next.js middleware skips the login redirect
-
-## Database Changes
-
-Three schema changes (one new migration):
-
-1. **`users` table** — id, provider, externalId, email, displayName, avatarUrl, lastLoginAt
-2. **`sessions` table** — id, userId (FK), tokenHash, expiresAt (server-side sessions allow revocation)
-3. **`tasks.createdBy`** — nullable FK to users (null when auth is disabled)
-
-## Implementation Scope
-
-### API (`apps/api`) ~8 files
-
-- [ ] `services/oauth/provider.ts` — OAuthProvider interface
-- [ ] `services/oauth/github.ts` — GitHub OAuth implementation
-- [ ] `services/oauth/google.ts` — Google OAuth implementation
-- [ ] `services/oauth/gitlab.ts` — GitLab OAuth implementation
-- [ ] `services/session-service.ts` — create, validate, revoke sessions
-- [ ] `routes/auth.ts` — extend with `/:provider/login`, `/:provider/callback`, `/me`, `/logout`
-- [ ] `plugins/auth.ts` — Fastify `preHandler` hook (validate session cookie, skip if `OPTIO_AUTH_DISABLED`)
-- [ ] DB migration for users, sessions tables, and tasks.createdBy column
-
-### Web (`apps/web`) ~4 files
-
-- [ ] `middleware.ts` — check session cookie, redirect to `/login` if missing (skip if auth disabled)
-- [ ] `app/login/page.tsx` — login page with provider buttons (fetches enabled providers from API)
-- [ ] `components/layout/user-menu.tsx` — avatar dropdown with user info + logout in sidebar
-- [ ] Settings page — new "Authentication" section for provider management
-
-### Config / Infra
-
-- [ ] `setup-local.sh` — add `OPTIO_AUTH_DISABLED=true` to generated `.env`
-- [ ] `.env.example` — add OAuth env vars and `OPTIO_AUTH_DISABLED`
-- [ ] Helm `values.yaml` — add auth config section (OAuth secrets, `authDisabled: false`)
-
-## Non-Goals (for now)
-
-- **Roles/permissions** — all authenticated users are equal. RBAC can come later.
-- **API keys for programmatic access** — can add `/api/auth/api-keys` CRUD in a follow-up.
-- **SAML/OIDC enterprise SSO** — out of scope for v1, but the provider interface makes it easy to add.
+- **File**: `apps/api/src/routes/auth.ts`
+- Raw error strings (including potential stack traces) are URL-encoded in redirect query params
+- Visible in browser history and server logs
+- **Fix**: Use generic error codes in redirects, fetch details via API if needed
 
 ## Acceptance Criteria
 
-- [ ] At least one OAuth provider (GitHub) works end-to-end: login → session → protected routes → logout
-- [ ] Google and GitLab providers implemented and tested
-- [ ] Unauthenticated requests to protected API routes return 401
-- [ ] Unauthenticated web access redirects to `/login`
-- [ ] `OPTIO_AUTH_DISABLED=true` bypasses all auth (local dev works unchanged)
-- [ ] Admin can see and toggle providers on the settings page
-- [ ] Tasks show who created them (`createdBy`)
-- [ ] Helm chart supports OAuth configuration
+- [ ] CORS restricted to configured origins
+- [ ] Session cookie has `Secure` flag in production
+- [ ] Expired sessions are cleaned up periodically
+- [ ] OAuth HTTP responses validated before parsing
+- [ ] OAuth state map bounded or moved to Redis
+- [ ] Error messages not leaked in URLs
 
 ---
 
-_Optio Task ID: 9ed465eb-5796-45c8-8104-df2be1d286e2_
+_Optio Task ID: b5043ba0-5447-434b-aa87-e3baf712629d_

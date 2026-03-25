@@ -37,6 +37,9 @@ export class GoogleOAuthProvider implements OAuthProvider {
         grant_type: "authorization_code",
       }),
     });
+    if (!res.ok) {
+      throw new Error(`Google token exchange failed: ${res.status} ${res.statusText}`);
+    }
     const data = (await res.json()) as Record<string, any>;
     if (data.error) {
       throw new Error(`Google OAuth error: ${data.error_description ?? data.error}`);
@@ -48,6 +51,9 @@ export class GoogleOAuthProvider implements OAuthProvider {
     const res = await fetch("https://www.googleapis.com/oauth2/v2/userinfo", {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    if (!res.ok) {
+      throw new Error(`Google user fetch failed: ${res.status} ${res.statusText}`);
+    }
     const data = (await res.json()) as Record<string, any>;
     return {
       externalId: String(data.id),

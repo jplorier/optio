@@ -32,8 +32,11 @@ export async function buildServer() {
   const app = Fastify({ logger: loggerConfig });
 
   // Plugins
+  const allowedOrigins = process.env.OPTIO_ALLOWED_ORIGINS
+    ? process.env.OPTIO_ALLOWED_ORIGINS.split(",").map((o) => o.trim())
+    : undefined;
   await app.register(cors, {
-    origin: true,
+    origin: allowedOrigins ?? true,
     credentials: true,
     methods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   });

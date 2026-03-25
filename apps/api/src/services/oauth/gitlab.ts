@@ -39,6 +39,9 @@ export class GitLabOAuthProvider implements OAuthProvider {
         grant_type: "authorization_code",
       }),
     });
+    if (!res.ok) {
+      throw new Error(`GitLab token exchange failed: ${res.status} ${res.statusText}`);
+    }
     const data = (await res.json()) as Record<string, any>;
     if (data.error) {
       throw new Error(`GitLab OAuth error: ${data.error_description ?? data.error}`);
@@ -50,6 +53,9 @@ export class GitLabOAuthProvider implements OAuthProvider {
     const res = await fetch(`${this.baseUrl}/api/v4/user`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+    if (!res.ok) {
+      throw new Error(`GitLab user fetch failed: ${res.status} ${res.statusText}`);
+    }
     const data = (await res.json()) as Record<string, any>;
     return {
       externalId: String(data.id),
