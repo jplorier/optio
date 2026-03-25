@@ -475,6 +475,43 @@ export const api = {
 
   logout: () => request<{ ok: boolean }>("/api/auth/logout", { method: "POST" }),
 
+  // Interactive Sessions
+  listSessions: (params?: {
+    repoUrl?: string;
+    state?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const qs = new URLSearchParams();
+    if (params?.repoUrl) qs.set("repoUrl", params.repoUrl);
+    if (params?.state) qs.set("state", params.state);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    if (params?.offset) qs.set("offset", String(params.offset));
+    const query = qs.toString();
+    return request<{ sessions: any[]; activeCount: number }>(
+      `/api/sessions${query ? `?${query}` : ""}`,
+    );
+  },
+
+  getSession: (id: string) => request<{ session: any }>(`/api/sessions/${id}`),
+
+  createSession: (data: { repoUrl: string }) =>
+    request<{ session: any }>("/api/sessions", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  endSession: (id: string) =>
+    request<{ session: any }>(`/api/sessions/${id}/end`, { method: "POST" }),
+
+  getSessionPrs: (sessionId: string) => request<{ prs: any[] }>(`/api/sessions/${sessionId}/prs`),
+
+  addSessionPr: (sessionId: string, data: { prUrl: string; prNumber: number }) =>
+    request<{ pr: any }>(`/api/sessions/${sessionId}/prs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
   // Schedules
   listSchedules: () =>
     request<{
