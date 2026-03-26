@@ -104,7 +104,7 @@ export function UserMenu() {
                   key={value}
                   onClick={() => setTheme(value)}
                   className={cn(
-                    "flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-colors flex-1 justify-center",
+                    "flex items-center gap-1 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors flex-1 justify-center whitespace-nowrap",
                     theme === value
                       ? "bg-primary/15 text-primary"
                       : "text-text-muted hover:bg-bg-hover hover:text-text",
