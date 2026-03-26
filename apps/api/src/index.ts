@@ -50,6 +50,13 @@ process.on("uncaughtException", (err) => {
 });
 
 async function main() {
+  // Run database migrations before anything else
+  const { migrate } = await import("drizzle-orm/postgres-js/migrator");
+  const { db } = await import("./db/client.js");
+  const migrationsPath = new URL("./db/migrations", import.meta.url).pathname;
+  await migrate(db, { migrationsFolder: migrationsPath });
+  logger.info("Database migrations applied");
+
   const app = await buildServer();
 
   // Bind HTTP server first so turbo sees output quickly.
