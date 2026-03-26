@@ -13,16 +13,20 @@ export async function setupRoutes(app: FastifyInstance) {
     const hasOpenAIKey = secretNames.includes("OPENAI_API_KEY");
     const hasGithubToken = secretNames.includes("GITHUB_TOKEN");
 
-    // Check if using Max subscription mode
+    // Check if using Max subscription or OAuth token mode
     let usingSubscription = false;
+    let hasOauthToken = false;
     try {
       const authMode = await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null);
       if (authMode === "max-subscription") {
         usingSubscription = isSubscriptionAvailable();
       }
+      if (authMode === "oauth-token") {
+        hasOauthToken = secretNames.includes("CLAUDE_CODE_OAUTH_TOKEN");
+      }
     } catch {}
 
-    const hasAnyAgentKey = hasAnthropicKey || hasOpenAIKey || usingSubscription;
+    const hasAnyAgentKey = hasAnthropicKey || hasOpenAIKey || usingSubscription || hasOauthToken;
 
     let runtimeHealthy = false;
     try {

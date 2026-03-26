@@ -819,7 +819,7 @@ export default function SetupPage() {
                   <label className="text-xs text-text-muted mb-2 block">
                     Your recent repositories
                   </label>
-                  <div className="grid gap-1.5">
+                  <div className="grid gap-1.5 overflow-hidden">
                     {suggestedRepos.map((sr) => {
                       const isSelected = repos.some((r) => r.fullName === sr.fullName);
                       return (
@@ -842,7 +842,7 @@ export default function SetupPage() {
                             }
                           }}
                           className={cn(
-                            "flex items-center gap-3 p-2.5 rounded-md border text-left text-sm transition-colors",
+                            "flex items-center gap-3 p-2.5 rounded-md border text-left text-sm transition-colors min-w-0",
                             isSelected
                               ? "border-primary bg-primary/5"
                               : "border-border hover:border-text-muted bg-bg",
