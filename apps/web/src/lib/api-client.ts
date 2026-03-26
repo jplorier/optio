@@ -662,4 +662,6 @@ export const api = {
         body: JSON.stringify({ cronExpression }),
       },
     ),
+
+  getWsToken: () => request<{ token: string }>("/api/auth/ws-token"),
 };

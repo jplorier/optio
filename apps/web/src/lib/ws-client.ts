@@ -1,19 +1,43 @@
 type EventHandler = (event: any) => void;
 
+export type TokenProvider = () => Promise<string | null>;
+
 export class WsClient {
   private ws: WebSocket | null = null;
   private handlers: Map<string, Set<EventHandler>> = new Map();
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private url: string;
+  private tokenProvider: TokenProvider | null;
 
-  constructor(url: string) {
+  constructor(url: string, tokenProvider?: TokenProvider) {
     this.url = url;
+    this.tokenProvider = tokenProvider ?? null;
   }
 
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
-    this.ws = new WebSocket(this.url);
+    // If a token provider is set, fetch a token before connecting.
+    if (this.tokenProvider) {
+      this.tokenProvider()
+        .then((token) => {
+          const sep = this.url.includes("?") ? "&" : "?";
+          const authedUrl = token
+            ? `${this.url}${sep}token=${encodeURIComponent(token)}`
+            : this.url;
+          this.openSocket(authedUrl);
+        })
+        .catch(() => {
+          // Token fetch failed — retry after delay
+          this.reconnectTimer = setTimeout(() => this.connect(), 3000);
+        });
+    } else {
+      this.openSocket(this.url);
+    }
+  }
+
+  private openSocket(url: string): void {
+    this.ws = new WebSocket(url);
 
     this.ws.onmessage = (msg) => {
       try {
@@ -63,16 +87,16 @@ export class WsClient {
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000";
 
-export function createEventsClient(): WsClient {
-  return new WsClient(`${WS_URL}/ws/events`);
+export function createEventsClient(tokenProvider?: TokenProvider): WsClient {
+  return new WsClient(`${WS_URL}/ws/events`, tokenProvider);
 }
 
-export function createLogClient(taskId: string): WsClient {
-  return new WsClient(`${WS_URL}/ws/logs/${taskId}`);
+export function createLogClient(taskId: string, tokenProvider?: TokenProvider): WsClient {
+  return new WsClient(`${WS_URL}/ws/logs/${taskId}`, tokenProvider);
 }
 
-export function createTerminalClient(taskId: string): WsClient {
-  return new WsClient(`${WS_URL}/ws/terminal/${taskId}`);
+export function createTerminalClient(taskId: string, tokenProvider?: TokenProvider): WsClient {
+  return new WsClient(`${WS_URL}/ws/terminal/${taskId}`, tokenProvider);
 }
 
 export function createSessionTerminalClient(sessionId: string): WsClient {

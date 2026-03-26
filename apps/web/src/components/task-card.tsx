@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { StateBadge } from "./state-badge";
 import { classifyError } from "@optio/shared";
 import { api } from "@/lib/api-client";
-import { formatRelativeTime, truncate } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/utils";
 import { ExternalLink, RotateCcw, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 

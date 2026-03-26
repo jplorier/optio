@@ -124,6 +124,18 @@ export async function revokeAllUserSessions(userId: string): Promise<void> {
   await db.delete(sessions).where(eq(sessions.userId, userId));
 }
 
+/** Create a short-lived token for WebSocket authentication. */
+export async function createWsToken(userId: string): Promise<string> {
+  const WS_TOKEN_TTL_MS = 60_000; // 60 seconds — enough for the WS upgrade
+  const token = randomBytes(32).toString("hex");
+  const tokenHash = hashToken(token);
+  const expiresAt = new Date(Date.now() + WS_TOKEN_TTL_MS);
+
+  await db.insert(sessions).values({ userId, tokenHash, expiresAt });
+
+  return token;
+}
+
 /** Delete all expired sessions. Returns count of deleted rows. */
 export async function cleanupExpiredSessions(): Promise<number> {
   const result = await db.delete(sessions).where(lt(sessions.expiresAt, new Date())).returning();

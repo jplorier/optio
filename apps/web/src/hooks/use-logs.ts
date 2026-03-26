@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/lib/api-client";
 import { createLogClient, type WsClient } from "@/lib/ws-client";
+import { getWsTokenProvider } from "@/lib/ws-auth";
 
 export interface LogEntry {
   content: string;
@@ -26,7 +27,7 @@ export function useLogs(taskId: string) {
     const pendingLive: LogEntry[] = [];
     let merged = false;
 
-    const client = createLogClient(taskId);
+    const client = createLogClient(taskId, getWsTokenProvider());
     clientRef.current = client;
 
     client.on("task:log", (event) => {

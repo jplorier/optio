@@ -12,7 +12,7 @@ declare module "fastify" {
 const SESSION_COOKIE_NAME = "optio_session";
 
 /** Routes that never require authentication. */
-const PUBLIC_ROUTES = ["/api/health", "/api/auth/", "/api/setup/", "/api/webhooks/"];
+const PUBLIC_ROUTES = ["/api/health", "/api/auth/", "/api/setup/", "/api/webhooks/", "/ws/"];
 
 function isPublicRoute(url: string): boolean {
   return PUBLIC_ROUTES.some((prefix) => url.startsWith(prefix));

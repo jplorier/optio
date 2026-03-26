@@ -6,7 +6,12 @@ import {
   invalidateCredentialsCache,
 } from "../services/auth-service.js";
 import { getOAuthProvider, getEnabledProviders, isAuthDisabled } from "../services/oauth/index.js";
-import { createSession, revokeSession, validateSession } from "../services/session-service.js";
+import {
+  createSession,
+  createWsToken,
+  revokeSession,
+  validateSession,
+} from "../services/session-service.js";
 import { SESSION_COOKIE_NAME } from "../plugins/auth.js";
 
 const WEB_URL = process.env.WEB_PUBLIC_URL ?? "http://localhost:3000";
@@ -181,6 +186,21 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     reply.send({ user, authDisabled: false });
+  });
+
+  /** Get a short-lived token for authenticating WebSocket connections. */
+  app.get("/api/auth/ws-token", async (req, reply) => {
+    if (isAuthDisabled()) {
+      // Auth disabled — return a dummy token (WS connections won't be checked)
+      return reply.send({ token: "auth-disabled" });
+    }
+
+    if (!req.user) {
+      return reply.status(401).send({ error: "Not authenticated" });
+    }
+
+    const token = await createWsToken(req.user.id);
+    return reply.send({ token });
   });
 
   /** Logout — revoke session and clear cookie. */

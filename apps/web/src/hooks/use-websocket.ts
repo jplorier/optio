@@ -2,13 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { createEventsClient, type WsClient } from "@/lib/ws-client";
+import { getWsTokenProvider } from "@/lib/ws-auth";
 import { useStore } from "./use-store";
 
 export function useGlobalWebSocket() {
   const clientRef = useRef<WsClient | null>(null);
 
   useEffect(() => {
-    const client = createEventsClient();
+    const client = createEventsClient(getWsTokenProvider());
     clientRef.current = client;
     client.connect();
 
