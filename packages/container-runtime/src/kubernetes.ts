@@ -306,7 +306,7 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
 
   async ping(): Promise<boolean> {
     try {
-      await this.coreApi.listNamespace({ limit: 1 });
+      await this.coreApi.listNamespacedPod({ namespace: this.namespace, limit: 1 });
       return true;
     } catch {
       return false;

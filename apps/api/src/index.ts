@@ -70,7 +70,9 @@ async function main() {
   // Run database migrations before anything else
   const { migrate } = await import("drizzle-orm/postgres-js/migrator");
   const { db } = await import("./db/client.js");
-  const migrationsPath = new URL("./db/migrations", import.meta.url).pathname;
+  const { dirname, join } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const migrationsPath = join(dirname(fileURLToPath(import.meta.url)), "db", "migrations");
   await migrate(db, { migrationsFolder: migrationsPath });
   logger.info("Database migrations applied");
 
