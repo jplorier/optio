@@ -150,13 +150,13 @@ API ......... http://localhost:30400
 
 Open the web UI and the setup wizard will walk you through configuring GitHub access, agent credentials (API key or Max/Pro subscription), and adding your first repository.
 
-### Redeploying after code changes
+### Updating
 
 ```bash
-docker build -t optio-api:latest -f Dockerfile.api .
-docker build -t optio-web:latest -f Dockerfile.web .
-kubectl rollout restart deployment/optio-api deployment/optio-web -n optio
+./scripts/update-local.sh
 ```
+
+Pulls latest code, rebuilds images, applies Helm changes, and rolling-restarts the deployments.
 
 ### Teardown
 
