@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks, taskEvents, sessionPrs, interactiveSessions } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
-import { retrieveSecret } from "../services/secret-service.js";
+import { retrieveSecretWithFallback } from "../services/secret-service.js";
 import * as taskService from "../services/task-service.js";
 import { updateSessionPr } from "../services/interactive-session-service.js";
 import { taskQueue } from "./task-worker.js";
@@ -148,13 +148,20 @@ export function startPrWatcherWorker() {
   const worker = new Worker(
     "pr-watcher",
     async () => {
-      // Fetch GitHub token once for both task and session PR watching
-      let githubToken: string | null = null;
-      try {
-        githubToken = await retrieveSecret("GITHUB_TOKEN");
-      } catch {
-        // No token, can't check PRs
-      }
+      // Cache GitHub tokens per workspace to avoid repeated DB lookups
+      const tokenCache = new Map<string, string | null>();
+      const getGithubToken = async (workspaceId: string | null): Promise<string | null> => {
+        const cacheKey = workspaceId ?? "__global__";
+        if (tokenCache.has(cacheKey)) return tokenCache.get(cacheKey)!;
+        try {
+          const token = await retrieveSecretWithFallback("GITHUB_TOKEN", "global", workspaceId);
+          tokenCache.set(cacheKey, token);
+          return token;
+        } catch {
+          tokenCache.set(cacheKey, null);
+          return null;
+        }
+      };
 
       // --- Task PR watching ---
       // Find all tasks with open PRs
@@ -167,14 +174,17 @@ export function startPrWatcherWorker() {
           sql`${tasks.state} IN ('pr_opened', 'failed') AND ${tasks.prUrl} IS NOT NULL AND (${tasks.taskType} = 'coding' OR ${tasks.taskType} IS NULL)`,
         );
 
-      if (openPrTasks.length > 0 && githubToken) {
-        const headers = {
-          Authorization: `Bearer ${githubToken}`,
-          "User-Agent": "Optio",
-          Accept: "application/vnd.github.v3+json",
-        };
-
+      if (openPrTasks.length > 0) {
         for (const task of openPrTasks) {
+          const taskWsId = (task as any).workspaceId ?? null;
+          const githubToken = await getGithubToken(taskWsId);
+          if (!githubToken) continue;
+
+          const headers = {
+            Authorization: `Bearer ${githubToken}`,
+            "User-Agent": "Optio",
+            Accept: "application/vnd.github.v3+json",
+          };
           if (!task.prUrl) continue;
 
           try {
@@ -270,7 +280,7 @@ export function startPrWatcherWorker() {
 
             // --- Decide what action to take ---
             const { getRepoByUrl } = await import("../services/repo-service.js");
-            const repoConfig = await getRepoByUrl(task.repoUrl);
+            const repoConfig = await getRepoByUrl(task.repoUrl, taskWsId);
             const existingReview = await db
               .select({ id: tasks.id })
               .from(tasks)
@@ -464,7 +474,7 @@ export function startPrWatcherWorker() {
             logger.warn({ err, taskId: task.id }, "Failed to check PR status");
           }
         }
-      } // end if (openPrTasks.length > 0 && githubToken)
+      } // end if (openPrTasks.length > 0)
 
       // --- Session PR watching ---
       // Poll PRs tracked in active sessions to keep CI/review/merge status up to date
@@ -483,9 +493,10 @@ export function startPrWatcherWorker() {
               sql`${sessionPrs.sessionId} IN ${sessionIds} AND (${sessionPrs.prState} IS NULL OR ${sessionPrs.prState} = 'open')`,
             );
 
-          if (openSessionPrs.length > 0 && githubToken) {
+          const sessionGithubToken = await getGithubToken(null);
+          if (openSessionPrs.length > 0 && sessionGithubToken) {
             const sessionHeaders = {
-              Authorization: `Bearer ${githubToken}`,
+              Authorization: `Bearer ${sessionGithubToken}`,
               "User-Agent": "Optio",
               Accept: "application/vnd.github.v3+json",
             };
