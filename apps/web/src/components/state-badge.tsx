@@ -5,6 +5,7 @@ const STATE_CONFIG: Record<
   { label: string; color: string; dotColor: string; pulse?: boolean; emphasis?: boolean }
 > = {
   pending: { label: "Queued", color: "text-text-muted", dotColor: "bg-text-muted" },
+  waiting_on_deps: { label: "Waiting", color: "text-warning", dotColor: "bg-warning" },
   queued: { label: "Queued", color: "text-info", dotColor: "bg-info" },
   provisioning: { label: "Setup", color: "text-info", dotColor: "bg-info", pulse: true },
   running: { label: "Running", color: "text-primary", dotColor: "bg-primary", pulse: true },

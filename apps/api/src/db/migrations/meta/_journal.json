@@ -162,6 +162,13 @@
       "when": 1774886400000,
       "tag": "0022_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1774972800000,
+      "tag": "0023_task_dependencies_workflows",
+      "breakpoints": true
     }
   ]
 }

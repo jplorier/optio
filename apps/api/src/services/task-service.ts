@@ -293,6 +293,27 @@ export async function transitionTask(
     logger.warn({ err, taskId: id }, "Failed to send Slack notification"),
   );
 
+  // Handle task dependency graph: unblock dependents on completion, cascade on failure
+  if (toState === TaskState.COMPLETED) {
+    import("./dependency-service.js")
+      .then(({ onDependencyComplete }) => onDependencyComplete(id))
+      .catch((err) => logger.warn({ err, taskId: id }, "Failed to unblock dependent tasks"));
+  }
+  if (toState === TaskState.FAILED) {
+    import("./dependency-service.js")
+      .then(({ cascadeFailure }) => cascadeFailure(id))
+      .catch((err) => logger.warn({ err, taskId: id }, "Failed to cascade failure to dependents"));
+  }
+
+  // Update workflow run status if this task is part of a workflow
+  if (updated[0].workflowRunId) {
+    import("./workflow-service.js")
+      .then(({ checkWorkflowRunCompletion }) =>
+        checkWorkflowRunCompletion(updated[0].workflowRunId!),
+      )
+      .catch((err) => logger.warn({ err, taskId: id }, "Failed to update workflow run status"));
+  }
+
   return updated[0];
 }
 

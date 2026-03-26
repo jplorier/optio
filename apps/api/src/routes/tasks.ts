@@ -3,6 +3,7 @@ import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { TaskState } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
+import * as dependencyService from "../services/dependency-service.js";
 import { taskQueue } from "../workers/task-worker.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
@@ -18,6 +19,7 @@ const createTaskSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   maxRetries: z.number().int().min(0).max(10).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
+  dependsOn: z.array(z.string().uuid()).optional(),
 });
 
 export async function taskRoutes(app: FastifyInstance) {
@@ -72,29 +74,53 @@ export async function taskRoutes(app: FastifyInstance) {
   // Create task
   app.post("/api/tasks", async (req, reply) => {
     const input = createTaskSchema.parse(req.body);
+    const { dependsOn, ...taskInput } = input;
     const task = await taskService.createTask({
-      ...input,
+      ...taskInput,
       workspaceId: req.user?.workspaceId ?? null,
     });
 
-    // Enqueue for processing
-    await taskService.transitionTask(
-      task.id,
-      TaskState.QUEUED,
-      "task_submitted",
-      undefined,
-      req.user?.id,
-    );
-    await taskQueue.add(
-      "process-task",
-      { taskId: task.id },
-      {
-        jobId: task.id,
-        priority: task.priority ?? 100,
-        attempts: task.maxRetries + 1,
-        backoff: { type: "exponential", delay: 5000 },
-      },
-    );
+    // Set up dependencies if specified
+    const hasDeps = dependsOn && dependsOn.length > 0;
+    if (hasDeps) {
+      try {
+        await dependencyService.addDependencies(task.id, dependsOn);
+      } catch (err) {
+        // Clean up the task if dependency setup fails
+        reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
+        return;
+      }
+    }
+
+    if (hasDeps) {
+      // Task has dependencies — put it in waiting_on_deps state
+      await taskService.transitionTask(
+        task.id,
+        TaskState.WAITING_ON_DEPS,
+        "task_submitted_with_deps",
+        undefined,
+        req.user?.id,
+      );
+    } else {
+      // No dependencies — enqueue immediately
+      await taskService.transitionTask(
+        task.id,
+        TaskState.QUEUED,
+        "task_submitted",
+        undefined,
+        req.user?.id,
+      );
+      await taskQueue.add(
+        "process-task",
+        { taskId: task.id },
+        {
+          jobId: task.id,
+          priority: task.priority ?? 100,
+          attempts: task.maxRetries + 1,
+          backoff: { type: "exponential", delay: 5000 },
+        },
+      );
+    }
 
     reply.status(201).send({ task });
   });

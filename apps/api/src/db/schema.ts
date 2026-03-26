@@ -67,6 +67,7 @@ export const workspaceMembers = pgTable(
 
 export const taskStateEnum = pgEnum("task_state", [
   "pending",
+  "waiting_on_deps",
   "queued",
   "provisioning",
   "running",
@@ -113,6 +114,7 @@ export const tasks = pgTable(
     blocksParent: boolean("blocks_parent").notNull().default(false), // if true, parent waits for this
     worktreeState: text("worktree_state"), // "active" | "dirty" | "reset" | "preserved" | "removed"
     lastPodId: uuid("last_pod_id"), // last pod this task ran on (for same-pod retry affinity)
+    workflowRunId: uuid("workflow_run_id"), // nullable FK to workflow_runs
     createdBy: uuid("created_by"), // nullable FK to users (null when auth is disabled)
     workspaceId: uuid("workspace_id"), // nullable for backward compat; new tasks should always set this
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -427,6 +429,71 @@ export const taskTemplates = pgTable("task_templates", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// ── Task Dependencies (DAG edges) ────────────────────────────────────────────
+
+export const taskDependencies = pgTable(
+  "task_dependencies",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    dependsOnTaskId: uuid("depends_on_task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("task_deps_unique").on(table.taskId, table.dependsOnTaskId),
+    index("task_deps_task_id_idx").on(table.taskId),
+    index("task_deps_depends_on_idx").on(table.dependsOnTaskId),
+  ],
+);
+
+// ── Workflow Templates & Runs ────────────────────────────────────────────────
+
+export const workflowTemplates = pgTable("workflow_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  description: text("description"),
+  workspaceId: uuid("workspace_id"),
+  steps: jsonb("steps")
+    .$type<
+      Array<{
+        id: string;
+        title: string;
+        prompt: string;
+        repoUrl?: string;
+        agentType?: string;
+        dependsOn?: string[];
+        condition?: { type: string; value?: string };
+      }>
+    >()
+    .notNull(),
+  status: text("status").notNull().default("draft"), // "draft" | "active" | "archived"
+  createdBy: uuid("created_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const workflowRuns = pgTable(
+  "workflow_runs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    workflowTemplateId: uuid("workflow_template_id")
+      .notNull()
+      .references(() => workflowTemplates.id, { onDelete: "cascade" }),
+    workspaceId: uuid("workspace_id"),
+    status: text("status").notNull().default("running"), // "running" | "paused" | "completed" | "failed" | "cancelled"
+    taskMapping: jsonb("task_mapping").$type<Record<string, string>>(), // stepId → taskId
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [index("workflow_runs_template_id_idx").on(table.workflowTemplateId)],
+);
 
 export const promptTemplates = pgTable("prompt_templates", {
   id: uuid("id").primaryKey().defaultRandom(),

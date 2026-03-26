@@ -1,7 +1,8 @@
 import { TaskState } from "../types/task.js";
 
 const VALID_TRANSITIONS: Record<TaskState, TaskState[]> = {
-  [TaskState.PENDING]: [TaskState.QUEUED],
+  [TaskState.PENDING]: [TaskState.QUEUED, TaskState.WAITING_ON_DEPS],
+  [TaskState.WAITING_ON_DEPS]: [TaskState.QUEUED, TaskState.FAILED, TaskState.CANCELLED],
   [TaskState.QUEUED]: [TaskState.PROVISIONING, TaskState.CANCELLED, TaskState.FAILED],
   [TaskState.PROVISIONING]: [TaskState.RUNNING, TaskState.FAILED, TaskState.QUEUED],
   [TaskState.RUNNING]: [
