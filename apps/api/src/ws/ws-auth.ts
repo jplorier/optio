@@ -31,6 +31,8 @@ export async function authenticateWs(
       email: "dev@localhost",
       displayName: "Local Dev",
       avatarUrl: null,
+      workspaceId: null,
+      workspaceRole: null,
     };
   }
 

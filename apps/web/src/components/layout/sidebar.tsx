@@ -10,6 +10,7 @@ import {
   Server,
   KeyRound,
   Settings,
+  Building2,
   Zap,
   DollarSign,
   Terminal,
@@ -17,6 +18,7 @@ import {
   FileText,
 } from "lucide-react";
 import { UserMenu } from "./user-menu";
+import { WorkspaceSwitcher } from "./workspace-switcher";
 
 const MAIN_NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -31,6 +33,7 @@ const MAIN_NAV = [
 
 const SECONDARY_NAV = [
   { href: "/secrets", label: "Secrets", icon: KeyRound },
+  { href: "/workspace-settings", label: "Workspace", icon: Building2 },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
@@ -79,6 +82,9 @@ export function Sidebar() {
             </span>
           </div>
         </Link>
+      </div>
+      <div className="px-3 py-2 border-b border-border">
+        <WorkspaceSwitcher />
       </div>
       <nav className="flex-1 px-3 py-4">
         <div className="space-y-1">

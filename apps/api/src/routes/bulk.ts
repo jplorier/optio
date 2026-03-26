@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
@@ -8,11 +8,14 @@ import { taskQueue } from "../workers/task-worker.js";
 
 export async function bulkRoutes(app: FastifyInstance) {
   // Retry all failed tasks
-  app.post("/api/tasks/bulk/retry-failed", async (_req, reply) => {
+  app.post("/api/tasks/bulk/retry-failed", async (req, reply) => {
+    const workspaceId = req.user?.workspaceId;
+    const conditions = [eq(tasks.state, "failed" as any)];
+    if (workspaceId) conditions.push(eq(tasks.workspaceId, workspaceId));
     const failedTasks = await db
       .select({ id: tasks.id })
       .from(tasks)
-      .where(eq(tasks.state, "failed"));
+      .where(and(...conditions));
 
     let retried = 0;
     for (const task of failedTasks) {
@@ -35,16 +38,23 @@ export async function bulkRoutes(app: FastifyInstance) {
   });
 
   // Cancel all running/queued tasks
-  app.post("/api/tasks/bulk/cancel-active", async (_req, reply) => {
+  app.post("/api/tasks/bulk/cancel-active", async (req, reply) => {
+    const workspaceId = req.user?.workspaceId;
+    const runningConds = [eq(tasks.state, "running" as any)];
+    const queuedConds = [eq(tasks.state, "queued" as any)];
+    if (workspaceId) {
+      runningConds.push(eq(tasks.workspaceId, workspaceId));
+      queuedConds.push(eq(tasks.workspaceId, workspaceId));
+    }
     const activeTasks = await db
       .select({ id: tasks.id, state: tasks.state })
       .from(tasks)
-      .where(eq(tasks.state, "running"));
+      .where(and(...runningConds));
 
     const queuedTasks = await db
       .select({ id: tasks.id, state: tasks.state })
       .from(tasks)
-      .where(eq(tasks.state, "queued"));
+      .where(and(...queuedConds));
 
     const allActive = [...activeTasks, ...queuedTasks];
     let cancelled = 0;

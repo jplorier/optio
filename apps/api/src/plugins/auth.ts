@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 import fp from "fastify-plugin";
 import { validateSession, type SessionUser } from "../services/session-service.js";
 import { isAuthDisabled } from "../services/oauth/index.js";
+import { getUserRole, ensureUserHasWorkspace } from "../services/workspace-service.js";
 
 declare module "fastify" {
   interface FastifyRequest {
@@ -10,6 +11,7 @@ declare module "fastify" {
 }
 
 const SESSION_COOKIE_NAME = "optio_session";
+const WORKSPACE_HEADER = "x-workspace-id";
 
 /** Routes that never require authentication. */
 const PUBLIC_ROUTES = ["/api/health", "/api/auth/", "/api/setup/", "/api/webhooks/", "/ws/"];
@@ -44,6 +46,32 @@ async function authPlugin(app: FastifyInstance) {
     const user = await validateSession(token);
     if (!user) {
       return reply.status(401).send({ error: "Invalid or expired session" });
+    }
+
+    // Resolve workspace context
+    const headerWorkspaceId =
+      (req.headers[WORKSPACE_HEADER] as string) ??
+      parseCookie(req.headers.cookie, "optio_workspace");
+    const workspaceId = headerWorkspaceId || user.workspaceId;
+
+    if (workspaceId) {
+      const role = await getUserRole(workspaceId, user.id);
+      if (role) {
+        user.workspaceId = workspaceId;
+        user.workspaceRole = role;
+      } else {
+        // User not a member of the requested workspace — fall back to default
+        const defaultWsId = await ensureUserHasWorkspace(user.id);
+        const defaultRole = await getUserRole(defaultWsId, user.id);
+        user.workspaceId = defaultWsId;
+        user.workspaceRole = defaultRole ?? "member";
+      }
+    } else {
+      // No workspace set — ensure user has one
+      const defaultWsId = await ensureUserHasWorkspace(user.id);
+      const defaultRole = await getUserRole(defaultWsId, user.id);
+      user.workspaceId = defaultWsId;
+      user.workspaceRole = defaultRole ?? "member";
     }
 
     req.user = user;

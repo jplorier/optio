@@ -24,7 +24,7 @@ export class StateRaceError extends Error {
   }
 }
 
-export async function createTask(input: CreateTaskInput) {
+export async function createTask(input: CreateTaskInput & { workspaceId?: string | null }) {
   const [task] = await db
     .insert(tasks)
     .values({
@@ -38,6 +38,7 @@ export async function createTask(input: CreateTaskInput) {
       metadata: input.metadata,
       maxRetries: input.maxRetries ?? 3,
       priority: input.priority ?? 100,
+      workspaceId: input.workspaceId ?? undefined,
     })
     .returning();
 
@@ -56,10 +57,23 @@ export async function getTask(id: string) {
   return task ?? null;
 }
 
-export async function listTasks(opts?: { state?: string; limit?: number; offset?: number }) {
-  let query = db.select().from(tasks).orderBy(desc(tasks.createdAt));
+export async function listTasks(opts?: {
+  state?: string;
+  limit?: number;
+  offset?: number;
+  workspaceId?: string | null;
+}) {
+  const conditions = [];
   if (opts?.state) {
-    query = query.where(eq(tasks.state, opts.state as any)) as typeof query;
+    conditions.push(eq(tasks.state, opts.state as any));
+  }
+  if (opts?.workspaceId) {
+    conditions.push(eq(tasks.workspaceId, opts.workspaceId));
+  }
+
+  let query = db.select().from(tasks).orderBy(desc(tasks.createdAt));
+  if (conditions.length > 0) {
+    query = query.where(and(...conditions)) as typeof query;
   }
   if (opts?.limit) {
     query = query.limit(opts.limit) as typeof query;
@@ -83,11 +97,17 @@ export interface SearchTasksOpts {
   author?: string;
   cursor?: string;
   limit?: number;
+  workspaceId?: string | null;
 }
 
 export async function searchTasks(opts: SearchTasksOpts) {
   const limit = opts.limit ?? 50;
   const conditions = [];
+
+  // Workspace filter
+  if (opts.workspaceId) {
+    conditions.push(eq(tasks.workspaceId, opts.workspaceId));
+  }
 
   // Full-text search on title and prompt
   if (opts.q) {

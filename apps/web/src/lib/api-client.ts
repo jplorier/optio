@@ -1,9 +1,19 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
+/** Read the current workspace ID from localStorage (set by workspace switcher). */
+function getWorkspaceId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem("optio_workspace_id");
+}
+
 async function request<T>(path: string, opts?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { ...(opts?.headers as Record<string, string>) };
   if (opts?.body) {
     headers["Content-Type"] = "application/json";
+  }
+  const wsId = getWorkspaceId();
+  if (wsId) {
+    headers["x-workspace-id"] = wsId;
   }
   const res = await fetch(`${API_URL}${path}`, {
     ...opts,
@@ -470,6 +480,8 @@ export const api = {
         email: string;
         displayName: string;
         avatarUrl: string | null;
+        workspaceId: string | null;
+        workspaceRole: string | null;
       };
       authDisabled: boolean;
     }>("/api/auth/me"),
@@ -665,4 +677,74 @@ export const api = {
     ),
 
   getWsToken: () => request<{ token: string }>("/api/auth/ws-token"),
+
+  // Workspaces
+  listWorkspaces: () =>
+    request<{
+      workspaces: Array<{
+        id: string;
+        name: string;
+        slug: string;
+        role: string;
+      }>;
+    }>("/api/workspaces"),
+
+  getWorkspace: (id: string) =>
+    request<{
+      workspace: {
+        id: string;
+        name: string;
+        slug: string;
+        description: string | null;
+        createdAt: string;
+        updatedAt: string;
+      };
+      role: string;
+    }>(`/api/workspaces/${id}`),
+
+  createWorkspace: (data: { name: string; slug: string; description?: string }) =>
+    request<{ workspace: any }>("/api/workspaces", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateWorkspace: (id: string, data: Record<string, unknown>) =>
+    request<{ workspace: any }>(`/api/workspaces/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteWorkspace: (id: string) => request<void>(`/api/workspaces/${id}`, { method: "DELETE" }),
+
+  switchWorkspace: (id: string) =>
+    request<{ ok: boolean }>(`/api/workspaces/${id}/switch`, { method: "POST" }),
+
+  listWorkspaceMembers: (id: string) =>
+    request<{
+      members: Array<{
+        id: string;
+        workspaceId: string;
+        userId: string;
+        role: string;
+        email: string;
+        displayName: string;
+        avatarUrl: string | null;
+        createdAt: string;
+      }>;
+    }>(`/api/workspaces/${id}/members`),
+
+  addWorkspaceMember: (workspaceId: string, userId: string, role?: string) =>
+    request<{ ok: boolean }>(`/api/workspaces/${workspaceId}/members`, {
+      method: "POST",
+      body: JSON.stringify({ userId, role }),
+    }),
+
+  updateWorkspaceMemberRole: (workspaceId: string, userId: string, role: string) =>
+    request<{ ok: boolean }>(`/api/workspaces/${workspaceId}/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ role }),
+    }),
+
+  removeWorkspaceMember: (workspaceId: string, userId: string) =>
+    request<void>(`/api/workspaces/${workspaceId}/members/${userId}`, { method: "DELETE" }),
 };

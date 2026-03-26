@@ -23,6 +23,7 @@ import { scheduleRoutes } from "./routes/schedules.js";
 import { commentRoutes } from "./routes/comments.js";
 import { slackRoutes } from "./routes/slack.js";
 import { taskTemplateRoutes } from "./routes/task-templates.js";
+import { workspaceRoutes } from "./routes/workspaces.js";
 import { logStreamWs } from "./ws/log-stream.js";
 import { eventsWs } from "./ws/events.js";
 import { sessionTerminalWs } from "./ws/session-terminal.js";
@@ -80,6 +81,7 @@ export async function buildServer() {
   await app.register(commentRoutes);
   await app.register(slackRoutes);
   await app.register(taskTemplateRoutes);
+  await app.register(workspaceRoutes);
 
   // WebSocket routes
   await app.register(logStreamWs);

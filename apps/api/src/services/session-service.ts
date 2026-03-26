@@ -16,6 +16,8 @@ export interface SessionUser {
   email: string;
   displayName: string;
   avatarUrl: string | null;
+  workspaceId: string | null;
+  workspaceRole: string | null;
 }
 
 /** Find or create a user from an OAuth profile, then create a session. */
@@ -79,6 +81,8 @@ export async function createSession(
       email: user.email,
       displayName: user.displayName,
       avatarUrl: user.avatarUrl,
+      workspaceId: user.defaultWorkspaceId,
+      workspaceRole: null,
     },
   };
 }
@@ -95,6 +99,7 @@ export async function validateSession(token: string): Promise<SessionUser | null
       email: users.email,
       displayName: users.displayName,
       avatarUrl: users.avatarUrl,
+      defaultWorkspaceId: users.defaultWorkspaceId,
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
@@ -110,6 +115,8 @@ export async function validateSession(token: string): Promise<SessionUser | null
     email: row.email,
     displayName: row.displayName,
     avatarUrl: row.avatarUrl,
+    workspaceId: row.defaultWorkspaceId,
+    workspaceRole: null, // resolved by auth middleware from header/cookie
   };
 }
 

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { db } from "../db/client.js";
 import { repos, tasks } from "../db/schema.js";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { retrieveSecret } from "../services/secret-service.js";
 import { logger } from "../logger.js";
 
@@ -23,11 +23,18 @@ export async function issueRoutes(app: FastifyInstance) {
       Accept: "application/vnd.github.v3+json",
     };
 
-    // Get repos to fetch issues from
-    let repoList;
+    // Get repos to fetch issues from (scoped to workspace)
+    const workspaceId = req.user?.workspaceId;
+    let repoList: (typeof repos.$inferSelect)[];
     if (query.repoId) {
       const [repo] = await db.select().from(repos).where(eq(repos.id, query.repoId));
-      repoList = repo ? [repo] : [];
+      if (repo && workspaceId && repo.workspaceId !== workspaceId) {
+        repoList = [];
+      } else {
+        repoList = repo ? [repo] : [];
+      }
+    } else if (workspaceId) {
+      repoList = await db.select().from(repos).where(eq(repos.workspaceId, workspaceId));
     } else {
       repoList = await db.select().from(repos);
     }
@@ -36,7 +43,9 @@ export async function issueRoutes(app: FastifyInstance) {
       return reply.send({ issues: [] });
     }
 
-    // Get existing Optio tasks to know which issues are already assigned
+    // Get existing Optio tasks to know which issues are already assigned (scoped to workspace)
+    const taskConditions = [];
+    if (workspaceId) taskConditions.push(eq(tasks.workspaceId, workspaceId));
     const existingTasks = await db
       .select({
         ticketSource: tasks.ticketSource,
@@ -44,7 +53,8 @@ export async function issueRoutes(app: FastifyInstance) {
         id: tasks.id,
         state: tasks.state,
       })
-      .from(tasks);
+      .from(tasks)
+      .where(taskConditions.length > 0 ? and(...taskConditions) : undefined);
 
     const taskMap = new Map(
       existingTasks
@@ -129,6 +139,10 @@ export async function issueRoutes(app: FastifyInstance) {
 
     const [repo] = await db.select().from(repos).where(eq(repos.id, body.repoId));
     if (!repo) return reply.status(404).send({ error: "Repo not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && repo.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Repo not found" });
+    }
 
     let githubToken: string;
     try {
@@ -187,6 +201,7 @@ export async function issueRoutes(app: FastifyInstance) {
       ticketSource: "github",
       ticketExternalId: String(body.issueNumber),
       metadata: { issueUrl: `https://github.com/${owner}/${repoName}/issues/${body.issueNumber}` },
+      workspaceId: req.user?.workspaceId ?? null,
     });
 
     await taskServiceModule.transitionTask(task.id, TaskState.QUEUED, "issue_assigned");

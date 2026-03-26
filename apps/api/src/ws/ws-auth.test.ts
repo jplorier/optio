@@ -51,6 +51,8 @@ describe("authenticateWs", () => {
       email: "dev@localhost",
       displayName: "Local Dev",
       avatarUrl: null,
+      workspaceId: null,
+      workspaceRole: null,
     });
     expect(socket.close).not.toHaveBeenCalled();
     expect(mockValidateSession).not.toHaveBeenCalled();

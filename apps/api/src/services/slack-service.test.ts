@@ -11,6 +11,7 @@ function makeRepoConfig(overrides: Partial<RepoRecord> = {}): RepoRecord {
   return {
     id: "repo-1",
     repoUrl: "https://github.com/test/repo",
+    workspaceId: null,
     fullName: "test/repo",
     defaultBranch: "main",
     isPrivate: false,

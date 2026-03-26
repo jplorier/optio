@@ -26,7 +26,13 @@ export async function taskRoutes(app: FastifyInstance) {
     const query = req.query as { state?: string; limit?: string; offset?: string };
     const limit = query.limit ? parseInt(query.limit, 10) : 50;
     const offset = query.offset ? parseInt(query.offset, 10) : 0;
-    const taskList = await taskService.listTasks({ state: query.state, limit, offset });
+    const workspaceId = req.user?.workspaceId ?? null;
+    const taskList = await taskService.listTasks({
+      state: query.state,
+      limit,
+      offset,
+      workspaceId,
+    });
     reply.send({ tasks: taskList, limit, offset });
   });
 
@@ -46,6 +52,7 @@ export async function taskRoutes(app: FastifyInstance) {
       author: query.author,
       cursor: query.cursor,
       limit: query.limit ? parseInt(query.limit, 10) : undefined,
+      workspaceId: req.user?.workspaceId ?? null,
     });
     reply.send(result);
   });
@@ -55,13 +62,20 @@ export async function taskRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const task = await taskService.getTask(id);
     if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     reply.send({ task });
   });
 
   // Create task
   app.post("/api/tasks", async (req, reply) => {
     const input = createTaskSchema.parse(req.body);
-    const task = await taskService.createTask(input);
+    const task = await taskService.createTask({
+      ...input,
+      workspaceId: req.user?.workspaceId ?? null,
+    });
 
     // Enqueue for processing
     await taskService.transitionTask(
@@ -88,6 +102,12 @@ export async function taskRoutes(app: FastifyInstance) {
   // Cancel task
   app.post("/api/tasks/:id/cancel", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const existing = await taskService.getTask(id);
+    if (!existing) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && existing.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     const task = await taskService.transitionTask(
       id,
       TaskState.CANCELLED,
@@ -101,6 +121,12 @@ export async function taskRoutes(app: FastifyInstance) {
   // Retry task
   app.post("/api/tasks/:id/retry", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const existing = await taskService.getTask(id);
+    if (!existing) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && existing.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     const task = await taskService.transitionTask(
       id,
       TaskState.QUEUED,
@@ -122,6 +148,12 @@ export async function taskRoutes(app: FastifyInstance) {
   // Force redo task — reset everything and re-queue from any state
   app.post("/api/tasks/:id/force-redo", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const existing = await taskService.getTask(id);
+    if (!existing) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && existing.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
 
     // Remove any existing BullMQ jobs for this task (waiting/delayed) to prevent duplicates
     const existingJobs = await taskQueue.getJobs(["waiting", "delayed", "prioritized"]);
@@ -146,6 +178,12 @@ export async function taskRoutes(app: FastifyInstance) {
   // Get task logs
   app.get("/api/tasks/:id/logs", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const task = await taskService.getTask(id);
+    if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     const query = req.query as {
       limit?: string;
       offset?: string;
@@ -269,6 +307,12 @@ export async function taskRoutes(app: FastifyInstance) {
   // Get task events
   app.get("/api/tasks/:id/events", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const task = await taskService.getTask(id);
+    if (!task) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && task.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     const events = await taskService.getTaskEvents(id);
     reply.send({ events });
   });
@@ -276,6 +320,12 @@ export async function taskRoutes(app: FastifyInstance) {
   // Launch a review for a task
   app.post("/api/tasks/:id/review", async (req, reply) => {
     const { id } = req.params as { id: string };
+    const existing = await taskService.getTask(id);
+    if (!existing) return reply.status(404).send({ error: "Task not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && existing.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Task not found" });
+    }
     try {
       const { launchReview } = await import("../services/review-service.js");
       const reviewTaskId = await launchReview(id);

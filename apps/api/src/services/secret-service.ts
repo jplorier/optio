@@ -39,38 +39,72 @@ export function decrypt(encrypted: Buffer, iv: Buffer, authTag: Buffer): string 
   return decipher.update(encrypted).toString("utf8") + decipher.final("utf8");
 }
 
-export async function storeSecret(name: string, value: string, scope = "global"): Promise<void> {
+export async function storeSecret(
+  name: string,
+  value: string,
+  scope = "global",
+  workspaceId?: string | null,
+): Promise<void> {
   const { encrypted, iv, authTag } = encrypt(value);
+
+  // Build conditions for lookup
+  const conditions = [eq(secrets.name, name), eq(secrets.scope, scope)];
+  if (workspaceId) conditions.push(eq(secrets.workspaceId, workspaceId));
 
   // Try update first, then insert
   const existing = await db
     .select({ id: secrets.id })
     .from(secrets)
-    .where(and(eq(secrets.name, name), eq(secrets.scope, scope)));
+    .where(and(...conditions));
 
   if (existing.length > 0) {
     await db
       .update(secrets)
       .set({ encryptedValue: encrypted, iv, authTag, updatedAt: new Date() })
-      .where(and(eq(secrets.name, name), eq(secrets.scope, scope)));
+      .where(and(...conditions));
   } else {
-    await db.insert(secrets).values({ name, scope, encryptedValue: encrypted, iv, authTag });
+    await db.insert(secrets).values({
+      name,
+      scope,
+      encryptedValue: encrypted,
+      iv,
+      authTag,
+      workspaceId: workspaceId ?? undefined,
+    });
   }
 }
 
-export async function retrieveSecret(name: string, scope = "global"): Promise<string> {
+export async function retrieveSecret(
+  name: string,
+  scope = "global",
+  workspaceId?: string | null,
+): Promise<string> {
+  const conditions = [eq(secrets.name, name), eq(secrets.scope, scope)];
+  if (workspaceId) conditions.push(eq(secrets.workspaceId, workspaceId));
+
   const [secret] = await db
     .select()
     .from(secrets)
-    .where(and(eq(secrets.name, name), eq(secrets.scope, scope)));
+    .where(and(...conditions));
   if (!secret) throw new Error(`Secret not found: ${name} (scope: ${scope})`);
   return decrypt(secret.encryptedValue, secret.iv, secret.authTag);
 }
 
-export async function listSecrets(scope?: string): Promise<SecretRef[]> {
-  const query = scope
-    ? db.select().from(secrets).where(eq(secrets.scope, scope))
-    : db.select().from(secrets);
+export async function listSecrets(
+  scope?: string,
+  workspaceId?: string | null,
+): Promise<SecretRef[]> {
+  const conditions = [];
+  if (scope) conditions.push(eq(secrets.scope, scope));
+  if (workspaceId) conditions.push(eq(secrets.workspaceId, workspaceId));
+
+  const query =
+    conditions.length > 0
+      ? db
+          .select()
+          .from(secrets)
+          .where(and(...conditions))
+      : db.select().from(secrets);
   const rows = await query;
   return rows.map((r) => ({
     id: r.id,
@@ -81,8 +115,14 @@ export async function listSecrets(scope?: string): Promise<SecretRef[]> {
   }));
 }
 
-export async function deleteSecret(name: string, scope = "global"): Promise<void> {
-  await db.delete(secrets).where(and(eq(secrets.name, name), eq(secrets.scope, scope)));
+export async function deleteSecret(
+  name: string,
+  scope = "global",
+  workspaceId?: string | null,
+): Promise<void> {
+  const conditions = [eq(secrets.name, name), eq(secrets.scope, scope)];
+  if (workspaceId) conditions.push(eq(secrets.workspaceId, workspaceId));
+  await db.delete(secrets).where(and(...conditions));
 }
 
 export async function resolveSecretsForTask(

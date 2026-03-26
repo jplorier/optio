@@ -70,7 +70,7 @@ function formatMemoryGi(ki: number): string {
 
 export async function clusterRoutes(app: FastifyInstance) {
   // Cluster overview: nodes, all pods, services, resource summary
-  app.get("/api/cluster/overview", async (_req, reply) => {
+  app.get("/api/cluster/overview", async (req, reply) => {
     try {
       const api = getK8sApi();
 
@@ -190,8 +190,11 @@ export async function clusterRoutes(app: FastifyInstance) {
           lastTimestamp: e.lastTimestamp ?? e.metadata?.creationTimestamp,
         }));
 
-      // Get Optio-specific data
-      const repoPodRecords = await db.select().from(repoPods);
+      // Get Optio-specific data (scoped to workspace if available)
+      const workspaceId = req.user?.workspaceId;
+      const repoPodRecords = workspaceId
+        ? await db.select().from(repoPods).where(eq(repoPods.workspaceId, workspaceId))
+        : await db.select().from(repoPods);
 
       // Get per-repo task indicators: queued counts and maxConcurrentTasks
       const repoUrls = repoPodRecords.map((rp) => rp.repoUrl);
@@ -280,9 +283,12 @@ export async function clusterRoutes(app: FastifyInstance) {
   });
 
   // Keep the existing pod detail endpoints
-  app.get("/api/cluster/pods", async (_req, reply) => {
+  app.get("/api/cluster/pods", async (req, reply) => {
     try {
-      const pods = await db.select().from(repoPods);
+      const workspaceId = req.user?.workspaceId;
+      const pods = workspaceId
+        ? await db.select().from(repoPods).where(eq(repoPods.workspaceId, workspaceId))
+        : await db.select().from(repoPods);
       const podStatuses = await Promise.all(
         pods.map(async (pod) => {
           const recentTasks = await db
@@ -311,6 +317,10 @@ export async function clusterRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const [pod] = await db.select().from(repoPods).where(eq(repoPods.id, id));
     if (!pod) return reply.status(404).send({ error: "Pod not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && pod.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Pod not found" });
+    }
 
     const podTasks = await db
       .select()
@@ -368,6 +378,10 @@ export async function clusterRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string };
     const [pod] = await db.select().from(repoPods).where(eq(repoPods.id, id));
     if (!pod) return reply.status(404).send({ error: "Pod not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && pod.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Pod not found" });
+    }
 
     // Destroy the pod
     if (pod.podName) {

@@ -9,7 +9,10 @@ export async function analyticsRoutes(app: FastifyInstance) {
     const days = query.days ? parseInt(query.days, 10) : 30;
     const repoUrl = query.repoUrl || null;
 
+    const workspaceId = req.user?.workspaceId || null;
+
     const repoFilter = repoUrl ? sql`AND repo_url = ${repoUrl}` : sql``;
+    const wsFilter = workspaceId ? sql`AND workspace_id = ${workspaceId}` : sql``;
 
     const dateFilter = sql`AND created_at >= NOW() - ${sql.raw(`INTERVAL '${days} days'`)}`;
 
@@ -27,6 +30,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
       WHERE cost_usd IS NOT NULL
         ${dateFilter}
         ${repoFilter}
+        ${wsFilter}
     `);
 
     // Previous period for trend comparison
@@ -40,6 +44,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
         AND created_at >= NOW() - ${sql.raw(`INTERVAL '${days * 2} days'`)}
         AND created_at < NOW() - ${sql.raw(`INTERVAL '${days} days'`)}
         ${repoFilter}
+        ${wsFilter}
     `);
 
     // Daily cost over time
@@ -56,6 +61,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
       WHERE cost_usd IS NOT NULL
         ${dateFilter}
         ${repoFilter}
+        ${wsFilter}
       GROUP BY DATE(created_at)
       ORDER BY date ASC
     `);
@@ -74,6 +80,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
       WHERE cost_usd IS NOT NULL
         ${dateFilter}
         ${repoFilter}
+        ${wsFilter}
       GROUP BY repo_url
       ORDER BY total_cost DESC
     `);
@@ -92,6 +99,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
       WHERE cost_usd IS NOT NULL
         ${dateFilter}
         ${repoFilter}
+        ${wsFilter}
       GROUP BY task_type
       ORDER BY total_cost DESC
     `);
@@ -118,6 +126,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
       WHERE cost_usd IS NOT NULL
         ${dateFilter}
         ${repoFilter}
+        ${wsFilter}
       GROUP BY COALESCE(model_used, 'unknown')
       ORDER BY total_cost DESC
     `);
@@ -142,6 +151,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
         FROM tasks
         WHERE cost_usd IS NOT NULL
           ${dateFilter}
+          ${wsFilter}
         GROUP BY repo_url
         HAVING COUNT(*) >= 3
       )
@@ -162,6 +172,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
         AND CAST(t.cost_usd AS NUMERIC) >= ra.avg_cost * 3
         ${dateFilter}
         ${repoFilter}
+        ${wsFilter}
       ORDER BY CAST(t.cost_usd AS NUMERIC) DESC
       LIMIT 20
     `);
@@ -191,6 +202,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
       WHERE cost_usd IS NOT NULL
         AND created_at >= DATE_TRUNC('month', NOW())
         ${repoFilter}
+        ${wsFilter}
     `);
     const monthCostSoFar = parseFloat(monthTotals.month_cost) || 0;
     const forecastedMonthTotal = monthCostSoFar + dailyAvgCost * daysRemaining;
@@ -215,6 +227,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
           AND model_used IS NOT NULL
           ${dateFilter}
           ${repoFilter}
+          ${wsFilter}
         GROUP BY repo_url, model_used
         HAVING COUNT(*) >= 2
       )
@@ -257,6 +270,7 @@ export async function analyticsRoutes(app: FastifyInstance) {
       WHERE cost_usd IS NOT NULL
         ${dateFilter}
         ${repoFilter}
+        ${wsFilter}
       ORDER BY CAST(cost_usd AS NUMERIC) DESC
       LIMIT 10
     `);

@@ -18,6 +18,13 @@ export interface TaskSummary {
   updatedAt: string;
 }
 
+export interface WorkspaceSummary {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
 interface AppState {
   tasks: TaskSummary[];
   setTasks: (tasks: TaskSummary[]) => void;
@@ -26,6 +33,11 @@ interface AppState {
   notifications: Notification[];
   addNotification: (n: Notification) => void;
   dismissNotification: (id: string) => void;
+  // Workspace state
+  currentWorkspaceId: string | null;
+  workspaces: WorkspaceSummary[];
+  setCurrentWorkspace: (id: string) => void;
+  setWorkspaces: (workspaces: WorkspaceSummary[]) => void;
 }
 
 export interface Notification {
@@ -35,6 +47,16 @@ export interface Notification {
   message?: string;
   taskId?: string;
   timestamp: string;
+}
+
+// Load persisted workspace ID from localStorage
+function getPersistedWorkspaceId(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem("optio_workspace_id");
+  } catch {
+    return null;
+  }
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -58,4 +80,15 @@ export const useStore = create<AppState>((set) => ({
     set((state) => ({
       notifications: state.notifications.filter((n) => n.id !== id),
     })),
+
+  // Workspace state
+  currentWorkspaceId: getPersistedWorkspaceId(),
+  workspaces: [],
+  setCurrentWorkspace: (id) => {
+    try {
+      localStorage.setItem("optio_workspace_id", id);
+    } catch {}
+    set({ currentWorkspaceId: id });
+  },
+  setWorkspaces: (workspaces) => set({ workspaces }),
 }));
