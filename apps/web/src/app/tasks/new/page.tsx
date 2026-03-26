@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
-import { Loader2, Sparkles, Save, BookTemplate } from "lucide-react";
+import { Loader2, Sparkles, Save, BookTemplate, Link2 } from "lucide-react";
 import { toast } from "sonner";
 
 export default function NewTaskPage() {
@@ -15,6 +15,9 @@ export default function NewTaskPage() {
   const [reposLoading, setReposLoading] = useState(true);
   const [templates, setTemplates] = useState<any[]>([]);
   const [savingTemplate, setSavingTemplate] = useState(false);
+  const [existingTasks, setExistingTasks] = useState<any[]>([]);
+  const [selectedDeps, setSelectedDeps] = useState<string[]>([]);
+  const [showDeps, setShowDeps] = useState(false);
   const [form, setForm] = useState({
     title: "",
     prompt: "",
@@ -46,6 +49,10 @@ export default function NewTaskPage() {
     api
       .listTaskTemplates()
       .then((res) => setTemplates(res.templates))
+      .catch(() => {});
+    api
+      .listTasks({ limit: 100 })
+      .then((res) => setExistingTasks(res.tasks))
       .catch(() => {});
   }, []);
 
@@ -118,6 +125,7 @@ export default function NewTaskPage() {
         agentType: form.agentType,
         maxRetries: form.maxRetries,
         priority: form.priority,
+        ...(selectedDeps.length > 0 ? { dependsOn: selectedDeps } : {}),
       });
       toast.success("Task created", { description: `Task "${form.title}" has been queued.` });
       router.push(`/tasks/${res.task.id}`);
@@ -238,6 +246,52 @@ export default function NewTaskPage() {
               <option value="codex">OpenAI Codex</option>
             </select>
           </div>
+        </div>
+
+        {/* Dependencies */}
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowDeps(!showDeps)}
+            className="flex items-center gap-1.5 text-sm text-text-muted hover:text-text transition-colors"
+          >
+            <Link2 className="w-3.5 h-3.5" />
+            Dependencies {selectedDeps.length > 0 && `(${selectedDeps.length})`}
+          </button>
+          {showDeps && (
+            <div className="mt-2 p-3 rounded-lg bg-bg-card border border-border">
+              <p className="text-xs text-text-muted/60 mb-2">
+                This task will wait until selected tasks complete before running.
+              </p>
+              {existingTasks.length === 0 ? (
+                <p className="text-xs text-text-muted">No existing tasks to depend on.</p>
+              ) : (
+                <div className="max-h-40 overflow-y-auto space-y-1">
+                  {existingTasks
+                    .filter((t) => !["completed", "cancelled"].includes(t.state))
+                    .map((t) => (
+                      <label
+                        key={t.id}
+                        className="flex items-center gap-2 text-xs text-text py-0.5 cursor-pointer hover:bg-bg-hover rounded px-1"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedDeps.includes(t.id)}
+                          onChange={(e) => {
+                            setSelectedDeps((prev) =>
+                              e.target.checked ? [...prev, t.id] : prev.filter((id) => id !== t.id),
+                            );
+                          }}
+                          className="rounded"
+                        />
+                        <span className="truncate flex-1">{t.title}</span>
+                        <span className="text-text-muted shrink-0">{t.state}</span>
+                      </label>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Priority */}

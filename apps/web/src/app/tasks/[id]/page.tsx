@@ -36,6 +36,8 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [showTimeline, setShowTimeline] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"pipeline" | "activity">("pipeline");
   const [subtasks, setSubtasks] = useState<any[]>([]);
+  const [dependencies, setDependencies] = useState<any[]>([]);
+  const [dependents, setDependents] = useState<any[]>([]);
   const [showCreateSubtask, setShowCreateSubtask] = useState(false);
   const [newSubtask, setNewSubtask] = useState({
     title: "",
@@ -58,6 +60,14 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       api
         .getSubtasks(id)
         .then((res) => setSubtasks(res.subtasks))
+        .catch(() => {});
+      api
+        .getTaskDependencies(id)
+        .then((res) => setDependencies(res.dependencies))
+        .catch(() => {});
+      api
+        .getTaskDependents(id)
+        .then((res) => setDependents(res.dependents))
         .catch(() => {});
     }
   }, [id, task?.state]);
@@ -403,6 +413,65 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               <div className="mt-2 p-2 rounded-md bg-warning/5 border border-warning/20 text-xs">
                 <div className="font-medium text-warning mb-1">Review feedback:</div>
                 <pre className="text-text-muted whitespace-pre-wrap">{task.prReviewComments}</pre>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Dependencies */}
+      {(dependencies.length > 0 || dependents.length > 0) && (
+        <div className="shrink-0 border-b border-border bg-bg px-4 py-2.5">
+          <div className="max-w-5xl mx-auto">
+            {dependencies.length > 0 && (
+              <div className="mb-2">
+                <h3 className="text-xs font-medium text-text-muted mb-1">
+                  Depends on (
+                  {
+                    dependencies.filter(
+                      (d: any) => d.state === "completed" || d.state === "pr_opened",
+                    ).length
+                  }
+                  /{dependencies.length} complete)
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {dependencies.map((dep: any) => (
+                    <Link
+                      key={dep.id}
+                      href={`/tasks/${dep.id}`}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border",
+                        dep.state === "completed" || dep.state === "pr_opened"
+                          ? "border-green-500/30 text-green-400 bg-green-500/5"
+                          : dep.state === "failed"
+                            ? "border-red-500/30 text-red-400 bg-red-500/5"
+                            : "border-border text-text-muted bg-bg-card",
+                      )}
+                    >
+                      {dep.title}
+                      <span className="opacity-60">{dep.state}</span>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+            {dependents.length > 0 && (
+              <div>
+                <h3 className="text-xs font-medium text-text-muted mb-1">
+                  Blocks ({dependents.length} task{dependents.length !== 1 ? "s" : ""})
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {dependents.map((dep: any) => (
+                    <Link
+                      key={dep.id}
+                      href={`/tasks/${dep.id}`}
+                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border text-text-muted bg-bg-card hover:bg-bg-hover"
+                    >
+                      {dep.title}
+                      <span className="opacity-60">{dep.state}</span>
+                    </Link>
+                  ))}
+                </div>
               </div>
             )}
           </div>

@@ -78,6 +78,7 @@ export const api = {
     metadata?: Record<string, unknown>;
     maxRetries?: number;
     priority?: number;
+    dependsOn?: string[];
   }) =>
     request<{ task: any }>("/api/tasks", {
       method: "POST",
@@ -747,4 +748,62 @@ export const api = {
 
   removeWorkspaceMember: (workspaceId: string, userId: string) =>
     request<void>(`/api/workspaces/${workspaceId}/members/${userId}`, { method: "DELETE" }),
+
+  // Task Dependencies
+  getTaskDependencies: (taskId: string) =>
+    request<{ dependencies: any[] }>(`/api/tasks/${taskId}/dependencies`),
+
+  getTaskDependents: (taskId: string) =>
+    request<{ dependents: any[] }>(`/api/tasks/${taskId}/dependents`),
+
+  addTaskDependencies: (taskId: string, dependsOnIds: string[]) =>
+    request<{ ok: boolean }>(`/api/tasks/${taskId}/dependencies`, {
+      method: "POST",
+      body: JSON.stringify({ dependsOnIds }),
+    }),
+
+  removeTaskDependency: (taskId: string, depTaskId: string) =>
+    request<void>(`/api/tasks/${taskId}/dependencies/${depTaskId}`, { method: "DELETE" }),
+
+  // Workflow Templates
+  listWorkflows: () => request<{ workflows: any[] }>("/api/workflows"),
+
+  getWorkflow: (id: string) => request<{ workflow: any }>(`/api/workflows/${id}`),
+
+  createWorkflow: (data: {
+    name: string;
+    description?: string;
+    steps: Array<{
+      id: string;
+      title: string;
+      prompt: string;
+      repoUrl?: string;
+      agentType?: string;
+      dependsOn?: string[];
+    }>;
+    status?: string;
+  }) =>
+    request<{ workflow: any }>("/api/workflows", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateWorkflow: (id: string, data: Record<string, unknown>) =>
+    request<{ workflow: any }>(`/api/workflows/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteWorkflow: (id: string) => request<void>(`/api/workflows/${id}`, { method: "DELETE" }),
+
+  runWorkflow: (templateId: string, data?: { repoUrlOverride?: string }) =>
+    request<{ workflowRun: any }>(`/api/workflows/${templateId}/run`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    }),
+
+  getWorkflowRuns: (templateId: string) =>
+    request<{ runs: any[] }>(`/api/workflows/${templateId}/runs`),
+
+  getWorkflowRun: (id: string) => request<{ workflowRun: any }>(`/api/workflow-runs/${id}`),
 };

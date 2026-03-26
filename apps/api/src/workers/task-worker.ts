@@ -75,6 +75,38 @@ export function startTaskWorker() {
           return;
         }
 
+        // ── Dependency check ──────────────────────────────────────────
+        // If this task has unsatisfied dependencies, re-queue with a delay.
+        const { areDependenciesMet, getDependencies: getTaskDeps } =
+          await import("../services/dependency-service.js");
+        const deps = await getTaskDeps(taskId);
+        if (deps.length > 0) {
+          const anyFailed = deps.some(
+            (d) => d.state === TaskState.FAILED || d.state === TaskState.CANCELLED,
+          );
+          if (anyFailed) {
+            log.info("Dependency failed — failing task");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.FAILED,
+              "dependency_failed",
+              "A dependency task has failed",
+            );
+            return;
+          }
+          const met = await areDependenciesMet(taskId);
+          if (!met) {
+            log.info("Dependencies not yet met, re-scheduling");
+            const jitter = Math.floor(Math.random() * 5000);
+            await taskQueue.add("process-task", job.data, {
+              jobId: `${taskId}-depwait-${Date.now()}`,
+              priority: currentTask.priority ?? 100,
+              delay: 15000 + jitter,
+            });
+            return;
+          }
+        }
+
         // ── Serialized concurrency check + claim ─────────────────────
         // The claim lock ensures only one worker at a time checks
         // counts and claims a task. Without this, N workers all see
@@ -493,6 +525,30 @@ export function startTaskWorker() {
             log.warn({ err }, "Failed to check parent subtask status"),
           );
         }
+
+        // Handle task dependencies: auto-start dependents or cascade failure
+        if (completedTask) {
+          const depSvc = await import("../services/dependency-service.js");
+          if (
+            completedTask.state === TaskState.COMPLETED ||
+            completedTask.state === TaskState.PR_OPENED
+          ) {
+            await depSvc
+              .onDependencyComplete(taskId)
+              .catch((err) => log.warn({ err }, "Failed to process dependency completions"));
+          } else if (completedTask.state === TaskState.FAILED) {
+            await depSvc
+              .cascadeFailure(taskId)
+              .catch((err) => log.warn({ err }, "Failed to cascade failure to dependents"));
+          }
+          // Update workflow run status if part of a workflow
+          if (completedTask.workflowRunId) {
+            const { checkWorkflowRunCompletion } = await import("../services/workflow-service.js");
+            await checkWorkflowRunCompletion(completedTask.workflowRunId).catch((err) =>
+              log.warn({ err }, "Failed to update workflow run status"),
+            );
+          }
+        }
       } catch (err) {
         // State race errors mean another worker claimed the task — not a real failure
         if (err instanceof taskService.StateRaceError) {
@@ -652,6 +708,36 @@ export async function reconcileOrphanedTasks() {
   const corrected = await repoPool.reconcileActiveTaskCounts();
   if (corrected > 0) {
     logger.info({ corrected }, "Reconciled repo pod activeTaskCounts on startup");
+  }
+
+  // Re-check waiting_on_deps tasks — their dependencies may have completed
+  // while the server was down.
+  const waitingTasks = await db
+    .select()
+    .from(tasks)
+    .where(eq(tasks.state, "waiting_on_deps" as any));
+
+  if (waitingTasks.length > 0) {
+    const { areDependenciesMet } = await import("../services/dependency-service.js");
+    let unblocked = 0;
+    for (const task of waitingTasks) {
+      const met = await areDependenciesMet(task.id);
+      if (met) {
+        await taskService.transitionTask(task.id, TaskState.QUEUED, "deps_met_on_startup");
+        await taskQueue.add(
+          "process-task",
+          { taskId: task.id },
+          {
+            jobId: `${task.id}-deps-reconcile-${Date.now()}`,
+            priority: task.priority ?? 100,
+          },
+        );
+        unblocked++;
+      }
+    }
+    if (unblocked > 0) {
+      logger.info({ unblocked }, "Unblocked waiting_on_deps tasks after startup reconciliation");
+    }
   }
 }
 

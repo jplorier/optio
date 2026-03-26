@@ -156,4 +156,50 @@ describe("state-machine", () => {
       expect(canTransition(TaskState.FAILED, TaskState.COMPLETED)).toBe(true);
     });
   });
+
+  describe("dependency lifecycle (waiting_on_deps)", () => {
+    it("allows pending → waiting_on_deps when task has dependencies", () => {
+      expect(canTransition(TaskState.PENDING, TaskState.WAITING_ON_DEPS)).toBe(true);
+    });
+
+    it("allows waiting_on_deps → queued when dependencies are met", () => {
+      expect(canTransition(TaskState.WAITING_ON_DEPS, TaskState.QUEUED)).toBe(true);
+    });
+
+    it("allows waiting_on_deps → failed for cascade failure", () => {
+      expect(canTransition(TaskState.WAITING_ON_DEPS, TaskState.FAILED)).toBe(true);
+    });
+
+    it("allows waiting_on_deps → cancelled for user cancel", () => {
+      expect(canTransition(TaskState.WAITING_ON_DEPS, TaskState.CANCELLED)).toBe(true);
+    });
+
+    it("rejects waiting_on_deps → running (must go through queued)", () => {
+      expect(canTransition(TaskState.WAITING_ON_DEPS, TaskState.RUNNING)).toBe(false);
+    });
+
+    it("rejects waiting_on_deps → provisioning (must go through queued)", () => {
+      expect(canTransition(TaskState.WAITING_ON_DEPS, TaskState.PROVISIONING)).toBe(false);
+    });
+
+    it("is not a terminal state", () => {
+      expect(isTerminal(TaskState.WAITING_ON_DEPS)).toBe(false);
+    });
+
+    it("supports full dependency lifecycle: pending → waiting_on_deps → queued → running", () => {
+      let state = TaskState.PENDING;
+      state = transition(state, TaskState.WAITING_ON_DEPS);
+      state = transition(state, TaskState.QUEUED);
+      state = transition(state, TaskState.PROVISIONING);
+      state = transition(state, TaskState.RUNNING);
+      expect(state).toBe(TaskState.RUNNING);
+    });
+
+    it("supports cascade failure: pending → waiting_on_deps → failed", () => {
+      let state = TaskState.PENDING;
+      state = transition(state, TaskState.WAITING_ON_DEPS);
+      state = transition(state, TaskState.FAILED);
+      expect(state).toBe(TaskState.FAILED);
+    });
+  });
 });

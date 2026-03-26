@@ -1,5 +1,6 @@
 export enum TaskState {
   PENDING = "pending",
+  WAITING_ON_DEPS = "waiting_on_deps",
   QUEUED = "queued",
   PROVISIONING = "provisioning",
   RUNNING = "running",
@@ -69,4 +70,42 @@ export interface CreateTaskInput {
   metadata?: Record<string, unknown>;
   maxRetries?: number;
   priority?: number;
+  dependsOn?: string[];
+}
+
+export interface WorkflowStep {
+  id: string;
+  title: string;
+  prompt: string;
+  repoUrl?: string;
+  agentType?: string;
+  dependsOn?: string[];
+  condition?: {
+    type: "always" | "if_pr_opened" | "if_ci_passes" | "if_cost_under";
+    value?: string;
+  };
+}
+
+export interface WorkflowTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  workspaceId?: string;
+  steps: WorkflowStep[];
+  status: "draft" | "active" | "archived";
+  createdBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface WorkflowRun {
+  id: string;
+  workflowTemplateId: string;
+  workspaceId?: string;
+  status: "running" | "paused" | "completed" | "failed" | "cancelled";
+  taskMapping?: Record<string, string>;
+  createdBy?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  completedAt?: Date;
 }
