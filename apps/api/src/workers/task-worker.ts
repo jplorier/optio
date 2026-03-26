@@ -238,6 +238,20 @@ export function startTaskWorker() {
           }
         }
 
+        // For oauth-token mode, read the token from the secrets store
+        if (claudeAuthMode === "oauth-token") {
+          const oauthToken = await retrieveSecret("CLAUDE_CODE_OAUTH_TOKEN").catch(() => null);
+          if (oauthToken) {
+            allEnv.CLAUDE_CODE_OAUTH_TOKEN = oauthToken as string;
+            log.info("Injected CLAUDE_CODE_OAUTH_TOKEN from secrets store");
+          } else {
+            throw new Error(
+              "OAuth token mode selected but no CLAUDE_CODE_OAUTH_TOKEN secret found. " +
+                "Run `claude setup-token` and paste the token in the setup wizard.",
+            );
+          }
+        }
+
         // Get or create a repo pod (with multi-pod scheduling)
         log.info("Getting repo pod");
         const isRetry = (task.retryCount ?? 0) > 0;

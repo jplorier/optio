@@ -63,9 +63,13 @@ export default function SetupPage() {
   const [openaiError, setOpenaiError] = useState("");
 
   // Step 3: Claude auth mode
-  const [claudeAuthMode, setClaudeAuthMode] = useState<"api-key" | "max-subscription">("api-key");
+  const [claudeAuthMode, setClaudeAuthMode] = useState<
+    "api-key" | "max-subscription" | "oauth-token"
+  >("api-key");
   const [subscriptionAvailable, setSubscriptionAvailable] = useState(false);
   const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [oauthToken, setOauthToken] = useState("");
+  const [oauthTokenValidated, setOauthTokenValidated] = useState(false);
 
   // Step 4: Repos
   const [repos, setRepos] = useState<RepoEntry[]>([]);
@@ -132,7 +136,11 @@ export default function SetupPage() {
   }, [step]);
 
   const claudeReady =
-    claudeAuthMode === "max-subscription" ? subscriptionAvailable : anthropicValidated;
+    claudeAuthMode === "max-subscription"
+      ? subscriptionAvailable
+      : claudeAuthMode === "oauth-token"
+        ? oauthTokenValidated
+        : anthropicValidated;
 
   const currentStep = STEPS[step];
 
@@ -254,6 +262,9 @@ export default function SetupPage() {
 
       if (claudeAuthMode === "api-key" && anthropicKey.trim() && anthropicValidated) {
         await api.createSecret({ name: "ANTHROPIC_API_KEY", value: anthropicKey });
+      }
+      if (claudeAuthMode === "oauth-token" && oauthToken.trim()) {
+        await api.createSecret({ name: "CLAUDE_CODE_OAUTH_TOKEN", value: oauthToken });
       }
       if (openaiKey.trim() && openaiValidated) {
         await api.createSecret({ name: "OPENAI_API_KEY", value: openaiKey });
@@ -576,6 +587,72 @@ export default function SetupPage() {
                               </button>
                             </div>
                           )}
+                        </div>
+                      )}
+                    </div>
+                  </label>
+
+                  <label
+                    className={cn(
+                      "flex items-start gap-3 p-3 rounded-md border cursor-pointer transition-colors",
+                      claudeAuthMode === "oauth-token"
+                        ? "border-primary bg-primary/5"
+                        : "border-border hover:border-text-muted",
+                    )}
+                  >
+                    <input
+                      type="radio"
+                      name="claude-auth"
+                      checked={claudeAuthMode === "oauth-token"}
+                      onChange={() => setClaudeAuthMode("oauth-token")}
+                      className="mt-0.5"
+                    />
+                    <div className="flex-1">
+                      <span className="text-sm font-medium">
+                        Paste OAuth token (Max/Pro subscription)
+                      </span>
+                      <p className="text-xs text-text-muted mt-0.5">
+                        Generate a long-lived token with{" "}
+                        <code className="px-1 py-0.5 bg-bg-card rounded text-primary">
+                          claude setup-token
+                        </code>{" "}
+                        on any machine where you&apos;re logged into Claude Code, then paste it
+                        here. Uses your existing subscription — no API key costs.
+                      </p>
+                      {claudeAuthMode === "oauth-token" && (
+                        <div className="mt-2 space-y-2">
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              value={oauthToken}
+                              onChange={(e) => {
+                                setOauthToken(e.target.value);
+                                setOauthTokenValidated(false);
+                              }}
+                              onPaste={(e) => {
+                                const pasted = e.clipboardData.getData("text").trim();
+                                if (pasted) {
+                                  setOauthToken(pasted);
+                                  setOauthTokenValidated(true);
+                                }
+                              }}
+                              placeholder="Paste token from claude setup-token"
+                              className="flex-1 px-3 py-2 rounded-md bg-bg border border-border text-sm focus:outline-none focus:border-primary font-mono"
+                            />
+                          </div>
+                          {oauthTokenValidated && (
+                            <span className="text-xs text-success flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Token saved
+                            </span>
+                          )}
+                          <p className="text-[10px] text-text-muted">
+                            Run{" "}
+                            <code className="px-1 py-0.5 bg-bg-card rounded text-primary">
+                              claude setup-token
+                            </code>{" "}
+                            in a terminal on any machine where you&apos;re logged in. The token is
+                            valid for 1 year.
+                          </p>
                         </div>
                       )}
                     </div>
@@ -1074,7 +1151,11 @@ export default function SetupPage() {
                     <CheckCircle className="w-4 h-4 text-success" />
                     <span>
                       Claude Code:{" "}
-                      {claudeAuthMode === "max-subscription" ? "Max subscription" : "API key"}
+                      {claudeAuthMode === "max-subscription"
+                        ? "Max subscription"
+                        : claudeAuthMode === "oauth-token"
+                          ? "OAuth token"
+                          : "API key"}
                     </span>
                   </div>
                 )}
