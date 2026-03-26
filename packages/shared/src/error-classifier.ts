@@ -51,7 +51,7 @@ const ERROR_PATTERNS: Array<{
       description:
         "The Claude Code OAuth token has expired. The agent cannot authenticate with the Anthropic API.",
       remedy:
-        "Run 'claude auth login' on the host machine to refresh your credentials, then retry the failed tasks.",
+        "Refresh your token by running this in a terminal:\n\nsecurity find-generic-password -s \"Claude Code-credentials\" -w | python3 -c \"import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])\" | pbcopy\n\nThen go to Secrets, update CLAUDE_CODE_OAUTH_TOKEN with the new token, and retry the failed tasks.",
       retryable: true,
     }),
   },
