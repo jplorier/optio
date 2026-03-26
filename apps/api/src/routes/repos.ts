@@ -32,6 +32,7 @@ const updateRepoSchema = z.object({
   reviewPromptTemplate: z.string().nullable().optional(),
   testCommand: z.string().optional(),
   reviewModel: z.string().optional(),
+  maxAutoResumes: z.number().int().min(1).max(100).nullable().optional(),
   slackWebhookUrl: z.string().nullable().optional(),
   slackChannel: z.string().nullable().optional(),
   slackNotifyOn: z

@@ -30,6 +30,7 @@ export interface RepoRecord {
   reviewPromptTemplate: string | null;
   testCommand: string | null;
   reviewModel: string | null;
+  maxAutoResumes: number | null;
   slackWebhookUrl: string | null;
   slackChannel: string | null;
   slackNotifyOn: string[] | null;

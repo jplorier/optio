@@ -35,6 +35,7 @@ function makeRepoConfig(overrides: Partial<RepoRecord> = {}): RepoRecord {
     reviewPromptTemplate: null,
     testCommand: null,
     reviewModel: "sonnet",
+    maxAutoResumes: null,
     slackWebhookUrl: "https://hooks.slack.com/services/T00/B00/xxx",
     slackChannel: null,
     slackNotifyOn: null,

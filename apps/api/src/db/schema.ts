@@ -155,6 +155,7 @@ export const repos = pgTable("repos", {
   reviewPromptTemplate: text("review_prompt_template"), // null = use default
   testCommand: text("test_command"), // "npm test", "cargo test", etc.
   reviewModel: text("review_model").default("sonnet"), // can use cheaper model for reviews
+  maxAutoResumes: integer("max_auto_resumes"), // null = use OPTIO_MAX_AUTO_RESUMES env var or default (10)
   slackWebhookUrl: text("slack_webhook_url"), // Slack incoming webhook URL
   slackChannel: text("slack_channel"), // override channel (optional)
   slackNotifyOn: jsonb("slack_notify_on").$type<string[]>(), // e.g. ["completed","failed","pr_opened","needs_attention"]

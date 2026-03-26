@@ -326,7 +326,12 @@ export function startPrWatcherWorker() {
             };
 
             // Loop prevention: cap auto-resumes to avoid infinite cycles
-            const MAX_AUTO_RESUMES = 3;
+            // Priority: per-repo maxAutoResumes → OPTIO_MAX_AUTO_RESUMES env var → default 10
+            const DEFAULT_MAX_AUTO_RESUMES = 10;
+            const envMaxAutoResumes = process.env.OPTIO_MAX_AUTO_RESUMES
+              ? parseInt(process.env.OPTIO_MAX_AUTO_RESUMES, 10)
+              : DEFAULT_MAX_AUTO_RESUMES;
+            const maxAutoResumes = repoConfig?.maxAutoResumes ?? envMaxAutoResumes;
             if (
               ["resume_conflicts", "resume_ci_failure", "resume_review"].includes(action.action)
             ) {
@@ -336,9 +341,9 @@ export function startPrWatcherWorker() {
                 .where(
                   sql`${taskEvents.taskId} = ${task.id} AND ${taskEvents.trigger} LIKE 'auto_resume_%'`,
                 );
-              if (Number(resumeCount) >= MAX_AUTO_RESUMES) {
+              if (Number(resumeCount) >= maxAutoResumes) {
                 logger.info(
-                  { taskId: task.id, resumeCount, action: action.action },
+                  { taskId: task.id, resumeCount, maxAutoResumes, action: action.action },
                   "Auto-resume limit reached — escalating to needs_attention",
                 );
                 action = {

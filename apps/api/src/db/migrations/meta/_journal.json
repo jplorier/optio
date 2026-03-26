@@ -141,6 +141,13 @@
       "when": 1774627200000,
       "tag": "0019_slack_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1774713600000,
+      "tag": "0020_max_auto_resumes",
+      "breakpoints": true
     }
   ]
 }
