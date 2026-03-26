@@ -8,6 +8,9 @@ api:
     pullPolicy: IfNotPresent
   replicas: 1
   port: 4000
+  service:
+    type: ClusterIP    # Set to NodePort for local K8s dev (Docker Desktop, kind, minikube)
+    nodePort: ""       # Fixed node port when type=NodePort, e.g. 4000
   resources:
     requests:
       cpu: 250m
@@ -37,6 +40,9 @@ web:
     pullPolicy: IfNotPresent
   replicas: 1
   port: 3000
+  service:
+    type: ClusterIP    # Set to NodePort for local K8s dev (Docker Desktop, kind, minikube)
+    nodePort: ""       # Fixed node port when type=NodePort, e.g. 3100
   resources:
     requests:
       cpu: 100m

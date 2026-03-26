@@ -82,8 +82,12 @@ metadata:
     app: optio-api
     {{- include "optio.labels" . | nindent 4 }}
 spec:
+  type: {{ .Values.api.service.type }}
   selector:
     app: optio-api
   ports:
     - port: {{ .Values.api.port }}
       targetPort: {{ .Values.api.port }}
+      {{- if and (eq .Values.api.service.type "NodePort") .Values.api.service.nodePort }}
+      nodePort: {{ .Values.api.service.nodePort }}
+      {{- end }}
