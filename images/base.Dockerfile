@@ -22,6 +22,9 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
+# pnpm (installed globally before switching to non-root user)
+RUN corepack enable && corepack prepare pnpm@10 --activate
+
 # Claude Code
 RUN npm install -g @anthropic-ai/claude-code
 
