@@ -3,9 +3,8 @@ FROM ${BASE_IMAGE}
 
 USER root
 
-# pnpm, yarn, bun
-RUN npm install -g pnpm yarn \
-    && curl -fsSL https://bun.sh/install | bash \
+# bun (pnpm and yarn are already provided by corepack in the base image)
+RUN curl -fsSL https://bun.sh/install | bash \
     && mv /root/.bun/bin/bun /usr/local/bin/ \
     && rm -rf /root/.bun
 
