@@ -22,7 +22,7 @@ Optio is a workflow orchestration system for AI coding agents. Think of it as "C
 ┌─────────────┐     ┌──────────────┐     ┌─────────────────────┐
 │   Web UI    │────→│  API Server  │────→│   K8s Pods          │
 │  Next.js    │     │   Fastify    │     │                     │
-│  :3100      │     │   :4000      │     │  ┌─ Repo Pod A ──┐  │
+│  :30310     │     │   :30400     │     │  ┌─ Repo Pod A ──┐  │
 │             │←ws──│              │     │  │ clone + sleep  │  │
 │             │     │ - BullMQ     │     │  │ ├─ worktree 1  │  │
 │             │     │ - Drizzle    │     │  │ ├─ worktree 2  │  │
@@ -35,6 +35,9 @@ Optio is a workflow orchestration system for AI coding agents. Think of it as "C
                     │  Postgres    │  State, logs, secrets, config, health events
                     │  Redis       │  Job queue, pub/sub
                     └──────────────┘
+
+All services run in Kubernetes (including API and web). Local dev uses
+Docker Desktop K8s with Helm. See setup-local.sh.
 ```
 
 ### Pod-per-repo with worktrees
@@ -215,13 +218,15 @@ Enable a provider by setting both `<PROVIDER>_OAUTH_CLIENT_ID` and `<PROVIDER>_O
 
 ### Authentication (Claude Code)
 
-Two modes, selected during setup:
+Three modes, selected during the setup wizard:
 
-**API Key mode**: `ANTHROPIC_API_KEY` is injected as an env var into the container. Simple.
+**API Key mode**: `ANTHROPIC_API_KEY` is injected as an env var into the container. Simple, pay-per-use.
 
-**Max Subscription mode**: The Optio API server reads the host machine's Claude OAuth credentials from the macOS Keychain (`Claude Code-credentials` service) or `~/.claude/.credentials.json` on Linux. The token is injected directly into the container as `CLAUDE_CODE_OAUTH_TOKEN`. It also serves the token via `GET /api/auth/claude-token` for backward compatibility with the `claude-key-helper.sh` approach.
+**OAuth Token mode** (recommended for k8s): User extracts their Claude Max/Pro OAuth token from the macOS Keychain via a one-liner in the setup wizard, then pastes it. The token is stored as an encrypted secret (`CLAUDE_CODE_OAUTH_TOKEN`) and injected into agent pods. This gives full subscription access including usage tracking.
 
-The auth service is at `apps/api/src/services/auth-service.ts`. Credentials are cached for 30 seconds and auto-refresh.
+**Max Subscription mode** (legacy, local dev only): The API server reads credentials directly from the host's macOS Keychain or `~/.claude/.credentials.json`. Only works when the API runs on the host machine, not in k8s.
+
+The auth service is at `apps/api/src/services/auth-service.ts`. For usage tracking, it falls back to reading `CLAUDE_CODE_OAUTH_TOKEN` from the secrets store when the Keychain is unavailable (k8s deployments).
 
 ### Auto-detect image preset
 
@@ -279,19 +284,19 @@ Canonical output: `https://github.com/owner/repo` (lowercase host, no trailing s
 
 ## Tech Stack
 
-| Layer      | Technology                       | Notes                                                                                             |
-| ---------- | -------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Monorepo   | Turborepo + pnpm 10              | 6 packages, workspace protocol                                                                    |
-| API        | Fastify 5                        | Plugins, schema validation, WebSocket                                                             |
-| ORM        | Drizzle                          | PostgreSQL, generated migrations in `apps/api/src/db/migrations/` (15 migrations)                 |
-| Queue      | BullMQ + Redis                   | Also used for pub/sub (log streaming to WebSocket clients)                                        |
-| Web        | Next.js 15 App Router            | Tailwind CSS v4, Zustand, Lucide icons, sonner toasts                                             |
-| K8s client | @kubernetes/client-node          | Pod lifecycle, exec, log streaming, metrics                                                       |
-| Validation | Zod                              | API request schemas                                                                               |
-| Testing    | Vitest                           | 4 test files across shared + api (state machine, error classifier, prompt template, event parser) |
-| CI         | GitHub Actions                   | Format, typecheck, test, build-web, build-image                                                   |
-| Deploy     | Helm                             | Chart at `helm/optio/`                                                                            |
-| Hooks      | Husky + lint-staged + commitlint | Pre-commit: lint-staged + format + typecheck. Commit-msg: conventional commits                    |
+| Layer      | Technology                       | Notes                                                                              |
+| ---------- | -------------------------------- | ---------------------------------------------------------------------------------- |
+| Monorepo   | Turborepo + pnpm 10              | 6 packages, workspace protocol                                                     |
+| API        | Fastify 5                        | Plugins, schema validation, WebSocket                                              |
+| ORM        | Drizzle                          | PostgreSQL, generated migrations in `apps/api/src/db/migrations/` (~28 migrations) |
+| Queue      | BullMQ + Redis                   | Also used for pub/sub (log streaming to WebSocket clients)                         |
+| Web        | Next.js 15 App Router            | Tailwind CSS v4, Zustand, Lucide icons, sonner toasts, Recharts                    |
+| K8s client | @kubernetes/client-node          | Pod lifecycle, exec, log streaming, metrics                                        |
+| Validation | Zod                              | API request schemas                                                                |
+| Testing    | Vitest                           | Test files across shared + api                                                     |
+| CI         | GitHub Actions                   | Format, typecheck, test, build-web, build-image                                    |
+| Deploy     | Helm                             | Chart at `helm/optio/`, local dev via `setup-local.sh`                             |
+| Hooks      | Husky + lint-staged + commitlint | Pre-commit: lint-staged + format + typecheck. Commit-msg: conventional commits     |
 
 ## Directory Layout
 
@@ -300,56 +305,95 @@ apps/
   api/
     src/
       routes/         health, tasks, subtasks, bulk, secrets, repos, issues, tickets, setup, auth,
-                      cluster, resume, prompt-templates, analytics
+                      cluster, resume, prompt-templates, analytics, webhooks, comments, schedules,
+                      slack, task-templates, workspaces, dependencies, workflows, mcp-servers,
+                      sessions, skills
       services/       task-service, repo-pool-service, secret-service, auth-service, container-service,
                       prompt-template-service, repo-service, repo-detect-service, review-service,
                       subtask-service, ticket-sync-service, event-bus, agent-event-parser,
-                      session-service, oauth/ (github, google, gitlab)
+                      session-service, interactive-session-service, workspace-service, webhook-service,
+                      comment-service, schedule-service, slack-service, task-template-service,
+                      workflow-service, dependency-service, mcp-server-service, skill-service,
+                      oauth/ (github, google, gitlab)
       plugins/        auth (session validation middleware)
       workers/        task-worker (main job processor), pr-watcher-worker, repo-cleanup-worker,
-                      ticket-sync-worker
-      ws/             log-stream (per-task), events (global)
-      db/             schema.ts (Drizzle), client.ts, migrations/ (15 migrations)
+                      ticket-sync-worker, webhook-worker, schedule-worker
+      ws/             log-stream (per-task), events (global), session-terminal, session-chat, ws-auth
+      db/             schema.ts (Drizzle ~26 tables), client.ts, migrations/ (~28 migrations)
     drizzle.config.ts
   web/
     src/
       app/            Pages: / (overview), /tasks, /tasks/new, /tasks/[id], /repos, /repos/[id],
-                      /cluster, /cluster/[id], /secrets, /settings, /setup, /costs, /login
+                      /cluster, /cluster/[id], /secrets, /settings, /setup, /costs, /login,
+                      /sessions, /sessions/[id], /templates, /workspace-settings, /schedules,
+                      /workflows
       components/     task-card, task-list, log-viewer, web-terminal, event-timeline, state-badge,
-                      skeleton, layout/ (sidebar, layout-shell, setup-check, ws-provider, user-menu)
+                      skeleton, session-terminal, session-chat, split-pane, activity-feed,
+                      pipeline-timeline,
+                      layout/ (sidebar, layout-shell, setup-check, ws-provider, user-menu,
+                      theme-provider, themed-toaster, workspace-switcher)
       middleware.ts   Next.js auth middleware (redirects unauthenticated users to /login)
       hooks/          use-store (Zustand), use-websocket, use-task, use-logs
-      lib/            api-client, ws-client, utils
+      lib/            api-client, ws-client, ws-auth, utils
 
 packages/
-  shared/             Types (task, agent, container, secret, ticket, events, image, agent-events),
-                      state machine, prompt template renderer, error classifier, constants,
-                      normalize-repo-url
+  shared/             Types (task, agent, container, secret, ticket, events, image, agent-events,
+                      session, workspace, mcp), state machine, prompt template renderer,
+                      error classifier, constants, normalize-repo-url
   container-runtime/  ContainerRuntime interface, DockerContainerRuntime, KubernetesContainerRuntime
   agent-adapters/     AgentAdapter interface, ClaudeCodeAdapter, CodexAdapter
   ticket-providers/   TicketProvider interface, GitHubTicketProvider, LinearTicketProvider
 
-images/               Dockerfiles: base, node, python, go, rust, full + build.sh
+Dockerfile.api        API server Docker image (tsx-based)
+Dockerfile.web        Web UI Docker image (Next.js production build)
+Dockerfile.agent      Legacy agent image
+images/               Agent preset Dockerfiles: base, node, python, go, rust, full + build.sh
 helm/optio/           Helm chart: api, web, postgres, redis, ingress, rbac, secrets
-k8s/                  Local dev manifests: namespace.yaml, infrastructure.yaml
-scripts/              repo-init.sh, agent-entrypoint.sh, setup-local.sh
+scripts/              setup-local.sh, update-local.sh, repo-init.sh, agent-entrypoint.sh
 ```
 
 ## Database Schema
 
-11 tables (Drizzle, 15 migrations):
+~26 tables (Drizzle, ~28 migrations). Key tables:
 
-- **tasks** — id, title, prompt, repoUrl, repoBranch, state (enum), agentType, containerId, sessionId, prUrl, prNumber, prState, prChecksStatus, prReviewStatus, prReviewComments, resultSummary, costUsd, errorMessage, ticketSource, ticketExternalId, metadata (jsonb), retryCount, maxRetries, priority, parentTaskId, taskType ("coding"|"review"), subtaskOrder, blocksParent, worktreeState, lastPodId, createdBy (FK to users), timestamps (created/updated/started/completed)
-- **task_events** — id, taskId (FK), fromState, toState, trigger, message, createdAt (audit trail)
-- **task_logs** — id, taskId (FK), stream, content, logType, metadata (jsonb), timestamp
-- **secrets** — id, name, scope, encryptedValue (bytea), iv, authTag (AES-256-GCM)
-- **repos** — id, repoUrl (unique), fullName, defaultBranch, isPrivate, imagePreset, extraPackages, setupCommands, customDockerfile, autoMerge, promptTemplateOverride, claudeModel, claudeContextWindow, claudeThinking, claudeEffort, autoResume, maxConcurrentTasks, maxPodInstances, maxAgentsPerPod, maxTurnsCoding, maxTurnsReview, reviewEnabled, reviewTrigger, reviewPromptTemplate, testCommand, reviewModel
-- **repo_pods** — id, repoUrl, repoBranch, podName, podId, state (enum), activeTaskCount, instanceIndex, lastTaskAt, errorMessage (note: repoUrl is no longer unique — multiple pod instances per repo)
-- **pod_health_events** — id, repoPodId, repoUrl, eventType ("crashed"|"oom_killed"|"restarted"|"healthy"|"orphan_cleaned"), podName, message, createdAt
-- **users** — id (uuid), provider ("github"|"google"|"gitlab"), externalId, email, displayName, avatarUrl, lastLoginAt, timestamps. Unique on (provider, externalId)
-- **sessions** — id (uuid), userId (FK to users), tokenHash (unique, SHA256), expiresAt (30-day TTL), createdAt
+**Core:**
+
+- **tasks** — id, title, prompt, repoUrl, repoBranch, state (enum), agentType, containerId, sessionId, prUrl, prNumber, prState, prChecksStatus, prReviewStatus, prReviewComments, resultSummary, costUsd, inputTokens, outputTokens, modelUsed, errorMessage, ticketSource, ticketExternalId, metadata (jsonb), retryCount, maxRetries, priority, parentTaskId, taskType, subtaskOrder, blocksParent, worktreeState, lastPodId, workspaceId, createdBy, timestamps
+- **task_events** — id, taskId, fromState, toState, trigger, message, userId, createdAt
+- **task_logs** — id, taskId, stream, content, logType, metadata (jsonb), timestamp
+- **task_comments** — id, taskId, userId, content, timestamps
+- **task_dependencies** — id, taskId, dependsOnTaskId, createdAt
+- **task_templates** — id, name, description, repoUrl, prompt, agentType, metadata, workspaceId
+
+**Infrastructure:**
+
+- **repos** — id, repoUrl, fullName, defaultBranch, isPrivate, imagePreset, autoMerge, claudeModel, claudeContextWindow, claudeThinking, claudeEffort, autoResume, maxConcurrentTasks, maxPodInstances, maxAgentsPerPod, reviewEnabled, reviewTrigger, slackEnabled, slackWebhookUrl, workspaceId, etc.
+- **repo_pods** — id, repoUrl, repoBranch, podName, podId, state, activeTaskCount, instanceIndex, workspaceId
+- **pod_health_events** — id, repoPodId, repoUrl, eventType, podName, message, createdAt
+- **secrets** — id, name, scope, encryptedValue (bytea), iv, authTag (AES-256-GCM), workspaceId
+
+**Auth & Multi-tenancy:**
+
+- **users** — id, provider, externalId, email, displayName, avatarUrl, defaultWorkspaceId, timestamps
+- **sessions** — id, userId, tokenHash (SHA256), expiresAt (30-day TTL), createdAt
+- **workspaces** — id, name, slug, description, createdBy, timestamps
+- **workspace_members** — id, workspaceId, userId, role (admin/member/viewer), createdAt
+
+**Interactive Sessions:**
+
+- **interactive_sessions** — id, repoUrl, userId, worktreePath, branch, state (active/ended), podId, costUsd, timestamps
+- **session_prs** — id, sessionId, prUrl, prNumber, prState, prChecksStatus, prReviewStatus, timestamps
+
+**Integrations:**
+
+- **webhooks** — id, url, events (jsonb), secret, active, workspaceId
+- **webhook_deliveries** — id, webhookId, event, payload, statusCode, success, deliveredAt
 - **ticket_providers** — id, source, config (jsonb), enabled
 - **prompt_templates** — id, name, template, isDefault, repoUrl, autoMerge
+- **schedules** / **schedule_runs** — scheduled/recurring task execution
+- **workflow_templates** / **workflow_runs** — multi-step workflow automation
+- **mcp_servers** — MCP server configs (global or per-repo)
+- **custom_skills** — custom agent skills/commands
 
 ## Helm Chart
 
@@ -365,11 +409,18 @@ Key `values.yaml` settings:
 The chart creates: namespace, ServiceAccount + RBAC (pod/exec/secret management), API deployment + service (with health probes), web deployment + service, conditional Postgres + Redis, configurable Ingress.
 
 ```bash
-# Local dev
-helm install optio helm/optio --set encryption.key=$(openssl rand -hex 32)
+# Local dev (setup-local.sh handles this automatically)
+helm install optio helm/optio -n optio --create-namespace \
+  --set encryption.key=$(openssl rand -hex 32) \
+  --set api.image.pullPolicy=Never \
+  --set web.image.pullPolicy=Never \
+  --set auth.disabled=true \
+  --set api.service.type=NodePort --set api.service.nodePort=30400 \
+  --set web.service.type=NodePort --set web.service.nodePort=30310 \
+  --set postgresql.auth.password=optio_dev
 
 # Production with managed services
-helm install optio helm/optio \
+helm install optio helm/optio -n optio --create-namespace \
   --set postgresql.enabled=false \
   --set externalDatabase.url="postgres://..." \
   --set redis.enabled=false \
@@ -382,11 +433,16 @@ helm install optio helm/optio \
 ## Commands
 
 ```bash
-# Development
-pnpm install                          # Install all deps
-./scripts/setup-local.sh              # Bootstrap K8s infra + DB + .env
-pnpm dev                              # Start API (:4000) + Web (:3100) via Turborepo
-docker build -t optio-agent:latest -f Dockerfile.agent .  # Build agent image
+# Setup (first time — builds everything, deploys to local k8s via Helm)
+./scripts/setup-local.sh
+
+# Update (pull + rebuild + redeploy)
+./scripts/update-local.sh
+
+# Manual rebuild + redeploy
+docker build -t optio-api:latest -f Dockerfile.api .
+docker build -t optio-web:latest -f Dockerfile.web .
+kubectl rollout restart deployment/optio-api deployment/optio-web -n optio
 
 # Quality (these are what CI runs, and pre-commit hooks mirror them)
 pnpm format:check                     # Check formatting (Prettier)
@@ -394,21 +450,18 @@ pnpm turbo typecheck                  # Typecheck all 6 packages
 pnpm turbo test                       # Run tests (Vitest)
 cd apps/web && npx next build         # Verify production build
 
-# Database
+# Database (migrations auto-run on API startup, but manual generation needed)
 cd apps/api && npx drizzle-kit generate  # Generate migration after schema change
-cd apps/api && npx drizzle-kit migrate   # Apply migrations
 
-# Images
+# Agent images
 ./images/build.sh                     # Build all image presets (base, node, python, go, rust, full)
 
 # Helm
 helm lint helm/optio --set encryption.key=test
-helm install optio helm/optio --set encryption.key=$(openssl rand -hex 32)
-helm upgrade optio helm/optio
+helm upgrade optio helm/optio -n optio --reuse-values
 
 # Teardown
-pkill -f 'kubectl port-forward.*optio'
-kubectl delete namespace optio
+helm uninstall optio -n optio
 ```
 
 ## Conventions
@@ -427,6 +480,26 @@ kubectl delete namespace optio
 - **Secrets**: never log or return secret values, only names/scopes. Encrypted at rest with AES-256-GCM
 - **Cost tracking**: stored as string (`costUsd`) to avoid float precision issues
 
+### Interactive sessions
+
+Sessions provide persistent, interactive workspaces connected to repo pods:
+
+- `POST /api/sessions` — create a session (provisions worktree in repo pod)
+- `GET /api/sessions` — list sessions (filterable by state, repo)
+- `POST /api/sessions/:id/end` — end session (cleanup worktree)
+- `WS /ws/sessions/:id/terminal` — xterm.js WebSocket for interactive terminal
+- `WS /ws/sessions/:id/chat` — interactive Claude Code chat session
+
+Sessions track PRs opened during the session (`session_prs` table) and cost. The web UI at `/sessions` provides a terminal + agent chat split pane.
+
+### Workspaces (multi-tenancy)
+
+Resources are scoped to workspaces. Key tables (`workspaces`, `workspace_members`) with roles (admin/member/viewer). A default workspace is created on first setup. Most tables have a `workspaceId` column for scoping.
+
+### Task dependencies and workflows
+
+Tasks can depend on other tasks (`task_dependencies` table). The task worker checks `areDependenciesMet()` before starting a task and cascades failures. Workflow templates define multi-step pipelines (`workflow_templates`, `workflow_runs`).
+
 ## API Routes
 
 Key routes beyond basic CRUD:
@@ -435,34 +508,43 @@ Key routes beyond basic CRUD:
 - `POST /api/tasks/bulk/retry-failed` — retry all failed tasks
 - `POST /api/tasks/bulk/cancel-active` — cancel all running + queued tasks
 - `POST /api/tasks/:id/review` — manually launch a review agent for a task
+- `POST /api/tasks/:id/resume` — resume a needs_attention/failed task (session-based)
+- `POST /api/tasks/:id/force-restart` — fresh agent session on existing PR branch
+- `POST /api/tasks/:id/force-redo` — clear everything and re-run from scratch
 - `POST /api/tasks/:id/subtasks` — create a subtask (child, step, or review)
-- `GET /api/tasks/:id/subtasks/status` — check blocking subtask completion status
+- `POST /api/tasks/:id/comments` — add a comment to a task
+- `GET /api/sessions` / `POST /api/sessions` — interactive session management
 - `GET /api/issues` — browse GitHub Issues across all repos
-- `POST /api/issues/assign` — assign a GitHub Issue to Optio (adds label, creates task, comments on issue)
-- `GET /api/auth/claude-token` — get Claude OAuth token for max-subscription mode
+- `POST /api/issues/assign` — assign a GitHub Issue to Optio
 - `GET /api/auth/providers` — list enabled OAuth providers
-- `GET /api/auth/me` — current authenticated user profile
-- `POST /api/auth/logout` — revoke session and clear cookie
-- `GET /api/auth/:provider/login` — initiate OAuth login flow
-- `GET /api/auth/:provider/callback` — OAuth callback handler
+- `GET /api/auth/me` — current user profile
+- `GET /api/auth/status` — Claude subscription status (checks Keychain + secrets store)
+- `GET /api/auth/usage` — Claude Max/Pro usage metrics
 - `GET /api/analytics/costs` — cost analytics with daily/repo/type breakdowns
+- `GET /api/workspaces` — workspace management
+- `GET /api/webhooks` — webhook configuration
+- `GET /api/schedules` — scheduled/recurring task management
+- `GET /api/mcp-servers` — MCP server configuration
+- `GET /api/skills` — custom skill management
 
 ## Workers
 
-Four BullMQ workers run as part of the API server:
+Six BullMQ workers run as part of the API server:
 
-1. **task-worker** — main job processor, handles concurrency, provisioning, agent execution, result parsing
-2. **pr-watcher-worker** — polls GitHub PRs every 30s, tracks CI/review status, triggers reviews, handles merge/close
+1. **task-worker** — main job processor, handles concurrency, dependency checks, provisioning, agent execution, result parsing
+2. **pr-watcher-worker** — polls GitHub PRs every 30s, tracks CI/review status, triggers reviews, auto-resumes on conflicts/failures, handles merge/close
 3. **repo-cleanup-worker** — health checks every 60s, auto-restart crashed pods, clean orphan worktrees, idle cleanup
 4. **ticket-sync-worker** — syncs tickets from configured providers (GitHub Issues, Linear)
+5. **webhook-worker** — delivers webhook events to configured endpoints
+6. **schedule-worker** — checks and triggers scheduled/recurring tasks
 
 ## Security Model
 
 - **Web UI / API authentication**: Multi-provider OAuth (GitHub, Google, GitLab). Sessions use SHA256-hashed tokens stored in the database with 30-day TTL. Cookies are HttpOnly + SameSite=Lax. OAuth state parameters have 10-minute TTL for CSRF protection. Disable with `OPTIO_AUTH_DISABLED=true` for local development.
 - **Secrets at rest**: AES-256-GCM encryption. Secret values are never logged or returned via API — only names and scopes are exposed.
-- **Claude Code auth**: API key or OAuth token injected as env vars into pod containers. Max-subscription tokens are cached for 30 seconds with auto-refresh.
-- **K8s RBAC**: ServiceAccount with scoped permissions for pod lifecycle, exec, and secret management only.
-- **No role-based access control** within Optio itself — any authenticated user can perform any action. Production deployments should add RBAC or restrict at the network level.
+- **Claude Code auth**: Three modes — API key (`ANTHROPIC_API_KEY`), OAuth token from secrets store (`CLAUDE_CODE_OAUTH_TOKEN`), or host Keychain (legacy local dev). Token injected as env var into agent pods.
+- **K8s RBAC**: ServiceAccount with namespace-scoped Role (pods, exec, secrets, PVCs, services, events) + ClusterRole (nodes, namespaces, metrics).
+- **Multi-tenancy**: Workspace-scoped resources. Workspace roles (admin/member/viewer) are in the schema but enforcement is partial.
 
 ## Troubleshooting
 
@@ -475,9 +557,10 @@ Four BullMQ workers run as part of the API server:
 
 **Agent fails immediately with auth error**:
 
-- Verify `CLAUDE_AUTH_MODE` secret is set (`api-key` or `max-subscription`)
+- Verify `CLAUDE_AUTH_MODE` secret is set (`api-key` or `oauth-token`)
 - For API key mode: ensure `ANTHROPIC_API_KEY` secret exists
-- For max-subscription: check `GET /api/auth/status` for token validity
+- For OAuth token mode: ensure `CLAUDE_CODE_OAUTH_TOKEN` secret exists
+- Check `GET /api/auth/status` for token validity
 
 **Tasks stuck in `queued` state**:
 
@@ -505,8 +588,9 @@ Four BullMQ workers run as part of the API server:
 
 **Database migration errors**:
 
-- Run `cd apps/api && npx drizzle-kit migrate` to apply pending migrations
-- Check migration status: inspect `apps/api/src/db/migrations/` for the latest migration number
+- Migrations auto-run on API server startup (via `drizzle-orm/postgres-js/migrator`)
+- To manually generate a new migration: `cd apps/api && npx drizzle-kit generate`
+- Note: there are some duplicate-numbered migration files from concurrent agent branches. The journal (`meta/_journal.json`) is authoritative — un-journaled files are handled by prerequisite guards in later migrations.
 
 ## Production Deployment Checklist
 
@@ -535,6 +619,10 @@ Four BullMQ workers run as part of the API server:
 
 ## Known Issues / TODO
 
-- Agent image must be built locally (`docker build`) — K8s can't pull it from a registry yet. Set `OPTIO_IMAGE_PULL_POLICY=Never`.
-- Docker Desktop K8s needs `metrics-server` installed manually for resource usage display: `kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml` then patch with `--kubelet-insecure-tls`.
-- No role-based access control within Optio — any authenticated user has full access.
+- Agent images are built locally — `setup-local.sh` handles this, but CI push to a registry is not yet configured
+- `setup-local.sh` installs `metrics-server` automatically; production clusters should install it separately
+- Workspace RBAC roles (admin/member/viewer) are in the schema but not fully enforced in all routes
+- Notion ticket provider is a stub (GitHub Issues and Linear are implemented)
+- Some duplicate-numbered migration files exist from concurrent agent branches — the drizzle journal (`meta/_journal.json`) is authoritative
+- OAuth tokens from `claude setup-token` have limited scopes and may not support usage tracking (Keychain-extracted tokens have full scopes)
+- The API container runs via `tsx` (TypeScript execution) rather than compiled JS, since workspace packages export `./src/index.ts` not `./dist/index.js`
