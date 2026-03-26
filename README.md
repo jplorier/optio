@@ -57,13 +57,13 @@ You create a task          Optio runs the agent           Optio closes the loop
 │   Next.js    │     │    Fastify         │     │                           │
 │   :3100      │     │                    │     │  ┌── Repo Pod A ───────┐  │
 │              │←ws──│  Workers:          │     │  │ clone + sleep       │  │
-│  Dashboard   │     │  ├─ Task Queue     │     │  │ ├─ worktree 1  ⚡   │  │
-│  Tasks       │     │  ├─ PR Watcher     │     │  │ ├─ worktree 2  ⚡   │  │
-│  Repos       │     │  ├─ Health Mon     │     │  │ └─ worktree N  ⚡   │  │
+│  Dashboard   │     │  ├─ Task Queue     │     │  │ ├─ worktree 1  ⚡    │  │
+│  Tasks       │     │  ├─ PR Watcher     │     │  │ ├─ worktree 2  ⚡    │  │
+│  Repos       │     │  ├─ Health Mon     │     │  │ └─ worktree N  ⚡    │  │
 │  Cluster     │     │  └─ Ticket Sync    │     │  └─────────────────────┘  │
 │  Costs       │     │                    │     │  ┌── Repo Pod B ───────┐  │
 │  Issues      │     │  Services:         │     │  │ clone + sleep       │  │
-│              │     │  ├─ Repo Pool      │     │  │ └─ worktree 1  ⚡   │  │
+│              │     │  ├─ Repo Pool      │     │  │ └─ worktree 1  ⚡    │  │
 │              │     │  ├─ Review Agent   │     │  └─────────────────────┘  │
 │              │     │  └─ Auth/Secrets   │     │                           │
 └──────────────┘     └─────────┬──────────┘     └───────────────────────────┘
@@ -101,28 +101,28 @@ You create a task          Optio runs the agent           Optio closes the loop
                 │             │       │                  │
                 │ (auto-retry │       │  PR watcher      │
                 │  if stale)  │       │  polls every 30s │
-                └─────────────┘       └────────┬─────────┘
-                                               │
-  ┌────────────────────────────────────────────┼─────────┐
+                └─────────────┘       └─────────┬────────┘
+                                                │
+  ┌─────────────────────────────────────────────┼─────────┐
   │                 FEEDBACK LOOP               │         │
   │                                             │         │
   │   CI fails?  ────────→  Resume agent  ←─────┤         │
-  │                          to fix build        │         │
+  │                          to fix build       │         │
   │                                             │         │
   │   Merge conflicts? ──→  Resume agent  ←─────┤         │
-  │                          to rebase           │         │
+  │                          to rebase          │         │
   │                                             │         │
   │   Review requests ───→  Resume agent  ←─────┤         │
-  │   changes?               with feedback       │         │
+  │   changes?               with feedback      │         │
   │                                             │         │
-  │   CI passes + ───────→  Auto-merge    ──────┘         │
-  │   review done?           & close issue                │
-  │                                                       │
-  │                          ┌──────────────┐             │
-  │                          │  COMPLETED   │             │
-  │                          │  PR merged   │             │
-  │                          │  Issue closed │             │
-  │                          └──────────────┘             │
+  │   CI passes + ───────→  Auto-merge    ──────┤         │
+  │   review done?           & close issue      │         │
+  │                                             ▼         │
+  │                                  ┌──────────────┐     │
+  │                                  │ COMPLETED    │     │
+  │                                  │ PR merged    │     │
+  │                                  │ Issue closed │     │
+  │                                  └──────────────┘     │
   └───────────────────────────────────────────────────────┘
 ```
 
