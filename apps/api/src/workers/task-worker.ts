@@ -18,7 +18,7 @@ import { eq, sql } from "drizzle-orm";
 import * as taskService from "../services/task-service.js";
 import * as repoPool from "../services/repo-pool-service.js";
 import { publishEvent } from "../services/event-bus.js";
-import { resolveSecretsForTask, retrieveSecret } from "../services/secret-service.js";
+import { resolveSecretsForTask, retrieveSecretWithFallback } from "../services/secret-service.js";
 import { getPromptTemplate } from "../services/prompt-template-service.js";
 import { logger } from "../logger.js";
 
@@ -116,7 +116,8 @@ export function startTaskWorker() {
         // events per cycle that repeat every 10s ("event storm") and
         // preventing ANY task from ever running.
         const { getRepoByUrl } = await import("../services/repo-service.js");
-        const repoConfig = await getRepoByUrl(currentTask.repoUrl);
+        const taskWorkspaceId = (currentTask as any).workspaceId ?? null;
+        const repoConfig = await getRepoByUrl(currentTask.repoUrl, taskWorkspaceId);
 
         // Compute effective concurrency: maxAgentsPerPod * maxPodInstances
         const maxAgentsPerPod = repoConfig?.maxAgentsPerPod ?? 2;
@@ -178,7 +179,9 @@ export function startTaskWorker() {
         // Get agent adapter and build config
         const adapter = getAdapter(task.agentType);
         const claudeAuthMode =
-          ((await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null)) as any) ?? "api-key";
+          ((await retrieveSecretWithFallback("CLAUDE_AUTH_MODE", "global", taskWorkspaceId).catch(
+            () => null,
+          )) as any) ?? "api-key";
         const optioApiUrl = `http://${process.env.API_HOST ?? "host.docker.internal"}:${process.env.API_PORT ?? "4000"}`;
 
         // Load and render prompt template
@@ -236,7 +239,6 @@ export function startTaskWorker() {
         const { getSkillsForTask, buildSkillSetupFiles } =
           await import("../services/skill-service.js");
 
-        const taskWorkspaceId = (task as any).workspaceId ?? null;
         const mcpServers = await getMcpServersForTask(task.repoUrl, taskWorkspaceId);
         if (mcpServers.length > 0) {
           const mcpJsonContent = await buildMcpJsonContent(mcpServers, task.repoUrl);
@@ -271,10 +273,11 @@ export function startTaskWorker() {
           ).toString("base64");
         }
 
-        // Resolve secrets (repo-scoped secrets override global ones)
+        // Resolve secrets (workspace → repo-scoped → global fallback)
         const resolvedSecrets = await resolveSecretsForTask(
           agentConfig.requiredSecrets,
           task.repoUrl,
+          taskWorkspaceId,
         );
         const allEnv = { ...agentConfig.env, ...resolvedSecrets };
 
@@ -307,7 +310,11 @@ export function startTaskWorker() {
 
         // For oauth-token mode, read the token from the secrets store
         if (claudeAuthMode === "oauth-token") {
-          const oauthToken = await retrieveSecret("CLAUDE_CODE_OAUTH_TOKEN").catch(() => null);
+          const oauthToken = await retrieveSecretWithFallback(
+            "CLAUDE_CODE_OAUTH_TOKEN",
+            "global",
+            taskWorkspaceId,
+          ).catch(() => null);
           if (oauthToken) {
             allEnv.CLAUDE_CODE_OAUTH_TOKEN = oauthToken as string;
             log.info("Injected CLAUDE_CODE_OAUTH_TOKEN from secrets store");

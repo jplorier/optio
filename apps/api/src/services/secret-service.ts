@@ -125,22 +125,42 @@ export async function deleteSecret(
   await db.delete(secrets).where(and(...conditions));
 }
 
+/**
+ * Retrieve a secret with workspace-then-global fallback.
+ * If workspaceId is provided, tries workspace-scoped first, then global.
+ */
+export async function retrieveSecretWithFallback(
+  name: string,
+  scope = "global",
+  workspaceId?: string | null,
+): Promise<string> {
+  if (workspaceId) {
+    try {
+      return await retrieveSecret(name, scope, workspaceId);
+    } catch {
+      // Not found in workspace — fall through to global
+    }
+  }
+  return retrieveSecret(name, scope);
+}
+
 export async function resolveSecretsForTask(
   requiredSecrets: string[],
   scope = "global",
+  workspaceId?: string | null,
 ): Promise<Record<string, string>> {
   const resolved: Record<string, string> = {};
   for (const name of requiredSecrets) {
     if (scope !== "global") {
       // Try repo-scoped secret first, fall back to global
       try {
-        resolved[name] = await retrieveSecret(name, scope);
+        resolved[name] = await retrieveSecretWithFallback(name, scope, workspaceId);
         continue;
       } catch {
         // Not found at repo scope — fall through to global
       }
     }
-    resolved[name] = await retrieveSecret(name, "global");
+    resolved[name] = await retrieveSecretWithFallback(name, "global", workspaceId);
   }
   return resolved;
 }
