@@ -49,18 +49,11 @@ if [ -n "${OPTIO_EXTRA_PACKAGES:-}" ]; then
   sudo apt-get update -qq 2>/dev/null && sudo apt-get install -y -qq ${PACKAGES} 2>&1 | tail -3 || echo "[optio] Warning: package install failed"
 fi
 
-# Clone repo
+# Clone repo (--recurse-submodules handles repos with submodules)
 cd /workspace
 echo "[optio] Cloning..."
-git clone --branch "${OPTIO_REPO_BRANCH}" "${OPTIO_REPO_URL}" repo 2>&1
+git clone --branch "${OPTIO_REPO_BRANCH}" --recurse-submodules "${OPTIO_REPO_URL}" repo 2>&1
 echo "[optio] Repo cloned"
-
-# Initialize submodules if any exist
-if [ -f /workspace/repo/.gitmodules ]; then
-  echo "[optio] Initializing submodules..."
-  cd /workspace/repo && git submodule update --init --recursive 2>&1
-  echo "[optio] Submodules initialized"
-fi
 
 # Create tasks directory for worktrees
 mkdir -p /workspace/tasks

@@ -519,6 +519,7 @@ export async function execTaskInRepoPod(
     `git checkout ${env.OPTIO_REPO_BRANCH ?? "main"} 2>/dev/null || true`,
     `git reset --hard origin/${env.OPTIO_REPO_BRANCH ?? "main"}`,
     ...worktreeSetup,
+    `if [ -f /workspace/repo/.gitmodules ]; then git -C /workspace/tasks/${taskId} submodule update --init --recursive 2>&1 || true; fi`,
     `flock -u 9`,
     `exec 9>&-`,
     `cd /workspace/tasks/${taskId}`,
