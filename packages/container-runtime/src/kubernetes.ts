@@ -14,6 +14,9 @@ import {
   V1VolumeMount as K8sVolumeMount,
   V1HostPathVolumeSource,
   V1PersistentVolumeClaimVolumeSource,
+  V1SecurityContext,
+  V1Capabilities,
+  V1EmptyDirVolumeSource,
 } from "@kubernetes/client-node";
 import { Readable, Writable, PassThrough } from "node:stream";
 import type { ContainerSpec, ContainerHandle, ContainerStatus, ExecSession } from "@optio/shared";
@@ -117,12 +120,49 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
       }
     }
 
+    // Add tmpfs mounts (e.g. for Docker-in-Docker storage)
+    if (spec.tmpfsMounts) {
+      for (let i = 0; i < spec.tmpfsMounts.length; i++) {
+        const t = spec.tmpfsMounts[i];
+        const volumeName = `tmpfs-${i}`;
+
+        const volume = new V1Volume();
+        volume.name = volumeName;
+        const emptyDir = new V1EmptyDirVolumeSource();
+        emptyDir.medium = "Memory";
+        if (t.sizeLimit) {
+          emptyDir.sizeLimit = t.sizeLimit;
+        }
+        volume.emptyDir = emptyDir;
+        volumes.push(volume);
+
+        const mount = new K8sVolumeMount();
+        mount.name = volumeName;
+        mount.mountPath = t.mountPath;
+        volumeMounts.push(mount);
+      }
+    }
+
+    // Set security context (capabilities for DinD, etc.)
+    if (spec.capabilities && spec.capabilities.length > 0) {
+      const secCtx = new V1SecurityContext();
+      const caps = new V1Capabilities();
+      caps.add = spec.capabilities;
+      secCtx.capabilities = caps;
+      container.securityContext = secCtx;
+    }
+
     container.volumeMounts = volumeMounts.length > 0 ? volumeMounts : undefined;
 
     const podSpec = new V1PodSpec();
     podSpec.containers = [container];
     podSpec.restartPolicy = "Never";
     podSpec.volumes = volumes.length > 0 ? volumes : undefined;
+
+    // User namespace isolation (K8s 1.33+)
+    if (spec.hostUsers === false) {
+      podSpec.hostUsers = false;
+    }
 
     const metadata = new V1ObjectMeta();
     metadata.name = podName;

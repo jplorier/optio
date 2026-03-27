@@ -228,6 +228,7 @@ export const repos = pgTable(
     cpuLimit: text("cpu_limit"), // e.g. "2000m", "4000m" — K8s CPU limit
     memoryRequest: text("memory_request"), // e.g. "512Mi", "1Gi", "2Gi" — K8s memory request
     memoryLimit: text("memory_limit"), // e.g. "2Gi", "4Gi" — K8s memory limit
+    dockerInDocker: boolean("docker_in_docker").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

@@ -48,6 +48,7 @@ export async function getOrCreateRepoPod(
     cpuLimit?: string | null;
     memoryRequest?: string | null;
     memoryLimit?: string | null;
+    dockerInDocker?: boolean;
   },
 ): Promise<RepoPod> {
   const repoUrl = normalizeRepoUrl(rawRepoUrl);
@@ -150,6 +151,7 @@ export async function getOrCreateRepoPod(
         memoryRequest: opts?.memoryRequest ?? undefined,
         memoryLimit: opts?.memoryLimit ?? undefined,
       },
+      opts?.dockerInDocker,
     );
   } catch (err: any) {
     if (err?.message?.includes("unique") || err?.code === "23505") {
@@ -181,6 +183,7 @@ async function createRepoPod(
     memoryRequest?: string;
     memoryLimit?: string;
   },
+  dockerInDocker?: boolean,
 ): Promise<RepoPod> {
   const [record] = await db
     .insert(repoPods)
@@ -254,6 +257,14 @@ spec:
         "optio.network-policy": networkPolicy ?? "unrestricted",
         "managed-by": "optio",
       },
+      // Docker-in-Docker: user namespace isolation + capabilities + tmpfs for daemon storage
+      ...(dockerInDocker
+        ? {
+            hostUsers: false,
+            capabilities: ["SYS_ADMIN", "NET_ADMIN"],
+            tmpfsMounts: [{ mountPath: "/var/lib/docker", sizeLimit: "10Gi" }],
+          }
+        : {}),
     };
 
     const handle = await rt.create(spec);

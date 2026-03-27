@@ -62,6 +62,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [cpuLimit, setCpuLimit] = useState("");
   const [memoryRequest, setMemoryRequest] = useState("");
   const [memoryLimit, setMemoryLimit] = useState("");
+  const [dockerInDocker, setDockerInDocker] = useState(false);
   const [reviewEnabled, setReviewEnabled] = useState(false);
   const [reviewTrigger, setReviewTrigger] = useState("on_ci_pass");
   const [testCommand, setTestCommand] = useState("");
@@ -110,6 +111,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setCpuLimit(r.cpuLimit ?? "");
         setMemoryRequest(r.memoryRequest ?? "");
         setMemoryLimit(r.memoryLimit ?? "");
+        setDockerInDocker(r.dockerInDocker ?? false);
         setDefaultBranch(r.defaultBranch);
         setClaudeModel(r.claudeModel ?? "opus");
         setClaudeContextWindow(r.claudeContextWindow ?? "1m");
@@ -172,6 +174,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         maxAgentsPerPod,
         networkPolicy,
         offPeakOnly,
+        dockerInDocker,
         defaultBranch,
         promptTemplateOverride: useCustomPrompt ? promptOverride : null,
         claudeModel,
@@ -492,6 +495,38 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             </p>
           </div>
         </label>
+
+        <h3 className="text-xs font-medium text-text-muted pt-2">Docker-in-Docker</h3>
+        <label className="flex items-center gap-2 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={dockerInDocker}
+            onChange={(e) => setDockerInDocker(e.target.checked)}
+            className="w-4 h-4 rounded"
+          />
+          <div>
+            <span className="text-sm">Enable Docker-in-Docker</span>
+            <p className="text-[10px] text-text-muted/60 mt-0.5">
+              Allow agents to run <code>docker build</code> and <code>docker run</code> inside pods.
+              Uses K8s user namespace isolation (<code>hostUsers: false</code>) with SYS_ADMIN and
+              NET_ADMIN capabilities scoped to the user namespace &mdash; no privileged mode needed.
+            </p>
+          </div>
+        </label>
+        {dockerInDocker && (
+          <div className="p-3 rounded-md bg-bg border border-border">
+            <p className="text-xs text-text-muted mb-2">Node requirements:</p>
+            <ul className="text-xs space-y-1 text-text-muted">
+              <li>Linux kernel &ge; 6.3</li>
+              <li>containerd &ge; 2.0 or CRI-O &ge; 1.25</li>
+              <li>Filesystem support for idmap mounts (ext4, xfs, overlay, tmpfs)</li>
+            </ul>
+            <p className="text-[10px] text-text-muted/60 mt-2">
+              Docker Desktop&apos;s Linux VM uses kernel 6.10+ so local dev should work out of the
+              box. Cloud clusters may need recent node images.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* PR Lifecycle */}

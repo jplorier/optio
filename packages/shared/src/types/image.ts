@@ -35,6 +35,13 @@ export const PRESET_IMAGES = {
     description: "Everything: Node.js, Python, Go, Rust, Docker, Postgres/Redis clients.",
     languages: ["javascript", "typescript", "python", "go", "rust"],
   },
+  dind: {
+    tag: "optio-dind:latest",
+    label: "Docker-in-Docker",
+    description:
+      "Base + Docker daemon & CLI for repos that need docker build/run. Requires DinD enabled.",
+    languages: [],
+  },
 } as const;
 
 export type PresetImageId = keyof typeof PRESET_IMAGES;

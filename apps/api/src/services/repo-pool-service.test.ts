@@ -138,6 +138,10 @@ describe("resolveImage", () => {
     expect(resolveImage({})).toBe("optio-agent:latest");
   });
 
+  it("returns preset image for dind", () => {
+    expect(resolveImage({ preset: "dind" })).toBe("optio-dind:latest");
+  });
+
   it("falls through to default for invalid preset", () => {
     delete process.env.OPTIO_AGENT_IMAGE;
     expect(resolveImage({ preset: "nonexistent" as any })).toBe("optio-agent:latest");

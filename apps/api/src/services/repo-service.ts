@@ -42,6 +42,7 @@ export interface RepoRecord {
   cpuLimit: string | null;
   memoryRequest: string | null;
   memoryLimit: string | null;
+  dockerInDocker: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -164,6 +165,7 @@ export async function updateRepo(
     cpuLimit?: string | null;
     memoryRequest?: string | null;
     memoryLimit?: string | null;
+    dockerInDocker?: boolean;
   },
 ): Promise<RepoRecord | null> {
   const [repo] = await db

@@ -47,6 +47,7 @@ function makeRepoConfig(overrides: Partial<RepoRecord> = {}): RepoRecord {
     cpuLimit: null,
     memoryRequest: null,
     memoryLimit: null,
+    dockerInDocker: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,

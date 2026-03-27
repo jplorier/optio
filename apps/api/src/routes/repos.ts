@@ -52,6 +52,7 @@ const updateRepoSchema = z.object({
   cpuLimit: z.string().nullable().optional(),
   memoryRequest: z.string().nullable().optional(),
   memoryLimit: z.string().nullable().optional(),
+  dockerInDocker: z.boolean().optional(),
 });
 
 export async function repoRoutes(app: FastifyInstance) {

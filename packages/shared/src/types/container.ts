@@ -13,6 +13,12 @@ export interface ContainerSpec {
   imagePullPolicy?: "Always" | "Never" | "IfNotPresent";
   /** Optional pod name override. If not set, the runtime generates one. */
   name?: string;
+  /** Set to false to enable K8s user namespace isolation (hostUsers: false). */
+  hostUsers?: boolean;
+  /** Linux capabilities to add to the container security context. */
+  capabilities?: string[];
+  /** Tmpfs mounts (memory-backed volumes) for the container. */
+  tmpfsMounts?: { mountPath: string; sizeLimit?: string }[];
 }
 
 export interface VolumeMount {
