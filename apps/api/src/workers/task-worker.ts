@@ -196,6 +196,7 @@ export function startTaskWorker() {
           TASK_TITLE: task.title,
           REPO_NAME: repoName,
           AUTO_MERGE: String(promptConfig.autoMerge),
+          ISSUE_NUMBER: task.ticketExternalId ?? "",
         });
 
         const taskFileContent = renderTaskFile({

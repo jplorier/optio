@@ -17,7 +17,7 @@ no existing PR and no prior work. You must write the code, not review it.
 6. Commit your work to the current branch ({{BRANCH_NAME}}).
 7. Push and open a pull request using the \`gh\` CLI:
    \`\`\`
-   gh pr create --title "{{TASK_TITLE}}" --body "Implements task {{TASK_ID}}"
+{{#if ISSUE_NUMBER}}   gh pr create --title "{{TASK_TITLE}}" --body "Closes #{{ISSUE_NUMBER}}"{{else}}   gh pr create --title "{{TASK_TITLE}}" --body "Implements task {{TASK_ID}}"{{/if}}
    \`\`\`
 8. After opening the PR, you are done. Do NOT wait for CI checks or monitor them.
    The orchestration system handles CI monitoring and code review automatically.
