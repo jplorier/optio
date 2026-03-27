@@ -12,6 +12,7 @@ import {
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { parseCodexEvent } from "../services/codex-event-parser.js";
+import { checkExistingPr } from "../services/pr-detection-service.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
 import { eq, sql } from "drizzle-orm";
@@ -351,6 +352,30 @@ export function startTaskWorker() {
         await taskService.updateTaskContainer(taskId, pod.podName ?? pod.podId ?? pod.id);
         await taskService.transitionTask(taskId, TaskState.RUNNING, "worktree_created");
         log.info("Running agent in worktree");
+
+        // ── Check for existing PR before launching agent ───────────────
+        // If a previous run already opened a PR for this task's branch,
+        // skip the agent entirely and transition straight to pr_opened.
+        // This avoids wasting compute on tasks killed by restarts/reconcile.
+        const isReviewTask0 = !!reviewOverride || task.taskType === "review";
+        if (!restartFromBranch && !resumeSessionId && !isReviewTask0) {
+          const existingPr = await checkExistingPr(task.repoUrl, taskId, taskWorkspaceId);
+          if (existingPr) {
+            log.info(
+              { prUrl: existingPr.url, prNumber: existingPr.number },
+              "Existing PR found — skipping agent, transitioning to pr_opened",
+            );
+            await taskService.updateTaskPr(taskId, existingPr.url);
+            await repoPool.updateWorktreeState(taskId, "preserved");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.PR_OPENED,
+              "existing_pr_detected",
+              existingPr.url,
+            );
+            return;
+          }
+        }
 
         // Build the agent command based on type
         const isReviewTask = !!reviewOverride || task.taskType === "review";
@@ -703,20 +728,68 @@ export async function reconcileOrphanedTasks() {
     .from(tasks)
     .where(eq(tasks.state, "running" as any));
 
-  // Provisioning/running tasks lost their exec session — fail then re-queue
+  // Provisioning/running tasks lost their exec session.
+  // Before failing and re-queuing, check if a PR was already opened —
+  // if so, transition directly to pr_opened to avoid redoing work.
   for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
-    await taskService.transitionTask(
-      task.id,
-      TaskState.FAILED,
-      "startup_reconcile",
-      "Server restarted during execution",
-    );
-    await taskService.transitionTask(
-      task.id,
-      TaskState.QUEUED,
-      "startup_reconcile",
-      "Re-queued after server restart",
-    );
+    const taskWsId = (task as any).workspaceId ?? null;
+    const isReview = task.taskType === "review";
+    let existingPr = null;
+    if (!isReview) {
+      try {
+        existingPr = await checkExistingPr(task.repoUrl, task.id, taskWsId);
+      } catch {
+        // Non-fatal — fall through to fail + re-queue
+      }
+    }
+
+    if (existingPr && task.state === "running") {
+      // running → pr_opened is a valid transition
+      logger.info(
+        { taskId: task.id, prUrl: existingPr.url },
+        "Existing PR found during reconciliation — transitioning to pr_opened",
+      );
+      await taskService.updateTaskPr(task.id, existingPr.url);
+      await taskService.transitionTask(
+        task.id,
+        TaskState.PR_OPENED,
+        "startup_reconcile",
+        existingPr.url,
+      );
+    } else if (existingPr && task.state === "provisioning") {
+      // provisioning → pr_opened is NOT valid; fail → re-queue and
+      // the pre-agent PR check will short-circuit it to pr_opened
+      logger.info(
+        { taskId: task.id, prUrl: existingPr.url },
+        "Existing PR found during reconciliation (provisioning) — will detect on re-queue",
+      );
+      await taskService.updateTaskPr(task.id, existingPr.url);
+      await taskService.transitionTask(
+        task.id,
+        TaskState.FAILED,
+        "startup_reconcile",
+        "Server restarted during execution",
+      );
+      await taskService.transitionTask(
+        task.id,
+        TaskState.QUEUED,
+        "startup_reconcile",
+        "Re-queued after server restart (PR already exists)",
+      );
+    } else {
+      await taskService.transitionTask(
+        task.id,
+        TaskState.FAILED,
+        "startup_reconcile",
+        "Server restarted during execution",
+      );
+      await taskService.transitionTask(
+        task.id,
+        TaskState.QUEUED,
+        "startup_reconcile",
+        "Re-queued after server restart",
+      );
+    }
   }
 
   // Re-query queued tasks (provisioning/running were just transitioned to queued above)

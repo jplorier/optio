@@ -173,9 +173,12 @@ export async function taskRoutes(app: FastifyInstance) {
       undefined,
       req.user?.id,
     );
+    // If the task already has a PR, use restartFromBranch to reuse
+    // the existing branch instead of starting fresh
+    const hasPrBranch = !!existing.prUrl;
     await taskQueue.add(
       "process-task",
-      { taskId: id },
+      { taskId: id, ...(hasPrBranch && { restartFromBranch: true }) },
       {
         jobId: `${id}-retry-${Date.now()}`,
         attempts: 1,
