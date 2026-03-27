@@ -116,7 +116,7 @@ export function startTaskWorker() {
         // events per cycle that repeat every 10s ("event storm") and
         // preventing ANY task from ever running.
         const { getRepoByUrl } = await import("../services/repo-service.js");
-        const taskWorkspaceId = (currentTask as any).workspaceId ?? null;
+        const taskWorkspaceId = currentTask.workspaceId ?? null;
         const repoConfig = await getRepoByUrl(currentTask.repoUrl, taskWorkspaceId);
 
         // Compute effective concurrency: maxAgentsPerPod * maxPodInstances

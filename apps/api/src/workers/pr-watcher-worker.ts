@@ -176,7 +176,7 @@ export function startPrWatcherWorker() {
 
       if (openPrTasks.length > 0) {
         for (const task of openPrTasks) {
-          const taskWsId = (task as any).workspaceId ?? null;
+          const taskWsId = task.workspaceId ?? null;
           const githubToken = await getGithubToken(taskWsId);
           if (!githubToken) continue;
 
