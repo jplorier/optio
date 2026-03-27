@@ -209,7 +209,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end shrink-0">
             {task.prUrl && (
               <a
                 href={task.prUrl}
@@ -817,7 +817,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* Timeline sidebar */}
         {showTimeline && (
-          <div className="w-80 shrink-0 border-l border-border overflow-auto bg-bg-card flex flex-col">
+          <div className="hidden md:flex w-80 shrink-0 border-l border-border overflow-auto bg-bg-card flex-col">
             <div className="flex items-center gap-1 p-2 border-b border-border">
               <button
                 onClick={() => setSidebarTab("pipeline")}

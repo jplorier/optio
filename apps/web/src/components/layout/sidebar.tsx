@@ -44,15 +44,18 @@ function NavLink({
   label,
   icon: Icon,
   active,
+  onClick,
 }: {
   href: string;
   label: string;
   icon: any;
   active: boolean;
+  onClick?: () => void;
 }) {
   return (
     <Link
       href={href}
+      onClick={onClick}
       className={cn(
         "flex items-center gap-2.5 py-2 px-2.5 rounded-lg text-[13px] font-medium transition-all duration-150",
         active
@@ -66,14 +69,20 @@ function NavLink({
   );
 }
 
-export function Sidebar() {
+export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
 
   return (
-    <aside className="w-60 shrink-0 border-r border-border/50 glass-sidebar flex flex-col">
+    <aside
+      className={cn(
+        "w-60 shrink-0 border-r border-border/50 glass-sidebar flex flex-col",
+        "fixed inset-y-0 left-0 z-30 transition-transform duration-200 md:static md:translate-x-0",
+        open ? "translate-x-0" : "-translate-x-full",
+      )}
+    >
       <div className="px-4 py-4 border-b border-border/50 animated-gradient">
         <Link href="/" className="flex items-center gap-2.5 text-primary group">
           <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center group-hover:bg-primary/25 transition-all duration-300 shadow-sm shadow-primary/10">
@@ -93,13 +102,13 @@ export function Sidebar() {
       <nav className="flex-1 px-2.5 py-3 overflow-y-auto">
         <div className="space-y-0.5">
           {MAIN_NAV.map((item) => (
-            <NavLink key={item.href} {...item} active={isActive(item.href)} />
+            <NavLink key={item.href} {...item} active={isActive(item.href)} onClick={onClose} />
           ))}
         </div>
         <div className="my-3 mx-1 gradient-divider" />
         <div className="space-y-0.5">
           {SECONDARY_NAV.map((item) => (
-            <NavLink key={item.href} {...item} active={isActive(item.href)} />
+            <NavLink key={item.href} {...item} active={isActive(item.href)} onClick={onClose} />
           ))}
         </div>
       </nav>
