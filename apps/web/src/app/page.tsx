@@ -114,6 +114,12 @@ export default function OverviewPage() {
     sevenDay?: { utilization: number | null; resetsAt: string | null };
     sevenDaySonnet?: { utilization: number | null; resetsAt: string | null };
     sevenDayOpus?: { utilization: number | null; resetsAt: string | null };
+    extraUsage?: {
+      isEnabled: boolean;
+      monthlyLimit: number | null;
+      usedCredits: number | null;
+      utilization: number | null;
+    };
   } | null>(null);
   const [showMetrics, setShowMetrics] = useState(false);
   const [metricsAvailable, setMetricsAvailable] = useState<boolean | null>(null);
@@ -384,6 +390,18 @@ export default function OverviewPage() {
                 label="7d Opus"
                 utilization={usage.sevenDayOpus.utilization}
                 resetsAt={usage.sevenDayOpus.resetsAt}
+              />
+            )}
+            {usage.extraUsage?.isEnabled && usage.extraUsage.usedCredits != null && (
+              <UsageMeter
+                label="Extra Credits"
+                utilization={usage.extraUsage.utilization ?? 0}
+                resetsAt={null}
+                sublabel={
+                  usage.extraUsage.monthlyLimit != null
+                    ? `$${(usage.extraUsage.usedCredits / 100).toFixed(2)} / $${(usage.extraUsage.monthlyLimit / 100).toFixed(2)} spent`
+                    : `$${(usage.extraUsage.usedCredits / 100).toFixed(2)} spent`
+                }
               />
             )}
           </div>
@@ -1102,10 +1120,12 @@ function UsageMeter({
   label,
   utilization,
   resetsAt,
+  sublabel,
 }: {
   label: string;
   utilization: number;
   resetsAt: string | null;
+  sublabel?: string;
 }) {
   const pct = Math.min(utilization, 100);
   const color = pct >= 80 ? "bg-error" : pct >= 50 ? "bg-warning" : "bg-primary";
@@ -1133,6 +1153,11 @@ function UsageMeter({
           style={{ width: `${pct}%` }}
         />
       </div>
+      {sublabel && (
+        <div className="mt-1">
+          <span className="text-xs text-text-muted/50">{sublabel}</span>
+        </div>
+      )}
       {resetLabel && (
         <div className="flex items-center gap-1 mt-1">
           <Clock className="w-3 h-3 text-text-muted/50" />
