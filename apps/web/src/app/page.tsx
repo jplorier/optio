@@ -654,7 +654,7 @@ export default function OverviewPage() {
                         <span className="font-mono text-xs font-medium truncate">{pod.name}</span>
                         {pod.isOptioManaged && (
                           <>
-                            <span className="text-[9px] px-1 py-0.5 rounded bg-primary/10 text-primary">
+                            <span className="text-[11px] px-1 py-0.5 rounded bg-primary/10 text-primary">
                               workspace
                             </span>
                             {repoPod && <CapacityIndicator repoPod={repoPod} />}
@@ -667,22 +667,22 @@ export default function OverviewPage() {
                           </>
                         )}
                         {pod.isInfra && (
-                          <span className="text-[9px] px-1 py-0.5 rounded bg-info/10 text-info">
+                          <span className="text-[11px] px-1 py-0.5 rounded bg-info/10 text-info">
                             infra
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 text-[10px] text-text-muted mt-1 ml-4">
+                      <div className="flex items-center gap-2 text-xs text-text-muted mt-1 ml-4">
                         <span className={color}>{pod.status}</span>
                         {repoPod && (
                           <>
                             <span className="flex items-center gap-0.5">
-                              <Activity className="w-2.5 h-2.5" />
+                              <Activity className="w-3 h-3" />
                               {repoPod.activeTaskCount ?? 0} running
                             </span>
                             {(repoPod.queuedTaskCount ?? 0) > 0 && (
                               <span className="flex items-center gap-0.5 text-warning">
-                                <Clock className="w-2.5 h-2.5" />
+                                <Clock className="w-3 h-3" />
                                 {repoPod.queuedTaskCount} queued
                               </span>
                             )}
@@ -690,13 +690,13 @@ export default function OverviewPage() {
                         )}
                         {pod.cpuMillicores != null && (
                           <span className="flex items-center gap-0.5">
-                            <Cpu className="w-2.5 h-2.5" />
+                            <Cpu className="w-3 h-3" />
                             {pod.cpuMillicores}m
                           </span>
                         )}
                         {pod.memoryMi != null && (
                           <span className="flex items-center gap-0.5">
-                            <HardDrive className="w-2.5 h-2.5" />
+                            <HardDrive className="w-3 h-3" />
                             {pod.memoryMi} Mi
                           </span>
                         )}
@@ -760,15 +760,15 @@ export default function OverviewPage() {
                           )}
                         />
                         <span className="text-xs font-medium">{event.reason}</span>
-                        <span className="text-[10px] text-text-muted font-mono">
+                        <span className="text-xs text-text-muted font-mono">
                           {event.involvedObject}
                         </span>
                         {event.count > 1 && (
-                          <span className="text-[10px] text-text-muted">x{event.count}</span>
+                          <span className="text-xs text-text-muted">x{event.count}</span>
                         )}
                         <span className="flex-1" />
                         {event.lastTimestamp && (
-                          <span className="text-[10px] text-text-muted/50">
+                          <span className="text-xs text-text-muted/50">
                             {formatRelativeTime(event.lastTimestamp)}
                           </span>
                         )}
@@ -779,9 +779,7 @@ export default function OverviewPage() {
                           <X className="w-3 h-3" />
                         </button>
                       </div>
-                      <p className="text-[10px] text-text-muted mt-1 ml-5 truncate">
-                        {event.message}
-                      </p>
+                      <p className="text-xs text-text-muted mt-1 ml-5 truncate">{event.message}</p>
                     </div>
                   );
                 })}
@@ -1126,10 +1124,8 @@ function UsageMeter({
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-medium text-text-muted">{label}</span>
-        <span className={cn("text-[11px] font-medium tabular-nums", textColor)}>
-          {pct.toFixed(0)}%
-        </span>
+        <span className="text-sm font-medium text-text-muted">{label}</span>
+        <span className={cn("text-sm font-medium tabular-nums", textColor)}>{pct.toFixed(0)}%</span>
       </div>
       <div className="h-1.5 rounded-full bg-border/50 overflow-hidden">
         <div
@@ -1139,8 +1135,8 @@ function UsageMeter({
       </div>
       {resetLabel && (
         <div className="flex items-center gap-1 mt-1">
-          <Clock className="w-2.5 h-2.5 text-text-muted/50" />
-          <span className="text-[10px] text-text-muted/50">resets in {resetLabel}</span>
+          <Clock className="w-3 h-3 text-text-muted/50" />
+          <span className="text-xs text-text-muted/50">resets in {resetLabel}</span>
         </div>
       )}
     </div>
