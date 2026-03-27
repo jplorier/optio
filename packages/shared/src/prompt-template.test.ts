@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { renderPromptTemplate, renderTaskFile, TASK_FILE_PATH } from "./prompt-template.js";
+import {
+  DEFAULT_PROMPT_TEMPLATE,
+  renderPromptTemplate,
+  renderTaskFile,
+  TASK_FILE_PATH,
+} from "./prompt-template.js";
 
 describe("renderPromptTemplate", () => {
   it("replaces simple variables", () => {
@@ -83,6 +88,36 @@ describe("renderTaskFile", () => {
     });
     expect(result).toContain("github");
     expect(result).toContain("https://github.com/org/repo/issues/42");
+  });
+});
+
+describe("DEFAULT_PROMPT_TEMPLATE", () => {
+  it("uses issue reference when ISSUE_NUMBER is provided", () => {
+    const result = renderPromptTemplate(DEFAULT_PROMPT_TEMPLATE, {
+      TASK_FILE: ".optio/task.md",
+      BRANCH_NAME: "optio/task-abc",
+      TASK_ID: "abc-123",
+      TASK_TITLE: "Fix login bug",
+      REPO_NAME: "org/repo",
+      AUTO_MERGE: "false",
+      ISSUE_NUMBER: "42",
+    });
+    expect(result).toContain('--body "Closes #42"');
+    expect(result).not.toContain("Implements task");
+  });
+
+  it("falls back to task ID when ISSUE_NUMBER is not provided", () => {
+    const result = renderPromptTemplate(DEFAULT_PROMPT_TEMPLATE, {
+      TASK_FILE: ".optio/task.md",
+      BRANCH_NAME: "optio/task-abc",
+      TASK_ID: "abc-123",
+      TASK_TITLE: "Fix login bug",
+      REPO_NAME: "org/repo",
+      AUTO_MERGE: "false",
+      ISSUE_NUMBER: "",
+    });
+    expect(result).toContain('--body "Implements task abc-123"');
+    expect(result).not.toContain("Closes #");
   });
 });
 
