@@ -321,7 +321,9 @@ describe("github-token-service", () => {
     const token = await getGitHubToken({ userId: "user-4" });
 
     expect(token).toBe("ghp_fallback_pat");
-    expect(mockDeleteSecret).toHaveBeenCalled();
+    // Transient failures (HTTP 401) should NOT delete tokens — only definitive
+    // revocation errors (bad_refresh_token) trigger deletion
+    expect(mockDeleteSecret).not.toHaveBeenCalled();
   });
 
   it("resolves task creator's token", async () => {

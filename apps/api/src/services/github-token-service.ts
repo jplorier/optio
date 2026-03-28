@@ -24,7 +24,14 @@ export async function getGitHubToken(context: GitHubTokenContext): Promise<strin
 }
 
 async function getServerToken(): Promise<string> {
-  if (isGitHubAppConfigured()) return getInstallationToken();
+  if (isGitHubAppConfigured()) {
+    try {
+      return await getInstallationToken();
+    } catch {
+      // Installation token failed (rate limit, revoked, outage) — try PAT fallback
+      return getPatFallback();
+    }
+  }
   return getPatFallback();
 }
 
@@ -50,17 +57,17 @@ async function getTokenForUser(userId: string, workspaceId?: string | null): Pro
     if (Date.now() < expiryTime - TOKEN_REFRESH_BUFFER_MS) {
       return accessToken;
     }
-    return refreshUserToken(userId);
+    return refreshUserToken(userId, workspaceId);
   } catch {
     return getPatFallback(workspaceId);
   }
 }
 
-async function refreshUserToken(userId: string): Promise<string> {
+async function refreshUserToken(userId: string, workspaceId?: string | null): Promise<string> {
   const existing = refreshLocks.get(userId);
   if (existing) return existing;
 
-  const refreshPromise = doRefreshUserToken(userId);
+  const refreshPromise = doRefreshUserToken(userId, workspaceId);
   refreshLocks.set(userId, refreshPromise);
   try {
     return await refreshPromise;
@@ -69,13 +76,13 @@ async function refreshUserToken(userId: string): Promise<string> {
   }
 }
 
-async function doRefreshUserToken(userId: string): Promise<string> {
+async function doRefreshUserToken(userId: string, workspaceId?: string | null): Promise<string> {
   const clientId = process.env.GITHUB_APP_CLIENT_ID;
   const clientSecret = process.env.GITHUB_APP_CLIENT_SECRET;
 
   if (!clientId || !clientSecret) {
     await deleteUserGitHubTokens(userId);
-    return getPatFallback();
+    return getPatFallback(workspaceId);
   }
 
   try {
@@ -95,11 +102,18 @@ async function doRefreshUserToken(userId: string): Promise<string> {
     if (!res.ok) throw new Error(`GitHub token refresh failed: ${res.status}`);
 
     const data = (await res.json()) as Record<string, string | number>;
-    if (data.error) throw new Error(`GitHub token refresh error: ${data.error}`);
+    if (data.error) {
+      const errorCode = String(data.error);
+      // Only delete tokens on definitive revocation — not transient failures
+      if (errorCode === "bad_refresh_token" || errorCode === "incorrect_client_credentials") {
+        await deleteUserGitHubTokens(userId);
+      }
+      throw new Error(`GitHub token refresh error: ${errorCode}`);
+    }
 
     const newAccessToken = data.access_token as string;
     const newRefreshToken = data.refresh_token as string;
-    const expiresIn = (data.expires_in as number) || 28800;
+    const expiresIn = (data.expires_in as number) ?? 28800;
 
     await storeUserGitHubTokens(userId, {
       accessToken: newAccessToken,
@@ -109,8 +123,9 @@ async function doRefreshUserToken(userId: string): Promise<string> {
 
     return newAccessToken;
   } catch {
-    await deleteUserGitHubTokens(userId);
-    return getPatFallback();
+    // Don't delete tokens on transient errors (network, 5xx) — only the
+    // definitive revocation cases above delete them before re-throwing.
+    return getPatFallback(workspaceId);
   }
 }
 

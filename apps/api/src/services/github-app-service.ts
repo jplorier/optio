@@ -1,6 +1,7 @@
 import { createPrivateKey, createSign } from "node:crypto";
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
+let installationTokenLock: Promise<string> | null = null;
 
 const TOKEN_CACHE_BUFFER_MS = 5 * 60 * 1000; // Refresh 5 minutes before expiry
 
@@ -51,6 +52,24 @@ export async function getInstallationToken(): Promise<string> {
     return cachedToken.token;
   }
 
+  // Dedup concurrent requests: if a fetch is already in-flight, reuse it
+  if (installationTokenLock) return installationTokenLock;
+
+  const fetchPromise = fetchInstallationToken();
+  installationTokenLock = fetchPromise;
+  try {
+    return await fetchPromise;
+  } finally {
+    installationTokenLock = null;
+  }
+}
+
+async function fetchInstallationToken(): Promise<string> {
+  // Re-check cache after acquiring the lock (another caller may have populated it)
+  if (cachedToken && Date.now() < cachedToken.expiresAt - TOKEN_CACHE_BUFFER_MS) {
+    return cachedToken.token;
+  }
+
   const installationId = process.env.GITHUB_APP_INSTALLATION_ID!;
   const jwt = generateJwt();
 
@@ -77,5 +96,6 @@ export async function getInstallationToken(): Promise<string> {
 
 export function resetTokenCache(): void {
   cachedToken = null;
+  installationTokenLock = null;
   _privateKeyObj = null;
 }

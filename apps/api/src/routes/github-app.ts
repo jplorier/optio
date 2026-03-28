@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { getGitHubToken } from "../services/github-token-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
@@ -38,8 +38,12 @@ export default async function githubAppRoutes(app: FastifyInstance): Promise<voi
   app.get<{ Querystring: { taskId?: string } }>(
     "/api/internal/git-credentials",
     async (req, reply) => {
-      const authHeader = req.headers.authorization;
-      if (!authHeader || authHeader !== `Bearer ${CREDENTIAL_SECRET}`) {
+      const authHeader = req.headers.authorization ?? "";
+      const expected = `Bearer ${CREDENTIAL_SECRET}`;
+      const isValid =
+        authHeader.length === expected.length &&
+        timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected));
+      if (!isValid) {
         return reply.status(401).send({ error: "Unauthorized" });
       }
 
