@@ -15,3 +15,4 @@ apps/api/.env
 .tool-versions
 .values.local.yaml
 .worktrees/
+issues/
