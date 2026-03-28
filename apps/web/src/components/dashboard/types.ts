@@ -11,6 +11,7 @@ export interface TaskStats {
 
 export interface UsageData {
   available: boolean;
+  error?: string;
   fiveHour?: { utilization: number | null; resetsAt: string | null };
   sevenDay?: { utilization: number | null; resetsAt: string | null };
   sevenDaySonnet?: { utilization: number | null; resetsAt: string | null };
