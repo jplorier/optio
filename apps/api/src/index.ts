@@ -49,6 +49,12 @@ process.on("uncaughtException", (err) => {
   process.exit(1);
 });
 
+process.on("unhandledRejection", (reason, promise) => {
+  logger.error({ reason, promise }, "Unhandled promise rejection");
+  // Let it propagate to uncaughtException handler for clean shutdown
+  throw reason;
+});
+
 async function checkMetricsServer() {
   try {
     const { KubeConfig, CustomObjectsApi } = await import("@kubernetes/client-node");
