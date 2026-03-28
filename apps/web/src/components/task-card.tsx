@@ -10,6 +10,15 @@ import { formatRelativeTime } from "@/lib/utils";
 import { ExternalLink, RotateCcw, Bot, Link2, Clock, Moon, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+/** Map raw trigger/message strings to human-readable attention reasons. */
+function formatAttentionReason(reason: string): string {
+  if (reason.includes("auto_resume_limit")) return "Auto-resume limit reached";
+  if (reason.includes("ci_failing") || reason.includes("CI checks")) return "CI checks failing";
+  if (reason.includes("merge_conflicts") || reason.includes("conflicts")) return "Merge conflicts";
+  if (reason.includes("changes_requested") || reason.includes("review")) return "Changes requested";
+  return reason.length > 60 ? reason.slice(0, 60) + "..." : reason;
+}
+
 interface TaskSummary {
   id: string;
   title: string;
@@ -123,7 +132,7 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
           </div>
         )}
 
-        {/* Error section */}
+        {/* Error / attention reason section */}
         {task.state === "failed" && task.errorMessage && (
           <div className="mt-3 px-3 py-2.5 rounded-lg bg-error/5 border border-error/10 flex items-center justify-between gap-2">
             <span className="text-xs text-error/80 truncate">
@@ -150,6 +159,35 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
             >
               <RotateCcw className="w-3 h-3" />
               Retry
+            </button>
+          </div>
+        )}
+        {task.state === "needs_attention" && task.errorMessage && (
+          <div className="mt-3 px-3 py-2.5 rounded-lg bg-warning/5 border border-warning/10 flex items-center justify-between gap-2">
+            <span className="text-xs text-warning/80 truncate">
+              {formatAttentionReason(task.errorMessage)}
+            </span>
+            <button
+              onClick={async (e) => {
+                e.stopPropagation();
+                const btn = e.currentTarget;
+                btn.textContent = "Restarting...";
+                btn.setAttribute("disabled", "true");
+                try {
+                  await api.forceRestartTask(task.id);
+                  window.location.href = window.location.href;
+                } catch {
+                  btn.textContent = "Failed";
+                  setTimeout(() => {
+                    btn.textContent = "Restart";
+                    btn.removeAttribute("disabled");
+                  }, 2000);
+                }
+              }}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-all shrink-0 btn-press"
+            >
+              <RotateCcw className="w-3 h-3" />
+              Restart
             </button>
           </div>
         )}

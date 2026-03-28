@@ -356,11 +356,20 @@ export function startPrWatcherWorker() {
             if (
               ["resume_conflicts", "resume_ci_failure", "resume_review"].includes(action.action)
             ) {
+              // Count auto-resumes since the last manual action (force_restart,
+              // user_resume, etc.) so that a manual restart resets the counter.
               const [{ count: resumeCount }] = await db
                 .select({ count: sql<number>`count(*)` })
                 .from(taskEvents)
                 .where(
-                  sql`${taskEvents.taskId} = ${task.id} AND ${taskEvents.trigger} LIKE 'auto_resume_%'`,
+                  sql`${taskEvents.taskId} = ${task.id}
+                    AND ${taskEvents.trigger} LIKE 'auto_resume_%'
+                    AND ${taskEvents.createdAt} > COALESCE(
+                      (SELECT MAX(te2.created_at) FROM task_events te2
+                       WHERE te2.task_id = ${task.id}
+                       AND te2.trigger IN ('force_restart', 'user_resume', 'force_redo', 'user_retry', 'issue_assigned')),
+                      '1970-01-01'::timestamptz
+                    )`,
                 );
               if (Number(resumeCount) >= maxAutoResumes) {
                 logger.info(

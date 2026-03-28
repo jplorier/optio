@@ -19,6 +19,9 @@ export function useGlobalWebSocket() {
       if (event.inputTokens !== undefined) updates.inputTokens = event.inputTokens;
       if (event.outputTokens !== undefined) updates.outputTokens = event.outputTokens;
       if (event.modelUsed !== undefined) updates.modelUsed = event.modelUsed;
+      if (event.errorMessage !== undefined) updates.errorMessage = event.errorMessage;
+      // Clear errorMessage when task leaves error/attention states
+      if (["queued", "running", "completed"].includes(event.toState)) updates.errorMessage = null;
       useStore.getState().updateTask(event.taskId, updates);
 
       if (["needs_attention", "pr_opened", "completed", "failed"].includes(event.toState)) {

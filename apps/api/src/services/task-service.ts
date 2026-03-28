@@ -221,6 +221,10 @@ export async function transitionTask(
     updateFields.errorMessage = null;
     updateFields.resultSummary = null;
   }
+  // Store the reason when a task needs attention so the UI can display it
+  if (toState === TaskState.NEEDS_ATTENTION) {
+    updateFields.errorMessage = message || trigger;
+  }
   // Reset fields when retrying/re-queuing
   if (toState === TaskState.QUEUED) {
     updateFields.errorMessage = null;
@@ -259,11 +263,12 @@ export async function transitionTask(
     fromState: currentState,
     toState,
     timestamp: new Date().toISOString(),
-    // Include cost/token/model data so the frontend can update without refetching
+    // Include task data so the frontend can update without refetching
     costUsd: updatedTask.costUsd ?? undefined,
     inputTokens: updatedTask.inputTokens ?? undefined,
     outputTokens: updatedTask.outputTokens ?? undefined,
     modelUsed: updatedTask.modelUsed ?? undefined,
+    errorMessage: updatedTask.errorMessage ?? undefined,
   });
 
   // Close linked GitHub issue when task completes

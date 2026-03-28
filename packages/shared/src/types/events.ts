@@ -22,6 +22,8 @@ export interface TaskStateChangedEvent {
   inputTokens?: number;
   outputTokens?: number;
   modelUsed?: string;
+  /** Reason the task needs attention or failed — populated on needs_attention/failed transitions */
+  errorMessage?: string;
 }
 
 export interface TaskLogEvent {
