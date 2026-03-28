@@ -3,7 +3,7 @@ import { db } from "../db/client.js";
 import { ticketProviders } from "../db/schema.js";
 import { getTicketProvider } from "@optio/ticket-providers";
 import type { TicketSource } from "@optio/shared";
-import { TaskState } from "@optio/shared";
+import { TaskState, normalizeRepoUrl } from "@optio/shared";
 import * as taskService from "./task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
 import { logger } from "../logger.js";
@@ -25,16 +25,17 @@ export async function syncAllTickets(): Promise<number> {
         const agentType = ticket.labels.includes("codex") ? "codex" : "claude-code";
 
         const repoUrl = ticket.repo
-          ? `https://github.com/${ticket.repo}.git`
+          ? normalizeRepoUrl(`https://github.com/${ticket.repo}`)
           : (providerConfig.config as any).repoUrl;
 
         // Check if task already exists for this ticket (scoped by repo + issue number)
         const existingTasks = await taskService.listTasks({ limit: 500 });
+        const normalizedRepoUrl = normalizeRepoUrl(repoUrl);
         const alreadyExists = existingTasks.some(
           (t: any) =>
             t.ticketSource === ticket.source &&
             t.ticketExternalId === ticket.externalId &&
-            t.repoUrl === repoUrl,
+            normalizeRepoUrl(t.repoUrl) === normalizedRepoUrl,
         );
 
         if (alreadyExists) continue;

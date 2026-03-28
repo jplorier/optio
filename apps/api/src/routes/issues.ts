@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { db } from "../db/client.js";
 import { repos, tasks } from "../db/schema.js";
 import { eq, and } from "drizzle-orm";
+import { normalizeRepoUrl } from "@optio/shared";
 import { retrieveSecret } from "../services/secret-service.js";
 import { logger } from "../logger.js";
 
@@ -60,7 +61,10 @@ export async function issueRoutes(app: FastifyInstance) {
     const taskMap = new Map(
       existingTasks
         .filter((t) => t.ticketSource === "github" && t.ticketExternalId)
-        .map((t) => [`${t.repoUrl}:${t.ticketExternalId}`, { taskId: t.id, state: t.state }]),
+        .map((t) => [
+          `${normalizeRepoUrl(t.repoUrl)}:${t.ticketExternalId}`,
+          { taskId: t.id, state: t.state },
+        ]),
     );
 
     const allIssues: any[] = [];
@@ -90,7 +94,7 @@ export async function issueRoutes(app: FastifyInstance) {
 
           const labels = (issue.labels ?? []).map((l: any) => (typeof l === "string" ? l : l.name));
           const hasOptioLabel = labels.includes("optio");
-          const existingTask = taskMap.get(`${repo.repoUrl}:${issue.number}`);
+          const existingTask = taskMap.get(`${normalizeRepoUrl(repo.repoUrl)}:${issue.number}`);
 
           allIssues.push({
             id: issue.id,

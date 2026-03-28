@@ -208,7 +208,7 @@ describe("ticket-sync-service", () => {
 
     expect(taskService.createTask).toHaveBeenCalledWith(
       expect.objectContaining({
-        repoUrl: "https://github.com/owner/specific-repo.git",
+        repoUrl: "https://github.com/owner/specific-repo",
       }),
     );
   });
