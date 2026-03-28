@@ -1,0 +1,201 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { WsClient } from "./ws-client";
+
+class MockWebSocket {
+  static OPEN = 1;
+  static CLOSED = 3;
+  static instances: MockWebSocket[] = [];
+
+  readyState = MockWebSocket.OPEN;
+  url: string;
+  onmessage: ((msg: { data: string }) => void) | null = null;
+  onclose: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+
+  close = vi.fn(() => {
+    this.readyState = MockWebSocket.CLOSED;
+  });
+  send = vi.fn();
+
+  constructor(url: string) {
+    this.url = url;
+    MockWebSocket.instances.push(this);
+  }
+}
+
+describe("WsClient", () => {
+  beforeEach(() => {
+    MockWebSocket.instances = [];
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("creates a WebSocket connection on connect()", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(MockWebSocket.instances[0].url).toBe("ws://localhost:4000/ws/events");
+  });
+
+  it("does not create duplicate connections when already open", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+    client.connect();
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("dispatches events to registered handlers", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+
+    const handler = vi.fn();
+    client.on("task:state_changed", handler);
+
+    const ws = MockWebSocket.instances[0];
+    ws.onmessage!({ data: JSON.stringify({ type: "task:state_changed", taskId: "1" }) });
+
+    expect(handler).toHaveBeenCalledWith({ type: "task:state_changed", taskId: "1" });
+  });
+
+  it("dispatches to wildcard handlers", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+
+    const handler = vi.fn();
+    client.on("*", handler);
+
+    const ws = MockWebSocket.instances[0];
+    ws.onmessage!({ data: JSON.stringify({ type: "any:event" }) });
+
+    expect(handler).toHaveBeenCalledWith({ type: "any:event" });
+  });
+
+  it("unsubscribes handler when returned function is called", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+
+    const handler = vi.fn();
+    const unsub = client.on("test", handler);
+
+    const ws = MockWebSocket.instances[0];
+    ws.onmessage!({ data: JSON.stringify({ type: "test" }) });
+    expect(handler).toHaveBeenCalledTimes(1);
+
+    unsub();
+    ws.onmessage!({ data: JSON.stringify({ type: "test" }) });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores malformed JSON messages", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+
+    const handler = vi.fn();
+    client.on("test", handler);
+
+    const ws = MockWebSocket.instances[0];
+    // Should not throw
+    ws.onmessage!({ data: "not json" });
+    expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("reconnects after connection close", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    const ws = MockWebSocket.instances[0];
+    ws.readyState = MockWebSocket.CLOSED;
+    ws.onclose!();
+
+    vi.advanceTimersByTime(3000);
+    expect(MockWebSocket.instances).toHaveLength(2);
+  });
+
+  it("disconnect clears reconnect timer and closes socket", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+
+    const ws = MockWebSocket.instances[0];
+    client.disconnect();
+
+    expect(ws.close).toHaveBeenCalled();
+
+    // Should not reconnect after disconnect
+    vi.advanceTimersByTime(5000);
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("send() transmits JSON data when socket is open", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+
+    client.send({ action: "subscribe" });
+    const ws = MockWebSocket.instances[0];
+    expect(ws.send).toHaveBeenCalledWith(JSON.stringify({ action: "subscribe" }));
+  });
+
+  it("send() is a no-op when socket is not open", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+
+    const ws = MockWebSocket.instances[0];
+    ws.readyState = MockWebSocket.CLOSED;
+
+    client.send({ action: "test" });
+    expect(ws.send).not.toHaveBeenCalled();
+  });
+
+  it("uses token provider to build authenticated URL", async () => {
+    const tokenProvider = vi.fn().mockResolvedValue("test-token");
+    const client = new WsClient("ws://localhost:4000/ws/events", tokenProvider);
+    client.connect();
+
+    // Token provider is async, need to flush promises
+    await vi.runAllTimersAsync();
+
+    expect(tokenProvider).toHaveBeenCalled();
+    expect(MockWebSocket.instances[0].url).toBe("ws://localhost:4000/ws/events?token=test-token");
+  });
+
+  it("connects without token when provider returns null", async () => {
+    const tokenProvider = vi.fn().mockResolvedValue(null);
+    const client = new WsClient("ws://localhost:4000/ws/events", tokenProvider);
+    client.connect();
+
+    await vi.runAllTimersAsync();
+
+    expect(MockWebSocket.instances[0].url).toBe("ws://localhost:4000/ws/events");
+  });
+
+  it("retries connection when token provider fails", async () => {
+    const tokenProvider = vi.fn().mockRejectedValueOnce(new Error("auth failed"));
+    const client = new WsClient("ws://localhost:4000/ws/events", tokenProvider);
+    client.connect();
+
+    // Flush the rejected promise
+    await vi.advanceTimersByTimeAsync(0);
+    expect(MockWebSocket.instances).toHaveLength(0);
+
+    // Now make the token provider succeed on retry
+    tokenProvider.mockResolvedValueOnce("new-token");
+    await vi.advanceTimersByTimeAsync(3000);
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+  });
+
+  it("closes socket on error event", () => {
+    const client = new WsClient("ws://localhost:4000/ws/events");
+    client.connect();
+
+    const ws = MockWebSocket.instances[0];
+    ws.onerror!();
+
+    expect(ws.close).toHaveBeenCalled();
+  });
+});
