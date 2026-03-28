@@ -222,7 +222,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-success/10 text-success text-xs hover:bg-success/20 transition-colors"
               >
                 <ExternalLink className="w-3 h-3" />
-                View PR
+                PR #{task.prNumber ?? "?"}
               </a>
             )}
             {canCancel && (
@@ -477,112 +477,105 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         })()}
 
       {/* PR Status */}
-      {task.prUrl && (
-        <div className="shrink-0 border-b border-border bg-bg-card px-4 py-3">
-          <div className="max-w-5xl mx-auto">
-            <div className="flex items-center gap-4 text-xs">
-              <a
-                href={task.prUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 text-primary hover:underline font-medium"
-              >
-                <ExternalLink className="w-3 h-3" />
-                PR #{task.prNumber ?? "?"}
-              </a>
-
-              {/* CI Checks */}
-              {task.prChecksStatus && task.prChecksStatus !== "none" && (
-                <span
-                  className={cn(
-                    "flex items-center gap-1",
-                    task.prChecksStatus === "passing"
-                      ? "text-success"
-                      : task.prChecksStatus === "failing"
-                        ? "text-error"
-                        : "text-warning",
-                  )}
-                >
+      {task.prUrl &&
+        ((task.prChecksStatus && task.prChecksStatus !== "none") ||
+          (task.prReviewStatus && task.prReviewStatus !== "none") ||
+          (task.prState && task.prState !== "open")) && (
+          <div className="shrink-0 border-b border-border bg-bg-card px-4 py-3">
+            <div className="max-w-5xl mx-auto">
+              <div className="flex items-center gap-4 text-xs">
+                {/* CI Checks */}
+                {task.prChecksStatus && task.prChecksStatus !== "none" && (
                   <span
                     className={cn(
-                      "w-2 h-2 rounded-full",
+                      "flex items-center gap-1",
                       task.prChecksStatus === "passing"
-                        ? "bg-success"
+                        ? "text-success"
                         : task.prChecksStatus === "failing"
-                          ? "bg-error"
-                          : "bg-warning",
+                          ? "text-error"
+                          : "text-warning",
                     )}
-                  />
-                  CI: {task.prChecksStatus}
-                </span>
-              )}
+                  >
+                    <span
+                      className={cn(
+                        "w-2 h-2 rounded-full",
+                        task.prChecksStatus === "passing"
+                          ? "bg-success"
+                          : task.prChecksStatus === "failing"
+                            ? "bg-error"
+                            : "bg-warning",
+                      )}
+                    />
+                    CI: {task.prChecksStatus}
+                  </span>
+                )}
 
-              {/* Review Status */}
-              {task.prReviewStatus && task.prReviewStatus !== "none" && (
-                <span
-                  className={cn(
-                    "flex items-center gap-1",
-                    task.prReviewStatus === "approved"
-                      ? "text-success"
-                      : task.prReviewStatus === "changes_requested"
-                        ? "text-warning"
-                        : "text-text-muted",
-                  )}
-                >
-                  Review:{" "}
-                  {task.prReviewStatus === "changes_requested"
-                    ? "changes requested"
-                    : task.prReviewStatus}
-                </span>
-              )}
+                {/* Review Status */}
+                {task.prReviewStatus && task.prReviewStatus !== "none" && (
+                  <span
+                    className={cn(
+                      "flex items-center gap-1",
+                      task.prReviewStatus === "approved"
+                        ? "text-success"
+                        : task.prReviewStatus === "changes_requested"
+                          ? "text-warning"
+                          : "text-text-muted",
+                    )}
+                  >
+                    Review:{" "}
+                    {task.prReviewStatus === "changes_requested"
+                      ? "changes requested"
+                      : task.prReviewStatus}
+                  </span>
+                )}
 
-              {/* PR State */}
-              {task.prState && task.prState !== "open" && (
-                <span className={task.prState === "merged" ? "text-success" : "text-text-muted"}>
-                  {task.prState}
-                </span>
-              )}
+                {/* PR State */}
+                {task.prState && task.prState !== "open" && (
+                  <span className={task.prState === "merged" ? "text-success" : "text-text-muted"}>
+                    {task.prState}
+                  </span>
+                )}
 
-              {/* Cost */}
-              {task.costUsd && (
-                <span className="text-text-muted ml-auto">
-                  Cost: ${parseFloat(task.costUsd).toFixed(4)}
-                </span>
-              )}
+                {/* Cost */}
+                {task.costUsd && (
+                  <span className="text-text-muted ml-auto">
+                    Cost: ${parseFloat(task.costUsd).toFixed(4)}
+                  </span>
+                )}
 
-              {/* Request Review */}
-              {task.state === "pr_opened" && (
-                <button
-                  onClick={async () => {
-                    setActionLoading(true);
-                    try {
-                      const res = await api.launchReview(id);
-                      toast.success("Review agent launched");
-                      refresh();
-                    } catch (err) {
-                      toast.error(err instanceof Error ? err.message : "Failed to launch review");
-                    }
-                    setActionLoading(false);
-                  }}
-                  disabled={actionLoading}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 disabled:opacity-50 ml-auto"
-                >
-                  <Eye className="w-3 h-3" />
-                  Request Review
-                </button>
+                {/* Request Review */}
+                {task.state === "pr_opened" && (
+                  <button
+                    onClick={async () => {
+                      setActionLoading(true);
+                      try {
+                        const res = await api.launchReview(id);
+                        toast.success("Review agent launched");
+                        refresh();
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : "Failed to launch review");
+                      }
+                      setActionLoading(false);
+                    }}
+                    disabled={actionLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 disabled:opacity-50 ml-auto"
+                  >
+                    <Eye className="w-3 h-3" />
+                    Request Review
+                  </button>
+                )}
+              </div>
+
+              {/* Review comments if changes requested */}
+              {task.prReviewStatus === "changes_requested" && task.prReviewComments && (
+                <div className="mt-2 p-2 rounded-md bg-warning/5 border border-warning/20 text-xs">
+                  <div className="font-medium text-warning mb-1">Review feedback:</div>
+                  <pre className="text-text-muted whitespace-pre-wrap">{task.prReviewComments}</pre>
+                </div>
               )}
             </div>
-
-            {/* Review comments if changes requested */}
-            {task.prReviewStatus === "changes_requested" && task.prReviewComments && (
-              <div className="mt-2 p-2 rounded-md bg-warning/5 border border-warning/20 text-xs">
-                <div className="font-medium text-warning mb-1">Review feedback:</div>
-                <pre className="text-text-muted whitespace-pre-wrap">{task.prReviewComments}</pre>
-              </div>
-            )}
           </div>
-        </div>
-      )}
+        )}
 
       {/* Dependencies */}
       {(dependencies.length > 0 || dependents.length > 0) && (
