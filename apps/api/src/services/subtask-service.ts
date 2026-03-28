@@ -37,6 +37,7 @@ export async function createSubtask(input: SubtaskInput) {
     repoUrl: parent.repoUrl,
     agentType: input.agentType ?? parent.agentType,
     priority: input.priority ?? Math.max(1, (parent.priority ?? 100) - 1),
+    createdBy: parent.createdBy ?? undefined,
   });
 
   // Set subtask fields

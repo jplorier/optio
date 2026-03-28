@@ -23,7 +23,9 @@ export async function createSession(input: { repoUrl: string; userId?: string })
   // Try to find a GitHub token for the pod
   try {
     const { getGitHubToken } = await import("./github-token-service.js");
-    const ghToken = await getGitHubToken({ server: true });
+    const ghToken = input.userId
+      ? await getGitHubToken({ userId: input.userId })
+      : await getGitHubToken({ server: true });
     if (ghToken) env.GITHUB_TOKEN = ghToken;
   } catch {
     // No token, that's fine

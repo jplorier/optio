@@ -261,6 +261,10 @@ github:
 encryption:
   key: ""
 
+# Shared secret for pod-to-API credential requests (git credential helper).
+# If empty, derived from the encryption key at startup.
+credentialSecret: ""
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Ingress
 # ──────────────────────────────────────────────────────────────────────────────

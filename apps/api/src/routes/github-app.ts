@@ -5,7 +5,10 @@ import { isGitHubAppConfigured } from "../services/github-app-service.js";
 
 // Shared secret for pod-to-API credential requests.
 // Generated at API startup, injected into pods via OPTIO_CREDENTIAL_SECRET env var.
-const CREDENTIAL_SECRET = process.env.OPTIO_CREDENTIAL_SECRET ?? randomBytes(32).toString("hex");
+const CREDENTIAL_SECRET =
+  process.env.OPTIO_CREDENTIAL_SECRET ??
+  process.env.OPTIO_ENCRYPTION_KEY ??
+  randomBytes(32).toString("hex");
 
 export function getCredentialSecret(): string {
   return CREDENTIAL_SECRET;

@@ -823,7 +823,7 @@ export async function reconcileOrphanedTasks() {
   // Before failing and re-queuing, check if a PR was already opened —
   // if so, transition directly to pr_opened to avoid redoing work.
   for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
-    const taskWsId = (task as any).workspaceId ?? null;
+    const taskWsId = task.workspaceId ?? null;
     const isReview = task.taskType === "review";
     let existingPr = null;
     if (!isReview) {

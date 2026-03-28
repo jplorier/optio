@@ -58,7 +58,7 @@ export async function sessionRoutes(app: FastifyInstance) {
   // Create session
   app.post("/api/sessions", async (req, reply) => {
     const input = createSessionSchema.parse(req.body);
-    const userId = (req as any).userId ?? null;
+    const userId = req.user?.id;
     const session = await sessionService.createSession({
       repoUrl: input.repoUrl,
       userId,

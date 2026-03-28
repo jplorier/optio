@@ -148,13 +148,15 @@ export function startPrWatcherWorker() {
   const worker = new Worker(
     "pr-watcher",
     async () => {
-      // Cache GitHub tokens per workspace to avoid repeated DB lookups
+      // Cache GitHub tokens per task to avoid repeated DB lookups
       const tokenCache = new Map<string, string | null>();
-      const getGithubToken = async (workspaceId: string | null): Promise<string | null> => {
-        const cacheKey = workspaceId ?? "__global__";
+      const getGithubToken = async (taskId: string | null): Promise<string | null> => {
+        const cacheKey = taskId ?? "__server__";
         if (tokenCache.has(cacheKey)) return tokenCache.get(cacheKey)!;
         try {
-          const token = await getGitHubToken({ server: true });
+          const token = taskId
+            ? await getGitHubToken({ taskId })
+            : await getGitHubToken({ server: true });
           tokenCache.set(cacheKey, token);
           return token;
         } catch {
@@ -176,8 +178,7 @@ export function startPrWatcherWorker() {
 
       if (openPrTasks.length > 0) {
         for (const task of openPrTasks) {
-          const taskWsId = task.workspaceId ?? null;
-          const githubToken = await getGithubToken(taskWsId);
+          const githubToken = await getGithubToken(task.id);
           if (!githubToken) continue;
 
           const headers = {
@@ -284,7 +285,7 @@ export function startPrWatcherWorker() {
 
             // --- Decide what action to take ---
             const { getRepoByUrl } = await import("../services/repo-service.js");
-            const repoConfig = await getRepoByUrl(task.repoUrl, taskWsId);
+            const repoConfig = await getRepoByUrl(task.repoUrl, task.workspaceId ?? null);
             const existingReview = await db
               .select({ id: tasks.id })
               .from(tasks)
