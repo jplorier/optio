@@ -50,6 +50,7 @@ export async function issueRoutes(app: FastifyInstance) {
       .select({
         ticketSource: tasks.ticketSource,
         ticketExternalId: tasks.ticketExternalId,
+        repoUrl: tasks.repoUrl,
         id: tasks.id,
         state: tasks.state,
       })
@@ -59,7 +60,7 @@ export async function issueRoutes(app: FastifyInstance) {
     const taskMap = new Map(
       existingTasks
         .filter((t) => t.ticketSource === "github" && t.ticketExternalId)
-        .map((t) => [`${t.ticketExternalId}`, { taskId: t.id, state: t.state }]),
+        .map((t) => [`${t.repoUrl}:${t.ticketExternalId}`, { taskId: t.id, state: t.state }]),
     );
 
     const allIssues: any[] = [];
@@ -89,7 +90,7 @@ export async function issueRoutes(app: FastifyInstance) {
 
           const labels = (issue.labels ?? []).map((l: any) => (typeof l === "string" ? l : l.name));
           const hasOptioLabel = labels.includes("optio");
-          const existingTask = taskMap.get(String(issue.number));
+          const existingTask = taskMap.get(`${repo.repoUrl}:${issue.number}`);
 
           allIssues.push({
             id: issue.id,

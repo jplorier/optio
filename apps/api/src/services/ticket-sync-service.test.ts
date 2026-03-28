@@ -127,9 +127,9 @@ describe("ticket-sync-service", () => {
       addComment: vi.fn(),
     } as any);
 
-    // Existing task matches
+    // Existing task matches (must include repoUrl for repo-scoped dedup)
     vi.mocked(taskService.listTasks).mockResolvedValue([
-      { ticketSource: "github", ticketExternalId: "123" },
+      { ticketSource: "github", ticketExternalId: "123", repoUrl: "https://github.com/o/r" },
     ] as any);
 
     const count = await syncAllTickets();

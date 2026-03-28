@@ -22,19 +22,22 @@ export async function syncAllTickets(): Promise<number> {
       const tickets = await provider.fetchActionableTickets(providerConfig.config);
 
       for (const ticket of tickets) {
-        // Check if task already exists for this ticket
-        const existingTasks = await taskService.listTasks({ limit: 500 });
-        const alreadyExists = existingTasks.some(
-          (t: any) => t.ticketSource === ticket.source && t.ticketExternalId === ticket.externalId,
-        );
-
-        if (alreadyExists) continue;
-
         const agentType = ticket.labels.includes("codex") ? "codex" : "claude-code";
 
         const repoUrl = ticket.repo
           ? `https://github.com/${ticket.repo}.git`
           : (providerConfig.config as any).repoUrl;
+
+        // Check if task already exists for this ticket (scoped by repo + issue number)
+        const existingTasks = await taskService.listTasks({ limit: 500 });
+        const alreadyExists = existingTasks.some(
+          (t: any) =>
+            t.ticketSource === ticket.source &&
+            t.ticketExternalId === ticket.externalId &&
+            t.repoUrl === repoUrl,
+        );
+
+        if (alreadyExists) continue;
 
         if (!repoUrl) {
           logger.warn({ ticketId: ticket.externalId }, "No repo URL found for ticket, skipping");
