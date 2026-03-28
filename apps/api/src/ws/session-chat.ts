@@ -1,13 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import { getRuntime } from "../services/container-service.js";
 import { getSession } from "../services/interactive-session-service.js";
+import { getSettings } from "../services/optio-settings-service.js";
 import { db } from "../db/client.js";
 import { repoPods, repos, interactiveSessions } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { logger } from "../logger.js";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { publishSessionEvent } from "../services/event-bus.js";
-import type { ExecSession } from "@optio/shared";
+import type { ExecSession, OptioSettings } from "@optio/shared";
 import { extractSessionToken } from "./ws-auth.js";
 
 /**
@@ -66,7 +67,13 @@ export async function sessionChatWs(app: FastifyInstance) {
 
     // Get repo config for model defaults
     const [repoConfig] = await db.select().from(repos).where(eq(repos.repoUrl, session.repoUrl));
-    let currentModel = repoConfig?.claudeModel ?? "sonnet";
+
+    // Load Optio agent settings (model, system prompt, tool filtering, etc.)
+    const workspaceId = req.user?.workspaceId ?? null;
+    const optioSettings = await getSettings(workspaceId);
+
+    // Optio settings take precedence, then repo config, then default
+    let currentModel = optioSettings.model || repoConfig?.claudeModel || "sonnet";
 
     const rt = getRuntime();
     const handle = { id: pod.podId ?? pod.podName, name: pod.podName };
@@ -76,6 +83,7 @@ export async function sessionChatWs(app: FastifyInstance) {
     let cumulativeCost = 0;
     let isProcessing = false;
     let outputBuffer = "";
+    let promptCount = 0;
 
     // Resolve auth env vars for the claude process
     const authEnv = await buildAuthEnv(log);
@@ -86,12 +94,17 @@ export async function sessionChatWs(app: FastifyInstance) {
       }
     };
 
-    // Send initial status with model info
+    // Send initial status with model info and settings
     send({
       type: "status",
       status: "ready",
       model: currentModel,
       costUsd: cumulativeCost,
+      settings: {
+        maxTurns: optioSettings.maxTurns,
+        confirmWrites: optioSettings.confirmWrites,
+        enabledTools: optioSettings.enabledTools,
+      },
     });
 
     /**
@@ -105,11 +118,27 @@ export async function sessionChatWs(app: FastifyInstance) {
         return;
       }
 
+      // Enforce max turns from settings
+      promptCount++;
+      if (promptCount > optioSettings.maxTurns) {
+        send({
+          type: "error",
+          message: `Conversation limit reached (${optioSettings.maxTurns} turns). Please start a new session.`,
+        });
+        return;
+      }
+
       isProcessing = true;
       send({ type: "status", status: "thinking" });
 
+      // Append custom system prompt from settings if configured
+      let fullPrompt = prompt;
+      if (optioSettings.systemPrompt) {
+        fullPrompt = `${prompt}\n\n[Additional instructions: ${optioSettings.systemPrompt}]`;
+      }
+
       // Build the claude command
-      const escapedPrompt = prompt.replace(/'/g, "'\\''");
+      const escapedPrompt = fullPrompt.replace(/'/g, "'\\''");
       const modelFlag = currentModel ? `--model ${currentModel}` : "";
 
       // Build auth passthrough env vars so the agent can make

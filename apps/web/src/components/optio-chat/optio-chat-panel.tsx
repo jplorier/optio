@@ -6,11 +6,12 @@ import { cn } from "@/lib/utils";
 import { X, Send, RotateCcw, Bot, User, Loader2, AlertCircle, Info } from "lucide-react";
 import {
   useOptioChatStore,
-  MAX_EXCHANGES,
+  DEFAULT_MAX_EXCHANGES,
   type OptioChatMessage,
   type OptioPendingAction,
 } from "@/hooks/use-optio-chat";
 import { ActionCard } from "./action-card.js";
+import { api } from "@/lib/api-client";
 import { ChatMarkdown } from "./chat-markdown.js";
 
 const WS_URL = process.env.NEXT_PUBLIC_WS_URL ?? "ws://localhost:4000";
@@ -29,6 +30,10 @@ export function OptioChatPanel() {
     setStatus,
     exchangeCount,
     incrementExchange,
+    maxTurns,
+    setMaxTurns,
+    confirmWrites,
+    setConfirmWrites,
   } = useOptioChatStore();
 
   const [input, setInput] = useState("");
@@ -64,6 +69,18 @@ export function OptioChatPanel() {
     }
   }, [isOpen]);
 
+  // Load Optio settings (maxTurns, confirmWrites) on mount
+  useEffect(() => {
+    api
+      .getOptioSettings()
+      .then((res) => {
+        const s = res.settings;
+        if (s.maxTurns) setMaxTurns(s.maxTurns);
+        if (s.confirmWrites !== undefined) setConfirmWrites(s.confirmWrites);
+      })
+      .catch(() => {});
+  }, [setMaxTurns, setConfirmWrites]);
+
   // Escape key to close
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -90,7 +107,7 @@ export function OptioChatPanel() {
   // to WS /ws/optio/chat. For now we simulate responses to demonstrate the UI.
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if (!text || status === "thinking" || exchangeCount >= MAX_EXCHANGES) return;
+    if (!text || status === "thinking" || exchangeCount >= maxTurns) return;
 
     const userMsg: OptioChatMessage = {
       id: `user-${Date.now()}`,
@@ -140,7 +157,7 @@ export function OptioChatPanel() {
       }
       setStatus("ready");
     }, 1200);
-  }, [input, status, exchangeCount, addMessage, incrementExchange, setStatus]);
+  }, [input, status, exchangeCount, maxTurns, addMessage, incrementExchange, setStatus]);
 
   const handleApprove = useCallback(
     (actionId: string) => {
@@ -206,7 +223,7 @@ export function OptioChatPanel() {
     }
   };
 
-  const atLimit = exchangeCount >= MAX_EXCHANGES;
+  const atLimit = exchangeCount >= maxTurns;
 
   return (
     <>
@@ -428,7 +445,7 @@ export function OptioChatPanel() {
               Enter to send, Shift+Enter for new line
             </span>
             <span className="text-[10px] text-text-muted tabular-nums">
-              {exchangeCount}/{MAX_EXCHANGES}
+              {exchangeCount}/{maxTurns}
             </span>
           </div>
         </div>

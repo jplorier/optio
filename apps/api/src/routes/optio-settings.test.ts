@@ -1,0 +1,211 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import Fastify from "fastify";
+import type { FastifyInstance } from "fastify";
+
+// ─── Mocks ───
+
+const mockGetSettings = vi.fn();
+const mockUpsertSettings = vi.fn();
+
+vi.mock("../services/optio-settings-service.js", () => ({
+  getSettings: (...args: unknown[]) => mockGetSettings(...args),
+  upsertSettings: (...args: unknown[]) => mockUpsertSettings(...args),
+}));
+
+import { optioSettingsRoutes } from "./optio-settings.js";
+
+// ─── Helpers ───
+
+const defaultSettings = {
+  id: "set-1",
+  model: "sonnet",
+  systemPrompt: "",
+  enabledTools: [],
+  confirmWrites: true,
+  maxTurns: 20,
+  workspaceId: null,
+  createdAt: new Date("2026-01-01"),
+  updatedAt: new Date("2026-01-01"),
+};
+
+async function buildTestApp(): Promise<FastifyInstance> {
+  const app = Fastify({ logger: false });
+  app.decorateRequest("user", undefined as any);
+  app.addHook("preHandler", (req, _reply, done) => {
+    (req as any).user = { workspaceId: "ws-1", workspaceRole: "admin" };
+    done();
+  });
+  // Mirror the server's ZodError handler
+  app.setErrorHandler((error: Error, _req, reply) => {
+    if (error.name === "ZodError") {
+      return reply.status(400).send({ error: "Validation error", details: error.message });
+    }
+    reply.status(500).send({ error: "Internal server error" });
+  });
+  await optioSettingsRoutes(app);
+  await app.ready();
+  return app;
+}
+
+// ─── Tests ───
+
+describe("GET /api/optio/settings", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = await buildTestApp();
+  });
+
+  it("returns current settings", async () => {
+    mockGetSettings.mockResolvedValue(defaultSettings);
+
+    const res = await app.inject({ method: "GET", url: "/api/optio/settings" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.settings.model).toBe("sonnet");
+    expect(body.settings.confirmWrites).toBe(true);
+    expect(body.settings.maxTurns).toBe(20);
+    expect(mockGetSettings).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("returns settings with custom values", async () => {
+    mockGetSettings.mockResolvedValue({
+      ...defaultSettings,
+      model: "opus",
+      systemPrompt: "Always use TypeScript",
+      enabledTools: ["list_tasks", "create_task"],
+      confirmWrites: false,
+      maxTurns: 10,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/optio/settings" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.settings.model).toBe("opus");
+    expect(body.settings.systemPrompt).toBe("Always use TypeScript");
+    expect(body.settings.enabledTools).toEqual(["list_tasks", "create_task"]);
+    expect(body.settings.confirmWrites).toBe(false);
+    expect(body.settings.maxTurns).toBe(10);
+  });
+});
+
+describe("PUT /api/optio/settings", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = await buildTestApp();
+  });
+
+  it("updates settings with valid input", async () => {
+    const updated = {
+      ...defaultSettings,
+      model: "opus",
+      maxTurns: 30,
+    };
+    mockUpsertSettings.mockResolvedValue(updated);
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/optio/settings",
+      payload: { model: "opus", maxTurns: 30 },
+    });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.settings.model).toBe("opus");
+    expect(body.settings.maxTurns).toBe(30);
+    expect(mockUpsertSettings).toHaveBeenCalledWith({ model: "opus", maxTurns: 30 }, "ws-1");
+  });
+
+  it("updates system prompt", async () => {
+    const updated = {
+      ...defaultSettings,
+      systemPrompt: "Use conventional commits",
+    };
+    mockUpsertSettings.mockResolvedValue(updated);
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/optio/settings",
+      payload: { systemPrompt: "Use conventional commits" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().settings.systemPrompt).toBe("Use conventional commits");
+  });
+
+  it("updates enabled tools", async () => {
+    const updated = {
+      ...defaultSettings,
+      enabledTools: ["list_tasks", "get_cost_analytics"],
+    };
+    mockUpsertSettings.mockResolvedValue(updated);
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/optio/settings",
+      payload: { enabledTools: ["list_tasks", "get_cost_analytics"] },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().settings.enabledTools).toEqual(["list_tasks", "get_cost_analytics"]);
+  });
+
+  it("updates confirmWrites", async () => {
+    const updated = { ...defaultSettings, confirmWrites: false };
+    mockUpsertSettings.mockResolvedValue(updated);
+
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/optio/settings",
+      payload: { confirmWrites: false },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().settings.confirmWrites).toBe(false);
+  });
+
+  it("rejects invalid model", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/optio/settings",
+      payload: { model: "gpt-4" },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects maxTurns below 5", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/optio/settings",
+      payload: { maxTurns: 2 },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects maxTurns above 50", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/optio/settings",
+      payload: { maxTurns: 100 },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+
+  it("rejects empty enabledTools array", async () => {
+    const res = await app.inject({
+      method: "PUT",
+      url: "/api/optio/settings",
+      payload: { enabledTools: [] },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
+});

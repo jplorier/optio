@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { useOptioChatStore, MAX_EXCHANGES } from "./use-optio-chat";
+import { useOptioChatStore, DEFAULT_MAX_EXCHANGES } from "./use-optio-chat";
 import type { OptioChatMessage } from "./use-optio-chat";
 
 describe("useOptioChatStore", () => {
@@ -159,9 +159,29 @@ describe("useOptioChatStore", () => {
     });
   });
 
-  describe("MAX_EXCHANGES constant", () => {
+  describe("DEFAULT_MAX_EXCHANGES constant", () => {
     it("is 20", () => {
-      expect(MAX_EXCHANGES).toBe(20);
+      expect(DEFAULT_MAX_EXCHANGES).toBe(20);
+    });
+  });
+
+  describe("dynamic settings", () => {
+    it("initializes maxTurns with default", () => {
+      expect(useOptioChatStore.getState().maxTurns).toBe(DEFAULT_MAX_EXCHANGES);
+    });
+
+    it("sets maxTurns", () => {
+      useOptioChatStore.getState().setMaxTurns(30);
+      expect(useOptioChatStore.getState().maxTurns).toBe(30);
+    });
+
+    it("initializes confirmWrites as true", () => {
+      expect(useOptioChatStore.getState().confirmWrites).toBe(true);
+    });
+
+    it("sets confirmWrites", () => {
+      useOptioChatStore.getState().setConfirmWrites(false);
+      expect(useOptioChatStore.getState().confirmWrites).toBe(false);
     });
   });
 

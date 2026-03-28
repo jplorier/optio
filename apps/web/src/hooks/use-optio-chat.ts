@@ -47,11 +47,19 @@ interface OptioChatState {
   exchangeCount: number;
   incrementExchange: () => void;
   resetExchangeCount: () => void;
+
+  /** Max exchanges from optio settings (dynamic) */
+  maxTurns: number;
+  setMaxTurns: (n: number) => void;
+
+  /** Whether write operations require confirmation */
+  confirmWrites: boolean;
+  setConfirmWrites: (v: boolean) => void;
 }
 
-const MAX_EXCHANGES = 20;
+const DEFAULT_MAX_EXCHANGES = 20;
 
-export { MAX_EXCHANGES };
+export { DEFAULT_MAX_EXCHANGES };
 
 export const useOptioChatStore = create<OptioChatState>((set) => ({
   isOpen: false,
@@ -76,4 +84,10 @@ export const useOptioChatStore = create<OptioChatState>((set) => ({
   exchangeCount: 0,
   incrementExchange: () => set((s) => ({ exchangeCount: s.exchangeCount + 1 })),
   resetExchangeCount: () => set({ exchangeCount: 0 }),
+
+  maxTurns: DEFAULT_MAX_EXCHANGES,
+  setMaxTurns: (n) => set({ maxTurns: n }),
+
+  confirmWrites: true,
+  setConfirmWrites: (v) => set({ confirmWrites: v }),
 }));
