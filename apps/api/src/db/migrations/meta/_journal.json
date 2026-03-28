@@ -225,6 +225,13 @@
       "when": 1775664000000,
       "tag": "0031_workspace_scoped_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1775750400000,
+      "tag": "0032_optio_settings",
+      "breakpoints": true
     }
   ]
 }

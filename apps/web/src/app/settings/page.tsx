@@ -15,7 +15,12 @@ import {
   Sparkles,
   Plus,
   X,
+  Bot,
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
+import { OPTIO_TOOL_CATEGORIES, ALL_OPTIO_TOOL_NAMES } from "@optio/shared";
 
 function PromptTemplateEditor() {
   const [template, setTemplate] = useState("");
@@ -762,6 +767,228 @@ function AuthenticationSettings() {
   );
 }
 
+function OptioAgentSettings() {
+  const [model, setModel] = useState("sonnet");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [enabledTools, setEnabledTools] = useState<string[]>([...ALL_OPTIO_TOOL_NAMES]);
+  const [confirmWrites, setConfirmWrites] = useState(true);
+  const [maxTurns, setMaxTurns] = useState(20);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showBasePrompt, setShowBasePrompt] = useState(false);
+
+  useEffect(() => {
+    api
+      .getOptioSettings()
+      .then((res) => {
+        const s = res.settings;
+        setModel(s.model);
+        setSystemPrompt(s.systemPrompt);
+        // Empty array means "all enabled" (default state)
+        setEnabledTools(
+          s.enabledTools && s.enabledTools.length > 0 ? s.enabledTools : [...ALL_OPTIO_TOOL_NAMES],
+        );
+        setConfirmWrites(s.confirmWrites);
+        setMaxTurns(s.maxTurns);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const handleSave = async () => {
+    if (enabledTools.length === 0) {
+      toast.error("At least one tool must be enabled");
+      return;
+    }
+    setSaving(true);
+    try {
+      // If all tools are enabled, store empty array (meaning "all")
+      const toolsToSave = enabledTools.length === ALL_OPTIO_TOOL_NAMES.length ? [] : enabledTools;
+      await api.updateOptioSettings({
+        model,
+        systemPrompt,
+        enabledTools: toolsToSave.length === 0 ? ALL_OPTIO_TOOL_NAMES : toolsToSave,
+        confirmWrites,
+        maxTurns,
+      });
+      toast.success("Optio agent settings saved");
+    } catch (err) {
+      toast.error("Failed to save settings", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleTool = (toolName: string) => {
+    setEnabledTools((prev) =>
+      prev.includes(toolName) ? prev.filter((t) => t !== toolName) : [...prev, toolName],
+    );
+  };
+
+  const enableAll = () => setEnabledTools([...ALL_OPTIO_TOOL_NAMES]);
+  const disableAll = () => setEnabledTools([]);
+
+  if (loading) {
+    return (
+      <div className="p-5 rounded-xl border border-border/50 bg-bg-card text-center text-text-muted text-sm">
+        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading...
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-5">
+      {/* Model Selection */}
+      <div>
+        <label className="block text-xs font-medium text-text-muted mb-1">Model</label>
+        <select
+          value={model}
+          onChange={(e) => setModel(e.target.value)}
+          className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+        >
+          <option value="opus">Opus — most capable, highest cost</option>
+          <option value="sonnet">Sonnet — balanced capability and cost</option>
+          <option value="haiku">Haiku — fastest, lowest cost</option>
+        </select>
+      </div>
+
+      {/* System Prompt */}
+      <div>
+        <label className="block text-xs font-medium text-text-muted mb-1">
+          Custom System Prompt
+        </label>
+        <p className="text-xs text-text-muted mb-2">
+          These instructions are appended to Optio&apos;s base prompt. Use this to add context about
+          your team&apos;s workflows, naming conventions, or preferences.
+        </p>
+        <button
+          onClick={() => setShowBasePrompt(!showBasePrompt)}
+          className="flex items-center gap-1 text-xs text-primary hover:underline mb-2"
+        >
+          {showBasePrompt ? (
+            <ChevronDown className="w-3 h-3" />
+          ) : (
+            <ChevronRight className="w-3 h-3" />
+          )}
+          {showBasePrompt ? "Hide" : "Show"} base system prompt
+        </button>
+        {showBasePrompt && (
+          <div className="p-3 rounded-md bg-bg border border-border mb-2 max-h-48 overflow-y-auto">
+            <p className="text-xs text-text-muted font-mono whitespace-pre-wrap">
+              The base system prompt is defined in code and includes instructions for task
+              execution, PR creation, and tool usage. Your custom prompt below is appended after the
+              base prompt to provide additional context.
+            </p>
+          </div>
+        )}
+        <textarea
+          value={systemPrompt}
+          onChange={(e) => setSystemPrompt(e.target.value)}
+          rows={6}
+          placeholder="e.g., Always use conventional commits. Follow our coding style guide at docs/STYLE.md..."
+          className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y leading-relaxed"
+        />
+      </div>
+
+      {/* Tool Enablement */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-xs font-medium text-text-muted">Enabled Tools</label>
+          <div className="flex gap-2">
+            <button onClick={enableAll} className="text-xs text-primary hover:underline">
+              Enable all
+            </button>
+            <span className="text-xs text-text-muted">|</span>
+            <button onClick={disableAll} className="text-xs text-primary hover:underline">
+              Disable all
+            </button>
+          </div>
+        </div>
+        <div className="space-y-3">
+          {OPTIO_TOOL_CATEGORIES.map((category) => (
+            <div key={category.name} className="p-3 rounded-md bg-bg border border-border">
+              <h4 className="text-xs font-medium mb-2">{category.name}</h4>
+              <div className="space-y-1.5">
+                {category.tools.map((tool) => (
+                  <label key={tool.name} className="flex items-center gap-2 text-xs cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enabledTools.includes(tool.name)}
+                      onChange={() => toggleTool(tool.name)}
+                      className="w-3.5 h-3.5 rounded"
+                    />
+                    <span className="font-medium">{tool.name}</span>
+                    <span className="text-text-muted">— {tool.description}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        {enabledTools.length === 0 && (
+          <p className="text-xs text-error mt-1 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" />
+            At least one tool must be enabled
+          </p>
+        )}
+      </div>
+
+      {/* Confirmation Behavior */}
+      <div>
+        <label className="flex items-center gap-2 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={confirmWrites}
+            onChange={(e) => setConfirmWrites(e.target.checked)}
+            className="w-4 h-4 rounded"
+          />
+          Require confirmation for write operations
+        </label>
+        {!confirmWrites && (
+          <p className="text-xs text-warning mt-1 flex items-center gap-1 ml-6">
+            <AlertTriangle className="w-3 h-3" />
+            Optio will execute actions immediately without asking for approval
+          </p>
+        )}
+      </div>
+
+      {/* Max Conversation Length */}
+      <div>
+        <label className="block text-xs font-medium text-text-muted mb-1">
+          Max Conversation Turns
+        </label>
+        <p className="text-xs text-text-muted mb-2">
+          Maximum back-and-forth exchanges per session (5–50).
+        </p>
+        <input
+          type="number"
+          value={maxTurns}
+          onChange={(e) => {
+            const v = parseInt(e.target.value, 10);
+            if (!isNaN(v)) setMaxTurns(Math.max(5, Math.min(50, v)));
+          }}
+          min={5}
+          max={50}
+          className="w-32 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+        />
+      </div>
+
+      {/* Save Button */}
+      <div className="flex justify-end">
+        <button
+          onClick={handleSave}
+          disabled={saving || enabledTools.length === 0}
+          className="px-4 py-1.5 rounded-md bg-primary text-white text-xs hover:bg-primary-hover disabled:opacity-50"
+        >
+          {saving ? "Saving..." : "Save Settings"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   usePageTitle("Settings");
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
@@ -804,6 +1031,15 @@ export default function SettingsPage() {
   return (
     <div className="p-6 max-w-3xl mx-auto space-y-8">
       <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+
+      {/* Optio Agent Settings */}
+      <section>
+        <h2 className="text-sm font-medium text-text-muted mb-3 flex items-center gap-2">
+          <Bot className="w-4 h-4" />
+          Optio Agent Settings
+        </h2>
+        <OptioAgentSettings />
+      </section>
 
       {/* Authentication */}
       <section>

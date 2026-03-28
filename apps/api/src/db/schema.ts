@@ -565,6 +565,24 @@ export const customSkills = pgTable(
   ],
 );
 
+// ── Optio Agent Settings (singleton per workspace) ────────────────────────────
+
+export const optioSettings = pgTable(
+  "optio_settings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    model: text("model").notNull().default("sonnet"), // "opus" | "sonnet" | "haiku"
+    systemPrompt: text("system_prompt").notNull().default(""), // custom additions appended to base prompt
+    enabledTools: jsonb("enabled_tools").$type<string[]>().notNull().default([]), // empty = all enabled
+    confirmWrites: boolean("confirm_writes").notNull().default(true),
+    maxTurns: integer("max_turns").notNull().default(20),
+    workspaceId: uuid("workspace_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("optio_settings_workspace_id_idx").on(table.workspaceId)],
+);
+
 export const promptTemplates = pgTable("prompt_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
