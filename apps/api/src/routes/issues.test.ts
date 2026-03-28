@@ -4,9 +4,9 @@ import type { FastifyInstance } from "fastify";
 
 // ─── Mocks ───
 
-const mockRetrieveSecret = vi.fn();
-vi.mock("../services/secret-service.js", () => ({
-  retrieveSecret: (...args: unknown[]) => mockRetrieveSecret(...args),
+const mockGetGitHubToken = vi.fn();
+vi.mock("../services/github-token-service.js", () => ({
+  getGitHubToken: (...args: unknown[]) => mockGetGitHubToken(...args),
 }));
 
 const mockDbSelect = vi.fn();
@@ -53,7 +53,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.decorateRequest("user", undefined as any);
   app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { workspaceId: "ws-1" };
+    (req as any).user = { id: "user-1", workspaceId: "ws-1" };
     done();
   });
   await issueRoutes(app);
@@ -74,7 +74,7 @@ describe("GET /api/issues", () => {
   });
 
   it("returns 503 when no GitHub token is configured", async () => {
-    mockRetrieveSecret.mockRejectedValue(new Error("not found"));
+    mockGetGitHubToken.mockResolvedValue(null);
 
     const res = await app.inject({ method: "GET", url: "/api/issues" });
 
@@ -187,7 +187,7 @@ describe("GET /api/issues", () => {
   });
 
   it("returns empty issues when no repos are configured", async () => {
-    mockRetrieveSecret.mockResolvedValue("ghp_token");
+    mockGetGitHubToken.mockResolvedValue("ghp_token");
 
     // repos query returns empty
     const repoChain = {
@@ -255,7 +255,7 @@ describe("POST /api/issues/assign", () => {
       ]),
     };
     mockDbSelect.mockReturnValue(chainable);
-    mockRetrieveSecret.mockRejectedValue(new Error("not found"));
+    mockGetGitHubToken.mockResolvedValue(null);
 
     const res = await app.inject({
       method: "POST",
