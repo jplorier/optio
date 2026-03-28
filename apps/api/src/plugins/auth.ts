@@ -3,11 +3,39 @@ import fp from "fastify-plugin";
 import { validateSession, type SessionUser } from "../services/session-service.js";
 import { isAuthDisabled } from "../services/oauth/index.js";
 import { getUserRole, ensureUserHasWorkspace } from "../services/workspace-service.js";
+import type { WorkspaceRole } from "@optio/shared";
 
 declare module "fastify" {
   interface FastifyRequest {
     user?: SessionUser;
   }
+}
+
+/** Role hierarchy: admin > member > viewer. */
+const ROLE_LEVEL: Record<string, number> = { admin: 3, member: 2, viewer: 1 };
+
+/**
+ * Returns a Fastify preHandler that rejects requests from users whose
+ * workspace role is below `minimumRole`.
+ *
+ * When auth is disabled the check is skipped (local dev).
+ */
+export function requireRole(minimumRole: WorkspaceRole) {
+  const minLevel = ROLE_LEVEL[minimumRole] ?? 0;
+
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    // Auth disabled — allow everything (local dev)
+    if (isAuthDisabled()) return;
+
+    const role = req.user?.workspaceRole;
+    const level = role ? (ROLE_LEVEL[role] ?? 0) : 0;
+
+    if (level < minLevel) {
+      return reply.status(403).send({
+        error: `Forbidden: requires ${minimumRole} role`,
+      });
+    }
+  };
 }
 
 const SESSION_COOKIE_NAME = "optio_session";

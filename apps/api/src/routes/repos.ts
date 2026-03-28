@@ -8,6 +8,7 @@ import {
   parseCpuMillicores,
   parseMemoryMi,
 } from "@optio/shared";
+import { requireRole } from "../plugins/auth.js";
 
 const createRepoSchema = z.object({
   repoUrl: z.string().min(1),
@@ -74,7 +75,7 @@ export async function repoRoutes(app: FastifyInstance) {
     reply.send({ repo });
   });
 
-  app.post("/api/repos", async (req, reply) => {
+  app.post("/api/repos", { preHandler: [requireRole("admin")] }, async (req, reply) => {
     const body = createRepoSchema.parse(req.body);
     const workspaceId = req.user?.workspaceId ?? null;
 
@@ -108,7 +109,7 @@ export async function repoRoutes(app: FastifyInstance) {
     reply.status(201).send({ repo });
   });
 
-  app.patch("/api/repos/:id", async (req, reply) => {
+  app.patch("/api/repos/:id", { preHandler: [requireRole("admin")] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const existing = await repoService.getRepo(id);
     if (!existing) return reply.status(404).send({ error: "Repo not found" });
@@ -160,7 +161,7 @@ export async function repoRoutes(app: FastifyInstance) {
     reply.send({ repo });
   });
 
-  app.delete("/api/repos/:id", async (req, reply) => {
+  app.delete("/api/repos/:id", { preHandler: [requireRole("admin")] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const existing = await repoService.getRepo(id);
     if (!existing) return reply.status(404).send({ error: "Repo not found" });
@@ -172,8 +173,8 @@ export async function repoRoutes(app: FastifyInstance) {
     reply.status(204).send();
   });
 
-  // Auto-detect repo configuration
-  app.post("/api/repos/:id/detect", async (req, reply) => {
+  // Auto-detect repo configuration — admin only
+  app.post("/api/repos/:id/detect", { preHandler: [requireRole("admin")] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const repo = await repoService.getRepo(id);
     if (!repo) return reply.status(404).send({ error: "Repo not found" });

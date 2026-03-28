@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/client.js";
+import { requireRole } from "../plugins/auth.js";
 
 const costsQuerySchema = z.object({
   days: z.coerce.number().int().min(1).max(365).optional().default(30),
@@ -9,8 +10,8 @@ const costsQuerySchema = z.object({
 });
 
 export async function analyticsRoutes(app: FastifyInstance) {
-  // Cost analytics — aggregated cost data for the dashboard
-  app.get("/api/analytics/costs", async (req, reply) => {
+  // Cost analytics — aggregated cost data for the dashboard (member+)
+  app.get("/api/analytics/costs", { preHandler: [requireRole("member")] }, async (req, reply) => {
     const query = costsQuerySchema.parse(req.query);
     const days = query.days;
     const repoUrl = query.repoUrl || null;

@@ -3,6 +3,7 @@ import { KubeConfig, CoreV1Api, CustomObjectsApi } from "@kubernetes/client-node
 import { db } from "../db/client.js";
 import { repoPods, tasks, podHealthEvents, repos } from "../db/schema.js";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
+import { requireRole } from "../plugins/auth.js";
 
 function getK8sConfig() {
   const kc = new KubeConfig();
@@ -87,8 +88,8 @@ function formatMemoryGi(ki: number): string {
 }
 
 export async function clusterRoutes(app: FastifyInstance) {
-  // Cluster overview: nodes, all pods, services, resource summary
-  app.get("/api/cluster/overview", async (req, reply) => {
+  // Cluster overview: nodes, all pods, services, resource summary — admin only
+  app.get("/api/cluster/overview", { preHandler: [requireRole("admin")] }, async (req, reply) => {
     try {
       const api = getK8sApi();
 
@@ -298,8 +299,8 @@ export async function clusterRoutes(app: FastifyInstance) {
     }
   });
 
-  // Keep the existing pod detail endpoints
-  app.get("/api/cluster/pods", async (req, reply) => {
+  // Keep the existing pod detail endpoints — admin only
+  app.get("/api/cluster/pods", { preHandler: [requireRole("admin")] }, async (req, reply) => {
     try {
       const workspaceId = req.user?.workspaceId;
       const pods = workspaceId
@@ -329,7 +330,7 @@ export async function clusterRoutes(app: FastifyInstance) {
     }
   });
 
-  app.get("/api/cluster/pods/:id", async (req, reply) => {
+  app.get("/api/cluster/pods/:id", { preHandler: [requireRole("admin")] }, async (req, reply) => {
     const { id } = req.params as { id: string };
     const [pod] = await db.select().from(repoPods).where(eq(repoPods.id, id));
     if (!pod) return reply.status(404).send({ error: "Pod not found" });
@@ -377,48 +378,56 @@ export async function clusterRoutes(app: FastifyInstance) {
     reply.send({ pod: { ...pod, activeTaskCount: liveActiveCount, tasks: podTasks, k8sPod } });
   });
 
-  // Pod health events
-  app.get("/api/cluster/health-events", async (req, reply) => {
-    const query = req.query as { limit?: string };
-    const limit = query.limit ? parseInt(query.limit, 10) : 50;
-    const events = await db
-      .select()
-      .from(podHealthEvents)
-      .orderBy(desc(podHealthEvents.createdAt))
-      .limit(limit);
-    reply.send({ events });
-  });
+  // Pod health events — admin only
+  app.get(
+    "/api/cluster/health-events",
+    { preHandler: [requireRole("admin")] },
+    async (req, reply) => {
+      const query = req.query as { limit?: string };
+      const limit = query.limit ? parseInt(query.limit, 10) : 50;
+      const events = await db
+        .select()
+        .from(podHealthEvents)
+        .orderBy(desc(podHealthEvents.createdAt))
+        .limit(limit);
+      reply.send({ events });
+    },
+  );
 
-  // Force restart a repo pod
-  app.post("/api/cluster/pods/:id/restart", async (req, reply) => {
-    const { id } = req.params as { id: string };
-    const [pod] = await db.select().from(repoPods).where(eq(repoPods.id, id));
-    if (!pod) return reply.status(404).send({ error: "Pod not found" });
-    const wsId = req.user?.workspaceId;
-    if (wsId && pod.workspaceId !== wsId) {
-      return reply.status(404).send({ error: "Pod not found" });
-    }
+  // Force restart a repo pod — admin only
+  app.post(
+    "/api/cluster/pods/:id/restart",
+    { preHandler: [requireRole("admin")] },
+    async (req, reply) => {
+      const { id } = req.params as { id: string };
+      const [pod] = await db.select().from(repoPods).where(eq(repoPods.id, id));
+      if (!pod) return reply.status(404).send({ error: "Pod not found" });
+      const wsId = req.user?.workspaceId;
+      if (wsId && pod.workspaceId !== wsId) {
+        return reply.status(404).send({ error: "Pod not found" });
+      }
 
-    // Destroy the pod
-    if (pod.podName) {
-      try {
-        const { getRuntime } = await import("../services/container-service.js");
-        const runtime = getRuntime();
-        await runtime.destroy({ id: pod.podId ?? pod.podName, name: pod.podName });
-      } catch {}
-    }
+      // Destroy the pod
+      if (pod.podName) {
+        try {
+          const { getRuntime } = await import("../services/container-service.js");
+          const runtime = getRuntime();
+          await runtime.destroy({ id: pod.podId ?? pod.podName, name: pod.podName });
+        } catch {}
+      }
 
-    // Clear the record — next task will recreate it
-    await db.delete(repoPods).where(eq(repoPods.id, id));
+      // Clear the record — next task will recreate it
+      await db.delete(repoPods).where(eq(repoPods.id, id));
 
-    await db.insert(podHealthEvents).values({
-      repoPodId: id,
-      repoUrl: pod.repoUrl,
-      eventType: "restarted",
-      podName: pod.podName,
-      message: "Manual restart via API",
-    });
+      await db.insert(podHealthEvents).values({
+        repoPodId: id,
+        repoUrl: pod.repoUrl,
+        eventType: "restarted",
+        podName: pod.podName,
+        message: "Manual restart via API",
+      });
 
-    reply.send({ ok: true });
-  });
+      reply.send({ ok: true });
+    },
+  );
 }
