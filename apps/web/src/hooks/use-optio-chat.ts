@@ -1,0 +1,79 @@
+import { create } from "zustand";
+
+/** A proposed action from Optio that needs user confirmation. */
+export interface OptioPendingAction {
+  id: string;
+  description: string;
+  items: string[];
+  /** null = pending, true = approved, false = denied */
+  decision: null | boolean;
+}
+
+export interface OptioChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  timestamp: string;
+  /** If this message is an action proposal */
+  action?: OptioPendingAction;
+  /** If this is a denial feedback from user */
+  isDenialFeedback?: boolean;
+}
+
+export type OptioStatus = "ready" | "unavailable" | "starting" | "thinking" | "disconnected";
+
+interface OptioChatState {
+  /** Whether the slide-out panel is open */
+  isOpen: boolean;
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
+
+  /** Messages in the current ephemeral session */
+  messages: OptioChatMessage[];
+  addMessage: (msg: OptioChatMessage) => void;
+  updateMessage: (id: string, updates: Partial<OptioChatMessage>) => void;
+  resetMessages: () => void;
+
+  /** Pre-filled input text from contextual entry points */
+  prefillInput: string;
+  setPrefillInput: (text: string) => void;
+
+  /** Optio agent status */
+  status: OptioStatus;
+  setStatus: (status: OptioStatus) => void;
+
+  /** Exchange counter (user messages sent) */
+  exchangeCount: number;
+  incrementExchange: () => void;
+  resetExchangeCount: () => void;
+}
+
+const MAX_EXCHANGES = 20;
+
+export { MAX_EXCHANGES };
+
+export const useOptioChatStore = create<OptioChatState>((set) => ({
+  isOpen: false,
+  open: () => set({ isOpen: true }),
+  close: () => set({ isOpen: false }),
+  toggle: () => set((s) => ({ isOpen: !s.isOpen })),
+
+  messages: [],
+  addMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
+  updateMessage: (id, updates) =>
+    set((s) => ({
+      messages: s.messages.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+    })),
+  resetMessages: () => set({ messages: [], exchangeCount: 0 }),
+
+  prefillInput: "",
+  setPrefillInput: (text) => set({ prefillInput: text }),
+
+  status: "ready",
+  setStatus: (status) => set({ status }),
+
+  exchangeCount: 0,
+  incrementExchange: () => set((s) => ({ exchangeCount: s.exchangeCount + 1 })),
+  resetExchangeCount: () => set({ exchangeCount: 0 }),
+}));

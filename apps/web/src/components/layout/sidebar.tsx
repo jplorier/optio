@@ -17,9 +17,11 @@ import {
   Clock,
   FileText,
   GitBranch,
+  Bot,
 } from "lucide-react";
 import { UserMenu } from "./user-menu";
 import { WorkspaceSwitcher } from "./workspace-switcher";
+import { useOptioChatStore } from "@/hooks/use-optio-chat";
 
 const MAIN_NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
@@ -69,8 +71,17 @@ function NavLink({
   );
 }
 
+const STATUS_DOT_COLORS: Record<string, string> = {
+  ready: "bg-success",
+  starting: "bg-warning",
+  unavailable: "bg-error",
+  thinking: "bg-primary animate-pulse",
+  disconnected: "bg-text-muted/40",
+};
+
 export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => void }) {
   const pathname = usePathname();
+  const optioChat = useOptioChatStore();
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
@@ -112,6 +123,32 @@ export function Sidebar({ open, onClose }: { open?: boolean; onClose?: () => voi
           ))}
         </div>
       </nav>
+      {/* Optio chat button */}
+      <div className="px-2.5 py-2 border-t border-border/50">
+        <button
+          onClick={() => {
+            optioChat.toggle();
+            onClose?.();
+          }}
+          className={cn(
+            "w-full flex items-center gap-2.5 py-2 px-2.5 rounded-lg text-[13px] font-medium transition-all duration-150",
+            optioChat.isOpen
+              ? "bg-primary/10 text-text"
+              : "text-text-muted hover:bg-bg-hover/60 hover:text-text",
+          )}
+        >
+          <div className="relative">
+            <Bot className={cn("w-4 h-4 shrink-0", optioChat.isOpen && "text-primary")} />
+            <span
+              className={cn(
+                "absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full border border-bg",
+                STATUS_DOT_COLORS[optioChat.status] ?? "bg-text-muted/40",
+              )}
+            />
+          </div>
+          Ask Optio
+        </button>
+      </div>
       <div className="border-t border-border/50 px-2.5 py-2.5">
         <UserMenu />
       </div>

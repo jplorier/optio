@@ -9,6 +9,7 @@ import { api } from "@/lib/api-client";
 import { formatRelativeTime } from "@/lib/utils";
 import { ExternalLink, RotateCcw, Bot, Link2, Clock, Moon, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useOptioChatStore } from "@/hooks/use-optio-chat";
 
 /** Map raw trigger/message strings to human-readable attention reasons. */
 function formatAttentionReason(reason: string): string {
@@ -42,6 +43,7 @@ interface TaskCardProps {
 
 export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCardProps) {
   const router = useRouter();
+  const optioChat = useOptioChatStore();
   const repoName = task.repoUrl.replace(/.*\/\/[^/]+\//, "").replace(/\.git$/, "");
   const [owner, repo] = repoName.includes("/") ? repoName.split("/") : ["", repoName];
   const prNumber = task.prUrl?.match(/\/pull\/(\d+)/)?.[1];
@@ -138,28 +140,43 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
             <span className="text-xs text-error/80 truncate">
               {classifyError(task.errorMessage).title}
             </span>
-            <button
-              onClick={async (e) => {
-                e.stopPropagation();
-                const btn = e.currentTarget;
-                btn.textContent = "Retrying...";
-                btn.setAttribute("disabled", "true");
-                try {
-                  await api.retryTask(task.id);
-                  window.location.href = window.location.href;
-                } catch {
-                  btn.textContent = "Failed";
-                  setTimeout(() => {
-                    btn.textContent = "Retry";
-                    btn.removeAttribute("disabled");
-                  }, 2000);
-                }
-              }}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-all shrink-0 btn-press"
-            >
-              <RotateCcw className="w-3 h-3" />
-              Retry
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  optioChat.setPrefillInput(
+                    `Task #${task.id.slice(0, 8)} failed with: ${classifyError(task.errorMessage!).title}`,
+                  );
+                  optioChat.open();
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-primary/5 text-primary/70 hover:bg-primary/10 hover:text-primary transition-all btn-press"
+                title="Ask Optio about this error"
+              >
+                <Bot className="w-3 h-3" />
+              </button>
+              <button
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  const btn = e.currentTarget;
+                  btn.textContent = "Retrying...";
+                  btn.setAttribute("disabled", "true");
+                  try {
+                    await api.retryTask(task.id);
+                    window.location.href = window.location.href;
+                  } catch {
+                    btn.textContent = "Failed";
+                    setTimeout(() => {
+                      btn.textContent = "Retry";
+                      btn.removeAttribute("disabled");
+                    }, 2000);
+                  }
+                }}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-md text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-all btn-press"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Retry
+              </button>
+            </div>
           </div>
         )}
         {task.state === "needs_attention" && task.errorMessage && (
