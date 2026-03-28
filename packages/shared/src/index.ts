@@ -18,4 +18,5 @@ export * from "./types/session.js";
 export * from "./types/mcp.js";
 export * from "./utils/off-peak.js";
 export * from "./types/optio-settings.js";
+export * from "./types/optio-action.js";
 export * from "./optio-tools.js";

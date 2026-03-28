@@ -1,7 +1,9 @@
 import type { FastifyInstance } from "fastify";
 import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
 import { sql } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "../db/client.js";
+import * as optioActionService from "../services/optio-action-service.js";
 
 const NAMESPACE = "optio";
 const POD_ROLE_LABEL = "optio.pod-role=optio";
@@ -215,6 +217,44 @@ export async function optioRoutes(app: FastifyInstance) {
     } catch (err) {
       app.log.error(err, "Failed to fetch system status");
       return reply.status(500).send({ error: "Failed to fetch system status" });
+    }
+  });
+
+  // ── Optio Action Audit Trail ──────────────────────────────────────────────
+
+  const listActionsQuerySchema = z.object({
+    userId: z.string().uuid().optional(),
+    action: z.string().optional(),
+    success: z
+      .enum(["true", "false"])
+      .transform((v) => v === "true")
+      .optional(),
+    after: z
+      .string()
+      .datetime()
+      .transform((v) => new Date(v))
+      .optional(),
+    before: z
+      .string()
+      .datetime()
+      .transform((v) => new Date(v))
+      .optional(),
+    limit: z.coerce.number().int().min(1).max(500).default(50),
+    offset: z.coerce.number().int().min(0).default(0),
+  });
+
+  app.get("/api/optio/actions", async (req, reply) => {
+    const parsed = listActionsQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: parsed.error.issues[0].message });
+    }
+
+    try {
+      const { actions, total } = await optioActionService.listActions(parsed.data);
+      return reply.send({ actions, total });
+    } catch (err) {
+      app.log.error(err, "Failed to fetch optio actions");
+      return reply.status(500).send({ error: "Failed to fetch optio actions" });
     }
   });
 }
