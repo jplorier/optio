@@ -215,7 +215,7 @@ Register a new GitHub App at `https://github.com/organizations/{org}/settings/ap
 
 **Other settings:**
 
-- **Callback URL:** `{API_PUBLIC_URL}/api/auth/github/callback`
+- **Callback URL:** `{PUBLIC_URL}/api/auth/github/callback`
 - **Request user authorization (OAuth) during installation:** Yes
 - **Expire user authorization tokens:** Yes (recommended, 8-hour lifetime with refresh)
 - **Webhook:** Can be left disabled (Optio uses polling)

@@ -48,7 +48,7 @@ const PUBLIC_ROUTES = [
   "/api/setup/",
   "/api/webhooks/",
   "/ws/",
-  "/api/internal/",
+  "/api/internal/git-credentials",
 ];
 
 function isPublicRoute(url: string): boolean {

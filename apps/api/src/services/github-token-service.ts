@@ -8,6 +8,7 @@ import {
   deleteSecret,
 } from "./secret-service.js";
 import { isGitHubAppConfigured, getInstallationToken } from "./github-app-service.js";
+import { logger } from "../logger.js";
 
 const refreshLocks = new Map<string, Promise<string>>();
 const TOKEN_REFRESH_BUFFER_MS = 10 * 60 * 1000;
@@ -27,8 +28,8 @@ async function getServerToken(): Promise<string> {
   if (isGitHubAppConfigured()) {
     try {
       return await getInstallationToken();
-    } catch {
-      // Installation token failed (rate limit, revoked, outage) — try PAT fallback
+    } catch (err) {
+      logger.warn({ err }, "Installation token failed, falling back to PAT");
       return getPatFallback();
     }
   }
@@ -58,7 +59,8 @@ async function getTokenForUser(userId: string, workspaceId?: string | null): Pro
       return accessToken;
     }
     return refreshUserToken(userId, workspaceId);
-  } catch {
+  } catch (err) {
+    logger.warn({ userId, err }, "No stored user token, falling back to PAT");
     return getPatFallback(workspaceId);
   }
 }
@@ -106,6 +108,7 @@ async function doRefreshUserToken(userId: string, workspaceId?: string | null): 
       const errorCode = String(data.error);
       // Only delete tokens on definitive revocation — not transient failures
       if (errorCode === "bad_refresh_token" || errorCode === "incorrect_client_credentials") {
+        logger.error({ userId, errorCode }, "GitHub token revoked, deleting stored tokens");
         await deleteUserGitHubTokens(userId);
       }
       throw new Error(`GitHub token refresh error: ${errorCode}`);
@@ -122,9 +125,10 @@ async function doRefreshUserToken(userId: string, workspaceId?: string | null): 
     });
 
     return newAccessToken;
-  } catch {
+  } catch (err) {
     // Don't delete tokens on transient errors (network, 5xx) — only the
     // definitive revocation cases above delete them before re-throwing.
+    logger.warn({ userId, err }, "Token refresh failed, falling back to PAT");
     return getPatFallback(workspaceId);
   }
 }

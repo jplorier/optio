@@ -1,6 +1,6 @@
 # Plan: GitHub App Integration
 
-**Status:** Approved, not started
+**Status:** Implemented
 **Created:** 2026-03-26
 
 ## Background
@@ -17,13 +17,22 @@ The GitHub App is deployment-wide, not per-workspace. All workspaces share the s
 
 ### Token resolution order
 
-All GitHub token consumers use a single resolution function:
+All GitHub token consumers use a single resolution function (`getGitHubToken`) with a discriminated union context:
 
-1. GitHub App installation token (if configured)
-2. Workspace-scoped `GITHUB_TOKEN` PAT (if exists)
-3. Global `GITHUB_TOKEN` PAT (fallback)
+```typescript
+type GitHubTokenContext =
+  | { taskId: string } // resolves task creator's user token
+  | { userId: string; workspaceId?: string | null } // resolves user's token directly
+  | { server: true }; // resolves installation token for background work
+```
 
-Existing PAT-based deployments continue to work unchanged.
+Resolution per context:
+
+- **Task context**: looks up the task's `createdBy` user, then resolves their user access token (with automatic refresh). Falls back to installation token for system-created tasks.
+- **User context**: retrieves the user's stored GitHub App OAuth token, refreshing if within 10 minutes of expiry. Falls back to PAT on failure.
+- **Server context**: uses installation token (for PR watcher, ticket sync, pod clone). Falls back to PAT.
+
+All paths ultimately fall back to workspace-scoped or global `GITHUB_TOKEN` PAT. Existing PAT-based deployments continue to work unchanged.
 
 ### Dynamic credential helper for pods
 
@@ -104,17 +113,10 @@ Responsibilities:
 Single function:
 
 ```typescript
-export async function getGitHubToken(workspaceId?: string | null): Promise<string> {
-  // 1. GitHub App installation token (global, preferred)
-  if (isGitHubAppConfigured()) {
-    return getInstallationToken();
-  }
-  // 2. Workspace or global PAT (fallback)
-  return retrieveSecretWithFallback("GITHUB_TOKEN", "global", workspaceId);
-}
+export async function getGitHubToken(context: GitHubTokenContext): Promise<string>;
 ```
 
-This is the single entry point. All existing `retrieveSecret("GITHUB_TOKEN")` calls are replaced with `getGitHubToken(workspaceId?)`.
+This is the single entry point. All existing `retrieveSecret("GITHUB_TOKEN")` calls are replaced with `getGitHubToken(context)`. See the token resolution order above for the full `GitHubTokenContext` type.
 
 **Testing:** `apps/api/src/services/github-token-service.test.ts`
 

@@ -83,7 +83,7 @@ describe("GET /api/issues", () => {
   });
 
   it("includes author username in issue response", async () => {
-    mockRetrieveSecret.mockResolvedValue("ghp_token");
+    mockGetGitHubToken.mockResolvedValue("ghp_token");
 
     // repos query returns one repo
     const repoChain = {
@@ -137,7 +137,7 @@ describe("GET /api/issues", () => {
   });
 
   it("returns null author when issue has no user", async () => {
-    mockRetrieveSecret.mockResolvedValue("ghp_token");
+    mockGetGitHubToken.mockResolvedValue("ghp_token");
 
     const repoChain = {
       from: vi.fn().mockReturnThis(),

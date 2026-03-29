@@ -1,14 +1,23 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { getGitHubToken } from "../services/github-token-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
 
+function deriveCredentialSecret(): string {
+  if (process.env.OPTIO_CREDENTIAL_SECRET) return process.env.OPTIO_CREDENTIAL_SECRET;
+  if (process.env.OPTIO_ENCRYPTION_KEY) {
+    // Derive a separate secret — never expose the raw encryption key to pods.
+    // Must match the Helm template: sha256sum of "{key}:credential-secret"
+    return createHash("sha256")
+      .update(`${process.env.OPTIO_ENCRYPTION_KEY}:credential-secret`)
+      .digest("hex");
+  }
+  return randomBytes(32).toString("hex");
+}
+
 // Shared secret for pod-to-API credential requests.
-// Generated at API startup, injected into pods via OPTIO_CREDENTIAL_SECRET env var.
-const CREDENTIAL_SECRET =
-  process.env.OPTIO_CREDENTIAL_SECRET ??
-  process.env.OPTIO_ENCRYPTION_KEY ??
-  randomBytes(32).toString("hex");
+// Injected into pods via OPTIO_CREDENTIAL_SECRET env var.
+const CREDENTIAL_SECRET = deriveCredentialSecret();
 
 export function getCredentialSecret(): string {
   return CREDENTIAL_SECRET;
