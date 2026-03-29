@@ -34,7 +34,7 @@ export default function WorkflowsPage() {
   const loadTemplates = () => {
     api
       .listWorkflows()
-      .then((res) => setTemplates(res.workflows))
+      .then((res) => setTemplates(res.templates))
       .catch(() => toast.error("Failed to load workflow templates"))
       .finally(() => setLoading(false));
   };

@@ -787,9 +787,9 @@ export const api = {
     request<void>(`/api/tasks/${taskId}/dependencies/${depTaskId}`, { method: "DELETE" }),
 
   // Workflow Templates
-  listWorkflows: () => request<{ workflows: any[] }>("/api/workflow-templates"),
+  listWorkflows: () => request<{ templates: any[] }>("/api/workflow-templates"),
 
-  getWorkflow: (id: string) => request<{ workflow: any }>(`/api/workflows/${id}`),
+  getWorkflow: (id: string) => request<{ template: any }>(`/api/workflow-templates/${id}`),
 
   createWorkflow: (data: {
     name: string;
@@ -804,27 +804,28 @@ export const api = {
     }>;
     status?: string;
   }) =>
-    request<{ workflow: any }>("/api/workflow-templates", {
+    request<{ template: any }>("/api/workflow-templates", {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
   updateWorkflow: (id: string, data: Record<string, unknown>) =>
-    request<{ workflow: any }>(`/api/workflows/${id}`, {
+    request<{ template: any }>(`/api/workflow-templates/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
 
-  deleteWorkflow: (id: string) => request<void>(`/api/workflows/${id}`, { method: "DELETE" }),
+  deleteWorkflow: (id: string) =>
+    request<void>(`/api/workflow-templates/${id}`, { method: "DELETE" }),
 
   runWorkflow: (templateId: string, data?: { repoUrlOverride?: string }) =>
-    request<{ workflowRun: any }>(`/api/workflows/${templateId}/run`, {
+    request<{ workflowRun: any }>(`/api/workflow-templates/${templateId}/run`, {
       method: "POST",
       body: JSON.stringify(data ?? {}),
     }),
 
   getWorkflowRuns: (templateId: string) =>
-    request<{ runs: any[] }>(`/api/workflows/${templateId}/runs`),
+    request<{ runs: any[] }>(`/api/workflow-templates/${templateId}/runs`),
 
   getWorkflowRun: (id: string) => request<{ workflowRun: any }>(`/api/workflow-runs/${id}`),
 
