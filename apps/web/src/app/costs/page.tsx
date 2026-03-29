@@ -41,21 +41,21 @@ const PERIOD_OPTIONS = [
 ];
 
 const REPO_COLORS = [
-  "#6366f1", // indigo
-  "#8b5cf6", // violet
-  "#06b6d4", // cyan
-  "#10b981", // emerald
-  "#f59e0b", // amber
-  "#ef4444", // red
-  "#ec4899", // pink
-  "#14b8a6", // teal
+  "#00d4a8", // teal
+  "#60a5fa", // sky
+  "#34d399", // emerald
+  "#f0a040", // amber
+  "#f06060", // coral
+  "#c084fc", // violet
+  "#fb923c", // orange
+  "#38bdf8", // cyan
 ];
 
 const MODEL_COLORS: Record<string, string> = {
-  opus: "#6366f1",
-  sonnet: "#8b5cf6",
-  haiku: "#06b6d4",
-  unknown: "#6b7280",
+  opus: "#00d4a8",
+  sonnet: "#60a5fa",
+  haiku: "#34d399",
+  unknown: "#807c88",
 };
 
 function repoShortName(repoUrl: string): string {
@@ -399,8 +399,8 @@ export default function CostsPage() {
             <AreaChart data={dailyCosts}>
               <defs>
                 <linearGradient id="costGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                  <stop offset="5%" stopColor="#00d4a8" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#00d4a8" stopOpacity={0} />
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
@@ -425,7 +425,7 @@ export default function CostsPage() {
                 type="monotone"
                 dataKey="cost"
                 name="Cost"
-                stroke="#6366f1"
+                stroke="#00d4a8"
                 fill="url(#costGradient)"
                 strokeWidth={2}
                 animationDuration={800}
@@ -547,14 +547,14 @@ export default function CostsPage() {
                     dataKey="value"
                   >
                     {costByType.map((_, i) => (
-                      <Cell key={i} fill={i === 0 ? "#6366f1" : "#8b5cf6"} stroke="none" />
+                      <Cell key={i} fill={i === 0 ? "#00d4a8" : "#60a5fa"} stroke="none" />
                     ))}
                   </Pie>
                   <Tooltip
                     formatter={(value) => formatCost(Number(value))}
                     contentStyle={{
-                      backgroundColor: "var(--color-bg-card, #1a1a2e)",
-                      border: "1px solid var(--color-border, #2a2a3e)",
+                      backgroundColor: "var(--color-bg-card, #1a1a20)",
+                      border: "1px solid var(--color-border, #2c2c36)",
                       borderRadius: "8px",
                       fontSize: "12px",
                     }}
@@ -566,7 +566,7 @@ export default function CostsPage() {
                   <div key={t.taskType} className="flex items-center gap-2">
                     <div
                       className="w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: i === 0 ? "#6366f1" : "#8b5cf6" }}
+                      style={{ backgroundColor: i === 0 ? "#00d4a8" : "#60a5fa" }}
                     />
                     <span className="text-xs text-text-muted">
                       {t.taskType} — {formatCost(t.totalCost)} ({t.taskCount})
@@ -643,8 +643,8 @@ export default function CostsPage() {
                         className={cn(
                           "text-xs px-2 py-0.5 rounded-full",
                           task.taskType === "review"
-                            ? "bg-violet-500/10 text-violet-400"
-                            : "bg-indigo-500/10 text-indigo-400",
+                            ? "bg-info/10 text-info"
+                            : "bg-primary/10 text-primary",
                         )}
                       >
                         {task.taskType}
