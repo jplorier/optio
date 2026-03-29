@@ -787,7 +787,7 @@ export const api = {
     request<void>(`/api/tasks/${taskId}/dependencies/${depTaskId}`, { method: "DELETE" }),
 
   // Workflow Templates
-  listWorkflows: () => request<{ workflows: any[] }>("/api/workflows"),
+  listWorkflows: () => request<{ workflows: any[] }>("/api/workflow-templates"),
 
   getWorkflow: (id: string) => request<{ workflow: any }>(`/api/workflows/${id}`),
 
@@ -804,7 +804,7 @@ export const api = {
     }>;
     status?: string;
   }) =>
-    request<{ workflow: any }>("/api/workflows", {
+    request<{ workflow: any }>("/api/workflow-templates", {
       method: "POST",
       body: JSON.stringify(data),
     }),

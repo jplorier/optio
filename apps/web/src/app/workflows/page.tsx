@@ -144,8 +144,8 @@ export default function WorkflowsPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-6 max-w-6xl mx-auto space-y-6">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold text-text">Workflows</h1>
           <p className="text-sm text-text-muted mt-1">
@@ -164,7 +164,7 @@ export default function WorkflowsPage() {
       {showForm && (
         <form
           onSubmit={handleSubmit}
-          className="bg-bg-surface border border-border rounded-xl p-6 space-y-4"
+          className="bg-bg-card border border-border rounded-xl p-6 space-y-4"
         >
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -313,7 +313,7 @@ export default function WorkflowsPage() {
             const stepCount = Array.isArray(t.steps) ? t.steps.length : 0;
             const isExpanded = expandedId === t.id;
             return (
-              <div key={t.id} className="bg-bg-surface border border-border rounded-xl">
+              <div key={t.id} className="bg-bg-card border border-border rounded-xl">
                 <div className="flex items-center justify-between p-4">
                   <button
                     className="flex items-center gap-3 text-left flex-1"
