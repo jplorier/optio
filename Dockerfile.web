@@ -8,9 +8,13 @@ WORKDIR /app
 # Copy workspace config
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
 
-# Copy package.json and tsconfig for workspace packages
+# Copy package.json for ALL workspace packages (pnpm needs full workspace graph)
+COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/tsconfig.json apps/web/
 COPY packages/shared/package.json packages/shared/tsconfig.json packages/shared/
+COPY packages/agent-adapters/package.json packages/agent-adapters/
+COPY packages/container-runtime/package.json packages/container-runtime/
+COPY packages/ticket-providers/package.json packages/ticket-providers/
 
 # Install all dependencies (dev deps needed for build)
 RUN pnpm install --frozen-lockfile --prod=false
@@ -24,14 +28,6 @@ COPY apps/web/ apps/web/
 
 # Build shared packages then web
 ENV NEXT_TELEMETRY_DISABLED=1
-
-# NEXT_PUBLIC_* vars are baked in at build time
-ARG NEXT_PUBLIC_API_URL=http://localhost:30400
-ARG NEXT_PUBLIC_WS_URL=ws://localhost:30400
-ARG NEXT_PUBLIC_AUTH_DISABLED=true
-ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
-ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
-ENV NEXT_PUBLIC_AUTH_DISABLED=$NEXT_PUBLIC_AUTH_DISABLED
 
 RUN pnpm turbo build --filter=@optio/shared
 RUN cd apps/web && npx next build
