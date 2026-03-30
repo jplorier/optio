@@ -59,6 +59,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: cd apps/web && npx next build
 
+  build-site:
+    name: Build Site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: cd apps/site && npx next build
+
   build-image:
     name: Build Agent Image
     runs-on: ubuntu-latest

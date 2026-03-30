@@ -1,7 +1,7 @@
-node_modules
-dist
-.next
-.turbo
+**/out
+**/.next
+**/.turbo
+**/dist
+**/node_modules
+**/helm
 pnpm-lock.yaml
-*.sql
-helm
