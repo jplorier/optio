@@ -74,6 +74,11 @@ export default function SetupPage() {
   const [codexAuthMode, setCodexAuthMode] = useState<"api-key" | "app-server">("api-key");
   const [codexAppServerUrl, setCodexAppServerUrl] = useState("");
 
+  // Step 3: Copilot token
+  const [copilotToken, setCopilotToken] = useState("");
+  const [copilotValidated, setCopilotValidated] = useState(false);
+  const [copilotError, setCopilotError] = useState("");
+
   // Step 4: Repos
   const [repos, setRepos] = useState<RepoEntry[]>([]);
   const [suggestedRepos, setSuggestedRepos] = useState<
@@ -147,6 +152,8 @@ export default function SetupPage() {
   const codexReady =
     codexAuthMode === "app-server" ? codexAppServerUrl.trim().length > 0 : openaiValidated;
 
+  const copilotReady = copilotValidated;
+
   const currentStep = STEPS[step];
 
   const goNext = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
@@ -204,6 +211,24 @@ export default function SetupPage() {
       }
     } catch (err) {
       setOpenaiError(err instanceof Error ? err.message : "Validation failed");
+    }
+    setLoading(false);
+  };
+
+  const validateCopilot = async (tokenOverride?: string) => {
+    const token = tokenOverride ?? copilotToken;
+    if (!token.trim()) return;
+    setLoading(true);
+    setCopilotError("");
+    try {
+      const res = await api.validateCopilotToken(token);
+      if (res.valid) {
+        setCopilotValidated(true);
+      } else {
+        setCopilotError(res.error ?? "Invalid token");
+      }
+    } catch (err) {
+      setCopilotError(err instanceof Error ? err.message : "Validation failed");
     }
     setLoading(false);
   };
@@ -296,6 +321,10 @@ export default function SetupPage() {
       } else if (openaiKey.trim() && openaiValidated) {
         await api.createSecret({ name: "CODEX_AUTH_MODE", value: "api-key" });
         await api.createSecret({ name: "OPENAI_API_KEY", value: openaiKey });
+      }
+      // Save Copilot token
+      if (copilotToken.trim() && copilotValidated) {
+        await api.createSecret({ name: "COPILOT_GITHUB_TOKEN", value: copilotToken });
       }
       goNext();
     } catch (err) {
@@ -882,6 +911,66 @@ export default function SetupPage() {
                 </div>
               </div>
 
+              {/* Copilot */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-medium text-text">
+                    Copilot (GitHub) <span className="text-text-muted font-normal">— optional</span>
+                  </span>
+                  {copilotReady && (
+                    <span className="text-success text-xs flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" /> Ready
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <p className="text-xs text-text-muted">
+                    Requires an active GitHub Copilot subscription. Provide a fine-grained PAT with
+                    the <strong>Copilot Requests</strong> permission, or an OAuth token (gho_).
+                    Classic PATs (ghp_) are not supported.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="password"
+                      value={copilotToken}
+                      onChange={(e) => {
+                        setCopilotToken(e.target.value);
+                        setCopilotValidated(false);
+                        setCopilotError("");
+                      }}
+                      onPaste={(e) => {
+                        const pasted = e.clipboardData.getData("text");
+                        if (pasted) {
+                          setCopilotToken(pasted);
+                          setCopilotValidated(false);
+                          setCopilotError("");
+                          setTimeout(() => validateCopilot(pasted), 100);
+                        }
+                      }}
+                      placeholder="github_pat_... or gho_..."
+                      className="flex-1 px-3 py-2 rounded-md bg-bg-card border border-border text-sm focus:outline-none focus:border-primary"
+                    />
+                    <button
+                      onClick={() => validateCopilot()}
+                      disabled={loading || !copilotToken.trim() || copilotValidated}
+                      className="px-3 py-2 rounded-md bg-bg-hover text-sm hover:bg-border disabled:opacity-50"
+                    >
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate"}
+                    </button>
+                  </div>
+                  {copilotError && (
+                    <p className="text-error text-xs flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> {copilotError}
+                    </p>
+                  )}
+                  {copilotValidated && (
+                    <p className="text-success text-xs flex items-center gap-1">
+                      <CheckCircle className="w-3 h-3" /> Token valid
+                    </p>
+                  )}
+                </div>
+              </div>
+
               <div className="flex items-center justify-between">
                 <button
                   onClick={goBack}
@@ -891,7 +980,7 @@ export default function SetupPage() {
                 </button>
                 <button
                   onClick={saveAgentKeysStep}
-                  disabled={(!claudeReady && !codexReady) || loading}
+                  disabled={(!claudeReady && !codexReady && !copilotReady) || loading}
                   className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover disabled:opacity-50"
                 >
                   {loading ? (

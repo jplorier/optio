@@ -103,7 +103,7 @@ k8s/            Local dev K8s manifests`}</CodeBlock>
               ["apps/web/src/components/", "React components (task-card, log-viewer, etc.)"],
               ["packages/shared/", "Types, state machine, prompt renderer, error classifier"],
               ["packages/container-runtime/", "Kubernetes container runtime interface"],
-              ["packages/agent-adapters/", "Claude Code and Codex agent adapters"],
+              ["packages/agent-adapters/", "Claude Code, Codex, and Copilot agent adapters"],
               ["packages/ticket-providers/", "GitHub Issues and Linear ticket providers"],
             ].map(([path, contents]) => (
               <tr key={path}>

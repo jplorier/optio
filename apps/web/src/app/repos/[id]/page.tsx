@@ -50,6 +50,8 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [claudeContextWindow, setClaudeContextWindow] = useState("1m");
   const [claudeThinking, setClaudeThinking] = useState(true);
   const [claudeEffort, setClaudeEffort] = useState("high");
+  const [copilotModel, setCopilotModel] = useState("");
+  const [copilotEffort, setCopilotEffort] = useState("");
   const [maxTurnsCoding, setMaxTurnsCoding] = useState(250);
   const [maxTurnsReview, setMaxTurnsReview] = useState(10);
   const [autoResume, setAutoResume] = useState(false);
@@ -119,6 +121,8 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setClaudeContextWindow(r.claudeContextWindow ?? "1m");
         setClaudeThinking(r.claudeThinking ?? true);
         setClaudeEffort(r.claudeEffort ?? "high");
+        setCopilotModel(r.copilotModel ?? "");
+        setCopilotEffort(r.copilotEffort ?? "");
         setMaxTurnsCoding(r.maxTurnsCoding ?? 250);
         setMaxTurnsReview(r.maxTurnsReview ?? 10);
         setReviewEnabled(r.reviewEnabled ?? false);
@@ -184,6 +188,8 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         claudeContextWindow,
         claudeThinking,
         claudeEffort,
+        copilotModel: copilotModel || undefined,
+        copilotEffort: copilotEffort || undefined,
         maxTurnsCoding,
         maxTurnsReview,
         reviewEnabled,
@@ -856,6 +862,44 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             placeholder="250"
             className="w-48 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           />
+        </div>
+      </section>
+
+      {/* Copilot Settings */}
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
+        <h2 className="text-sm font-medium">Copilot Settings</h2>
+        <p className="text-xs text-text-muted">
+          Configure GitHub Copilot model and behavior when using the Copilot agent for this repo.
+        </p>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Model</label>
+            <select
+              value={copilotModel}
+              onChange={(e) => setCopilotModel(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            >
+              <option value="">Default</option>
+              <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+              <option value="gpt-5">GPT-5</option>
+              <option value="gpt-5.2">GPT-5.2</option>
+              <option value="gpt-5.4">GPT-5.4</option>
+              <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Reasoning Effort</label>
+            <select
+              value={copilotEffort}
+              onChange={(e) => setCopilotEffort(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            >
+              <option value="">Default</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </div>
         </div>
       </section>
 

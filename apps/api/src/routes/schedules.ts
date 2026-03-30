@@ -10,7 +10,7 @@ const taskConfigSchema = z.object({
   prompt: z.string().min(1),
   repoUrl: z.string().url(),
   repoBranch: z.string().optional(),
-  agentType: z.enum(["claude-code", "codex"]),
+  agentType: z.enum(["claude-code", "codex", "copilot"]),
   maxRetries: z.number().int().min(0).max(10).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
 });

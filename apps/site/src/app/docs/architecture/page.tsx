@@ -186,8 +186,8 @@ export default function ArchitecturePage() {
           interface with Kubernetes implementation
         </li>
         <li>
-          <strong className="text-text-heading">@optio/agent-adapters</strong> — Claude Code and
-          Codex adapters (auth, environment, config)
+          <strong className="text-text-heading">@optio/agent-adapters</strong> — Claude Code, Codex,
+          and Copilot adapters (auth, environment, config)
         </li>
         <li>
           <strong className="text-text-heading">@optio/ticket-providers</strong> — GitHub Issues and

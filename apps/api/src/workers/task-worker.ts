@@ -13,6 +13,7 @@ import {
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { parseCodexEvent } from "../services/codex-event-parser.js";
+import { parseCopilotEvent } from "../services/copilot-event-parser.js";
 import { checkExistingPr } from "../services/pr-detection-service.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
@@ -273,6 +274,8 @@ export function startTaskWorker() {
           claudeContextWindow: repoConfig?.claudeContextWindow ?? undefined,
           claudeThinking: repoConfig?.claudeThinking ?? undefined,
           claudeEffort: repoConfig?.claudeEffort ?? undefined,
+          copilotModel: repoConfig?.copilotModel ?? undefined,
+          copilotEffort: repoConfig?.copilotEffort ?? undefined,
         });
 
         // ── MCP servers & custom skills injection ────────────────────
@@ -510,7 +513,9 @@ export function startTaskWorker() {
             const parsed =
               task.agentType === "codex"
                 ? parseCodexEvent(line, taskId)
-                : parseClaudeEvent(line, taskId);
+                : task.agentType === "copilot"
+                  ? parseCopilotEvent(line, taskId)
+                  : parseClaudeEvent(line, taskId);
             if (parsed.sessionId && !sessionId) {
               sessionId = parsed.sessionId;
               await taskService.updateTaskSession(taskId, sessionId);
@@ -1005,6 +1010,16 @@ export function buildAgentCommand(
         `codex exec --full-auto ${JSON.stringify(prompt)}${appServerFlag} --json`,
       ];
     }
+    case "copilot": {
+      const modelFlag = env.COPILOT_MODEL ? ` --model ${JSON.stringify(env.COPILOT_MODEL)}` : "";
+      const effortFlag = env.COPILOT_EFFORT ? ` --effort ${env.COPILOT_EFFORT}` : "";
+      return [
+        `echo "[optio] Running GitHub Copilot..."`,
+        `copilot --autopilot --yolo --max-autopilot-continues ${maxTurns} \\`,
+        `  --output-format json --no-ask-user${modelFlag}${effortFlag} \\`,
+        `  -p ${JSON.stringify(prompt)}`,
+      ];
+    }
     default:
       return [`echo "Unknown agent type: ${agentType}" && exit 1`];
   }
@@ -1030,6 +1045,15 @@ export function inferExitCode(agentType: string, logs: string): number {
         hasContentFilter
         ? 1
         : 0;
+    }
+    case "copilot": {
+      const hasResultError = logs.includes('"is_error":true') || logs.includes('"is_error": true');
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasAuthError =
+        /COPILOT_GITHUB_TOKEN|copilot.*auth|subscription.*required|unauthorized/i.test(logs);
+      const hasFatalError =
+        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
+      return hasResultError || hasErrorEvent || hasAuthError || hasFatalError ? 1 : 0;
     }
     case "claude-code":
     default: {

@@ -8,7 +8,7 @@ Optio is a workflow orchestration system for AI coding agents. Think of it as "C
 
 1. Spins up an isolated Kubernetes pod for the repository (pod-per-repo)
 2. Creates a git worktree for the task (multiple tasks can run concurrently per repo)
-3. Runs Claude Code or OpenAI Codex with a configurable prompt
+3. Runs Claude Code, OpenAI Codex, or GitHub Copilot with a configurable prompt
 4. Streams structured logs back to a web UI in real time
 5. Agent stops after opening a PR (no CI blocking)
 6. PR watcher tracks CI checks, review status, and merge state
@@ -341,7 +341,7 @@ packages/
                       session, workspace, mcp), state machine, prompt template renderer,
                       error classifier, constants, normalize-repo-url
   container-runtime/  ContainerRuntime interface, DockerContainerRuntime, KubernetesContainerRuntime
-  agent-adapters/     AgentAdapter interface, ClaudeCodeAdapter, CodexAdapter
+  agent-adapters/     AgentAdapter interface, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter
   ticket-providers/   TicketProvider interface, GitHubTicketProvider, LinearTicketProvider
 
 Dockerfile.api        API server Docker image (tsx-based)

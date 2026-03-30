@@ -177,7 +177,11 @@ export default function CreatingTasksPage() {
               ["prompt", "Yes", "The full prompt/instructions for the agent"],
               ["repoUrl", "Yes", "Repository URL (must be connected in Optio)"],
               ["repoBranch", "No", "Branch to base the work on (defaults to repo default)"],
-              ["agentType", "No", 'Agent type: "claude" or "codex" (defaults to "claude")'],
+              [
+                "agentType",
+                "No",
+                'Agent type: "claude-code", "codex", or "copilot" (defaults to "claude-code")',
+              ],
               ["priority", "No", "Integer priority (lower = higher, default 0)"],
               ["metadata", "No", "Arbitrary JSON metadata for tracking"],
             ].map(([field, required, desc]) => (

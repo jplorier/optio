@@ -78,6 +78,18 @@ const ERROR_PATTERNS: Array<{
     }),
   },
   {
+    pattern: /COPILOT_GITHUB_TOKEN|copilot.*auth|copilot.*unauthorized|subscription.*required/i,
+    classify: () => ({
+      category: "auth",
+      title: "GitHub Copilot token missing or invalid",
+      description:
+        "No valid Copilot token is configured. The Copilot agent requires a GitHub token with Copilot Requests permission and an active Copilot subscription.",
+      remedy:
+        "Go to Secrets and add COPILOT_GITHUB_TOKEN with a fine-grained PAT that has the Copilot Requests permission. Classic PATs (ghp_) are not supported.",
+      retryable: true,
+    }),
+  },
+  {
     pattern: /insufficient_quota|billing.*hard.*limit|exceeded.*current.*quota/i,
     classify: () => ({
       category: "auth",

@@ -27,7 +27,7 @@ You create a task          Optio runs the agent           Optio closes the loop
 
   GitHub Issue              Provision repo pod             CI fails?
   Manual task       ──→     Create git worktree    ──→       → Resume agent with failure context
-  Linear ticket             Run Claude Code / Codex        Review requests changes?
+  Linear ticket             Run Claude / Codex / Copilot   Review requests changes?
                             Open a PR                        → Resume agent with feedback
                                                            CI passes + approved?
                                                              → Squash-merge + close issue
@@ -35,7 +35,7 @@ You create a task          Optio runs the agent           Optio closes the loop
 
 1. **Intake** — tasks come from the web UI, GitHub Issues (one-click assign), or Linear tickets
 2. **Provisioning** — Optio finds or creates a Kubernetes pod for the repo, creates a git worktree for isolation
-3. **Execution** — the AI agent (Claude Code or OpenAI Codex) runs with your configured prompt, model, and settings
+3. **Execution** — the AI agent (Claude Code, OpenAI Codex, or GitHub Copilot) runs with your configured prompt, model, and settings
 4. **PR lifecycle** — Optio polls the PR every 30s for CI status, review state, and merge readiness
 5. **Feedback loop** — CI failures, merge conflicts, and review feedback automatically resume the agent with context
 6. **Completion** — PR is squash-merged, linked issues are closed, costs are recorded
@@ -67,7 +67,7 @@ You create a task          Optio runs the agent           Optio closes the loop
 │              │     │  ├─ Review Agent   │     │  └─────────────────────┘  │
 │              │     │  └─ Auth/Secrets   │     │                           │
 └──────────────┘     └─────────┬──────────┘     └───────────────────────────┘
-                               │                  ⚡ = Claude Code / Codex
+                               │                  ⚡ = Claude Code / Codex / Copilot
                         ┌──────┴──────┐
                         │  Postgres   │  Tasks, logs, events, secrets, repos
                         │  Redis      │  Job queue, pub/sub, live streaming
@@ -175,7 +175,7 @@ apps/
 packages/
   shared/             Types, task state machine, prompt templates, error classifier
   container-runtime/  Kubernetes pod lifecycle, exec, log streaming
-  agent-adapters/     Claude Code + Codex prompt/auth adapters
+  agent-adapters/     Claude Code + Codex + Copilot prompt/auth adapters
   ticket-providers/   GitHub Issues, Linear
 
 images/               Container Dockerfiles: base, node, python, go, rust, full
@@ -281,7 +281,7 @@ See the [Helm chart values](helm/optio/values.yaml) for full configuration optio
 | Deploy   | Helm chart                                                       |
 | Auth     | Multi-provider OAuth (GitHub, Google, GitLab)                    |
 | CI       | GitHub Actions (format, typecheck, test, build-web, build-image) |
-| Agents   | Claude Code, OpenAI Codex                                        |
+| Agents   | Claude Code, OpenAI Codex, GitHub Copilot                        |
 
 ## Contributing
 

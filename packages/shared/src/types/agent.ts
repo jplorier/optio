@@ -1,5 +1,6 @@
 export type ClaudeAuthMode = "api-key" | "max-subscription";
 export type CodexAuthMode = "api-key" | "app-server";
+export type CopilotAuthMode = "github-token";
 
 export interface AgentTaskInput {
   taskId: string;
@@ -11,6 +12,7 @@ export interface AgentTaskInput {
   codexAuthMode?: CodexAuthMode;
   /** The app-server WebSocket URL for Codex CLI (used when codexAuthMode is "app-server") */
   codexAppServerUrl?: string;
+  copilotAuthMode?: CopilotAuthMode;
   optioApiUrl?: string; // for apiKeyHelper callback
   /** The rendered system prompt (from the prompt template) */
   renderedPrompt?: string;
@@ -22,6 +24,8 @@ export interface AgentTaskInput {
   claudeContextWindow?: string;
   claudeThinking?: boolean;
   claudeEffort?: string;
+  copilotModel?: string;
+  copilotEffort?: string;
 }
 
 export interface AgentContainerConfig {

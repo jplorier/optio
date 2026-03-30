@@ -68,6 +68,17 @@ case "${OPTIO_AGENT_TYPE}" in
     echo "[optio] Running OpenAI Codex..."
     codex exec --full-auto "${OPTIO_PROMPT}" --json
     ;;
+  copilot)
+    echo "[optio] Running GitHub Copilot..."
+    COPILOT_FLAGS="--autopilot --yolo --output-format json --no-ask-user"
+    if [ -n "${COPILOT_MODEL:-}" ]; then
+      COPILOT_FLAGS="${COPILOT_FLAGS} --model ${COPILOT_MODEL}"
+    fi
+    if [ -n "${COPILOT_EFFORT:-}" ]; then
+      COPILOT_FLAGS="${COPILOT_FLAGS} --effort ${COPILOT_EFFORT}"
+    fi
+    copilot ${COPILOT_FLAGS} -p "${OPTIO_PROMPT}"
+    ;;
   *)
     echo "[optio] Unknown agent type: ${OPTIO_AGENT_TYPE}"
     exit 1
