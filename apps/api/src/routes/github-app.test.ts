@@ -14,10 +14,14 @@ vi.mock("../services/github-app-service.js", () => ({
   isGitHubAppConfigured: (...args: unknown[]) => mockIsGitHubAppConfigured(...args),
 }));
 
-import githubAppRoutes, { getCredentialSecret } from "./github-app.js";
+import githubAppRoutes, { getCredentialSecret, resetCredentialSecret } from "./github-app.js";
 
 // ─── Helpers ───
 
+// Ensure the credential secret is derived from a known key, regardless of
+// module load order in the test suite.
+process.env.OPTIO_ENCRYPTION_KEY = "test-encryption-key-for-unit-tests";
+resetCredentialSecret();
 const VALID_BEARER = `Bearer ${getCredentialSecret()}`;
 
 async function buildTestApp(): Promise<FastifyInstance> {

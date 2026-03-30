@@ -1,9 +1,9 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { getGitHubToken } from "../services/github-token-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
 
-function deriveCredentialSecret(): string {
+function deriveCredentialSecret(): string | null {
   if (process.env.OPTIO_CREDENTIAL_SECRET) return process.env.OPTIO_CREDENTIAL_SECRET;
   if (process.env.OPTIO_ENCRYPTION_KEY) {
     // Derive a separate secret — never expose the raw encryption key to pods.
@@ -12,15 +12,34 @@ function deriveCredentialSecret(): string {
       .update(`${process.env.OPTIO_ENCRYPTION_KEY}:credential-secret`)
       .digest("hex");
   }
-  return randomBytes(32).toString("hex");
+  return null;
 }
 
-// Shared secret for pod-to-API credential requests.
-// Injected into pods via OPTIO_CREDENTIAL_SECRET env var.
-const CREDENTIAL_SECRET = deriveCredentialSecret();
+// Lazy-initialized credential secret. Computed on first access so that:
+// 1. Local dev without GitHub App doesn't crash on module load
+// 2. Test module loading order doesn't matter
+let credentialSecret: string | null | undefined;
+
+function getOrDeriveCredentialSecret(): string | null {
+  if (credentialSecret === undefined) {
+    credentialSecret = deriveCredentialSecret();
+  }
+  return credentialSecret;
+}
 
 export function getCredentialSecret(): string {
-  return CREDENTIAL_SECRET;
+  const secret = getOrDeriveCredentialSecret();
+  if (!secret) {
+    throw new Error(
+      "OPTIO_CREDENTIAL_SECRET or OPTIO_ENCRYPTION_KEY required for credential endpoint",
+    );
+  }
+  return secret;
+}
+
+/** Re-derive the credential secret from current env vars. For testing only. */
+export function resetCredentialSecret(): void {
+  credentialSecret = undefined;
 }
 
 export function buildStatusResponse(): {
@@ -41,14 +60,22 @@ export function buildStatusResponse(): {
 export default async function githubAppRoutes(app: FastifyInstance): Promise<void> {
   /**
    * Internal endpoint — called by credential helpers in agent pods.
+   * Cluster-internal only: the Helm ingress blocks /api/internal/* from public traffic.
+   * Pods reach this via the K8s service DNS (optio-api.optio.svc.cluster.local).
+   *
    * With taskId: returns the task creator's user token (for task-scoped operations).
    * Without taskId: returns an installation token (for pod-level operations like clone).
    */
   app.get<{ Querystring: { taskId?: string } }>(
     "/api/internal/git-credentials",
     async (req, reply) => {
+      const secret = getOrDeriveCredentialSecret();
+      if (!secret) {
+        return reply.status(503).send({ error: "Credential secret not configured" });
+      }
+
       const authHeader = req.headers.authorization ?? "";
-      const expected = `Bearer ${CREDENTIAL_SECRET}`;
+      const expected = `Bearer ${secret}`;
       const isValid =
         authHeader.length === expected.length &&
         timingSafeEqual(Buffer.from(authHeader), Buffer.from(expected));

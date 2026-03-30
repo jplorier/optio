@@ -148,15 +148,31 @@ export function startPrWatcherWorker() {
   const worker = new Worker(
     "pr-watcher",
     async () => {
-      // Cache GitHub tokens per task to avoid repeated DB lookups
+      // Cache GitHub tokens by userId (not taskId) to avoid redundant DB lookups
+      // when multiple tasks from the same user are in pr_opened state.
       const tokenCache = new Map<string, string | null>();
-      const getGithubToken = async (taskId: string | null): Promise<string | null> => {
-        const cacheKey = taskId ?? "__server__";
+      const getGithubTokenForTask = async (task: {
+        id: string;
+        createdBy: string | null;
+      }): Promise<string | null> => {
+        const cacheKey = task.createdBy ?? "__server__";
         if (tokenCache.has(cacheKey)) return tokenCache.get(cacheKey)!;
         try {
-          const token = taskId
-            ? await getGitHubToken({ taskId })
+          const token = task.createdBy
+            ? await getGitHubToken({ userId: task.createdBy })
             : await getGitHubToken({ server: true });
+          tokenCache.set(cacheKey, token);
+          return token;
+        } catch {
+          tokenCache.set(cacheKey, null);
+          return null;
+        }
+      };
+      const getServerGithubToken = async (): Promise<string | null> => {
+        const cacheKey = "__server__";
+        if (tokenCache.has(cacheKey)) return tokenCache.get(cacheKey)!;
+        try {
+          const token = await getGitHubToken({ server: true });
           tokenCache.set(cacheKey, token);
           return token;
         } catch {
@@ -178,7 +194,7 @@ export function startPrWatcherWorker() {
 
       if (openPrTasks.length > 0) {
         for (const task of openPrTasks) {
-          const githubToken = await getGithubToken(task.id);
+          const githubToken = await getGithubTokenForTask(task);
           if (!githubToken) continue;
 
           const headers = {
@@ -522,7 +538,7 @@ export function startPrWatcherWorker() {
               sql`${sessionPrs.sessionId} IN ${sessionIds} AND (${sessionPrs.prState} IS NULL OR ${sessionPrs.prState} = 'open')`,
             );
 
-          const sessionGithubToken = await getGithubToken(null);
+          const sessionGithubToken = await getServerGithubToken();
           if (openSessionPrs.length > 0 && sessionGithubToken) {
             const sessionHeaders = {
               Authorization: `Bearer ${sessionGithubToken}`,

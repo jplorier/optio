@@ -271,6 +271,10 @@ credentialSecret: ""
 ingress:
   enabled: false
   className: nginx
+  # The ingress template automatically blocks /api/internal/* from public traffic
+  # via an nginx server-snippet. These endpoints use bearer token auth (not session
+  # auth) and must only be reachable within the cluster. If using a non-nginx ingress
+  # controller, add equivalent path-blocking rules in the annotations below.
   annotations: {}
   # cert-manager TLS support. When enabled, the chart adds the
   # cert-manager.io/cluster-issuer annotation and generates a TLS block
