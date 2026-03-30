@@ -29,6 +29,10 @@ vi.mock("../workers/task-worker.js", () => ({
   },
 }));
 
+vi.mock("./repo-service.js", () => ({
+  getRepoByUrl: vi.fn().mockResolvedValue(null),
+}));
+
 vi.mock("../logger.js", () => ({
   logger: {
     info: vi.fn(),
@@ -72,6 +76,7 @@ describe("ticket-sync-service", () => {
           repo: null,
         },
       ]),
+      fetchTicketComments: vi.fn().mockResolvedValue([]),
       addComment: vi.fn().mockResolvedValue(undefined),
     };
     vi.mocked(getTicketProvider).mockReturnValue(mockProvider as any);
@@ -160,6 +165,7 @@ describe("ticket-sync-service", () => {
           repo: null,
         },
       ]),
+      fetchTicketComments: vi.fn().mockResolvedValue([]),
       addComment: vi.fn(),
     } as any);
 
@@ -198,6 +204,7 @@ describe("ticket-sync-service", () => {
           repo: "owner/specific-repo",
         },
       ]),
+      fetchTicketComments: vi.fn().mockResolvedValue([]),
       addComment: vi.fn(),
     } as any);
 
@@ -280,6 +287,7 @@ describe("ticket-sync-service", () => {
           repo: null,
         },
       ]),
+      fetchTicketComments: vi.fn().mockResolvedValue([]),
       addComment: vi.fn().mockRejectedValue(new Error("comment failed")),
     } as any);
 
