@@ -446,7 +446,8 @@ export function startTaskWorker() {
         // If a previous run already opened a PR for this task's branch,
         // skip the agent entirely and transition straight to pr_opened.
         // This avoids wasting compute on tasks killed by restarts/reconcile.
-        const isReviewTask0 = !!reviewOverride || task.taskType === "review";
+        const isReviewTask0 =
+          !!reviewOverride || task.taskType === "review" || task.taskType === "pr_review";
         if (!restartFromBranch && !resumeSessionId && !isReviewTask0) {
           const existingPr = await checkExistingPr(task.repoUrl, taskId, taskWorkspaceId);
           if (existingPr) {
@@ -467,7 +468,8 @@ export function startTaskWorker() {
         }
 
         // Build the agent command based on type
-        const isReviewTask = !!reviewOverride || task.taskType === "review";
+        const isReviewTask =
+          !!reviewOverride || task.taskType === "review" || task.taskType === "pr_review";
         const agentCommand = buildAgentCommand(task.agentType, allEnv, {
           resumeSessionId,
           resumePrompt,
@@ -653,6 +655,15 @@ export function startTaskWorker() {
           );
           log.info({ prUrl: detectedPrUrl }, "PR opened");
         } else if (result.success || isReviewTask) {
+          // For pr_review tasks, parse the structured review output before cleanup
+          if (task.taskType === "pr_review") {
+            try {
+              const { parseReviewOutput } = await import("../services/pr-review-service.js");
+              await parseReviewOutput(taskId);
+            } catch (err) {
+              log.warn({ err }, "Failed to parse pr_review output — draft may need manual editing");
+            }
+          }
           await repoPool.updateWorktreeState(taskId, "removed");
           await taskService.transitionTask(
             taskId,

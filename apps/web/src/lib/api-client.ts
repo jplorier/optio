@@ -917,6 +917,60 @@ export const api = {
 
   deleteSkill: (id: string) => request<void>(`/api/skills/${id}`, { method: "DELETE" }),
 
+  // PR Reviews
+  listPullRequests: (params?: { repoId?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.repoId) qs.set("repoId", params.repoId);
+    const query = qs.toString();
+    return request<{ pullRequests: any[] }>(`/api/pull-requests${query ? `?${query}` : ""}`);
+  },
+
+  createPrReview: (data: { prUrl: string }) =>
+    request<{ task: any; draft: any }>("/api/pull-requests/review", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getReviewDraft: (taskId: string) => request<{ draft: any }>(`/api/tasks/${taskId}/review-draft`),
+
+  updateReviewDraft: (
+    taskId: string,
+    data: {
+      summary?: string;
+      verdict?: string;
+      fileComments?: Array<{ path: string; line?: number; side?: string; body: string }>;
+    },
+  ) =>
+    request<{ draft: any }>(`/api/tasks/${taskId}/review-draft`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  submitReviewDraft: (taskId: string) =>
+    request<{ draft: any; githubReviewUrl?: string }>(`/api/tasks/${taskId}/review-draft/submit`, {
+      method: "POST",
+    }),
+
+  reReview: (taskId: string) =>
+    request<{ task: any; draft: any }>(`/api/tasks/${taskId}/review-draft/re-review`, {
+      method: "POST",
+    }),
+
+  mergePullRequest: (data: { prUrl: string; mergeMethod: "merge" | "squash" | "rebase" }) =>
+    request<{ merged: boolean }>("/api/pull-requests/merge", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  getPrStatus: (prUrl: string) =>
+    request<{
+      checksStatus: string;
+      reviewStatus: string;
+      mergeable: boolean | null;
+      prState: string;
+      headSha: string;
+    }>(`/api/pull-requests/status?prUrl=${encodeURIComponent(prUrl)}`),
+
   // Optio Agent Settings
   getOptioSettings: () => request<{ settings: any }>("/api/optio/settings"),
 

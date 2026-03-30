@@ -8,10 +8,11 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import { Plus, RotateCcw, XCircle, Loader2, Zap, GitBranch, CircleDot, Check } from "lucide-react";
+import { PrBrowser } from "@/components/pr-browser";
 
 export default function TasksPage() {
   usePageTitle("Tasks");
-  const [tab, setTab] = useState<"tasks" | "issues">("tasks");
+  const [tab, setTab] = useState<"tasks" | "issues" | "prs">("tasks");
   const [bulkLoading, setBulkLoading] = useState(false);
 
   const handleRetryFailed = async () => {
@@ -91,11 +92,22 @@ export default function TasksPage() {
           className={cn(
             "px-5 py-3 text-[13px] font-medium border-b-2 transition-colors",
             tab === "issues"
-              ? "border-primary text-primary"
+              ? "border-primary text-text"
               : "border-transparent text-text-muted hover:text-text",
           )}
         >
           GitHub Issues
+        </button>
+        <button
+          onClick={() => setTab("prs")}
+          className={cn(
+            "px-5 py-3 text-[13px] font-medium border-b-2 transition-colors",
+            tab === "prs"
+              ? "border-primary text-text"
+              : "border-transparent text-text-muted hover:text-text",
+          )}
+        >
+          Pull Requests
         </button>
       </div>
 
@@ -112,6 +124,7 @@ export default function TasksPage() {
         </Suspense>
       )}
       {tab === "issues" && <IssuesBrowser />}
+      {tab === "prs" && <PrBrowser />}
     </div>
   );
 }

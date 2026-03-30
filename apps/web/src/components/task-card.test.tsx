@@ -81,7 +81,7 @@ describe("TaskCard", () => {
 
   it("renders review badge for review tasks", () => {
     render(<TaskCard task={{ ...baseTask, taskType: "review" }} />);
-    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(screen.getByText("Automatic Review")).toBeInTheDocument();
   });
 
   it("shows error section for failed tasks", () => {

@@ -11,6 +11,7 @@ import { StateBadge } from "@/components/state-badge";
 import { api } from "@/lib/api-client";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { classifyError } from "@optio/shared";
+import { ReviewDraftPanel } from "@/components/review-draft-panel";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import {
   Loader2,
@@ -808,6 +809,13 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               Timeline
             </button>
           </div>
+
+          {/* Review Draft Panel (for pr_review tasks) */}
+          {task?.taskType === "pr_review" && (
+            <div className="shrink-0 px-4 pt-4">
+              <ReviewDraftPanel taskId={id} taskState={task.state} />
+            </div>
+          )}
 
           {/* Log content via LogViewer */}
           <div className="flex-1 overflow-hidden">

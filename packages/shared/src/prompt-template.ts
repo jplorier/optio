@@ -108,6 +108,77 @@ export const DEFAULT_REVIEW_PROMPT_TEMPLATE = `You are a code reviewer. You have
 
 export const REVIEW_TASK_FILE_PATH = ".optio/review-context.md";
 
+export const PR_REVIEW_OUTPUT_PATH = ".optio/review-draft.json";
+
+export const DEFAULT_PR_REVIEW_PROMPT_TEMPLATE = `You are a code review assistant. You have been assigned to review exactly ONE pull request: PR #{{PR_NUMBER}} in the {{REPO_NAME}} repository.
+
+## IMPORTANT
+- You are reviewing ONLY PR #{{PR_NUMBER}}. Do not look at, review, or comment on any other PRs.
+- Do NOT submit the review to GitHub. Do NOT run \`gh pr review\`. Only write your findings to a file.
+- Do NOT modify any code, create commits, push changes, or check out branches.
+
+## Steps
+
+1. Read the diff for PR #{{PR_NUMBER}}:
+   \`\`\`
+   gh pr diff {{PR_NUMBER}}
+   \`\`\`
+
+2. Read the review context for background on this PR:
+   \`\`\`
+   cat {{TASK_FILE}}
+   \`\`\`
+
+3. Explore the relevant source code to understand how the changes fit into the broader codebase.
+
+{{#if TEST_COMMAND}}
+4. Run the test suite to verify the changes work:
+   \`\`\`
+   {{TEST_COMMAND}}
+   \`\`\`
+{{/if}}
+
+5. Review the code changes for:
+   - Correctness: Does the code do what the PR description says?
+   - Tests: Are there adequate tests for the new behavior?
+   - Bugs: Any logic errors, edge cases, or regressions?
+   - Security: Any vulnerabilities introduced?
+   - Style: Does it follow the repo's conventions?
+
+6. Write your review as a JSON file to \`{{OUTPUT_PATH}}\`. Use this exact command:
+
+   \`\`\`
+   cat > {{OUTPUT_PATH}} << 'OPTIO_REVIEW_EOF'
+   {
+     "verdict": "approve or request_changes or comment",
+     "summary": "Your overall review summary in markdown",
+     "fileComments": [
+       {
+         "path": "relative/file/path.ts",
+         "line": 42,
+         "body": "Description of the issue or suggestion"
+       }
+     ]
+   }
+   OPTIO_REVIEW_EOF
+   \`\`\`
+
+## Output Format
+
+- \`verdict\` must be exactly one of: \`"approve"\`, \`"request_changes"\`, or \`"comment"\`
+- \`summary\` should be a concise markdown overview of your findings
+- \`fileComments\` is an array of inline comments. Each must have \`path\` and \`body\`. The \`line\` field is the line number in the new file (optional but preferred).
+- Only flag real issues, not style nitpicks.
+- Be specific about what needs fixing and why.
+- If the code is solid, set verdict to \`"approve"\` and explain why in the summary.
+
+## Scope
+
+- Review ONLY PR #{{PR_NUMBER}}. Nothing else.
+- Do NOT run \`gh pr list\` or browse other PRs.
+- Your working directory is your worktree. Do not navigate outside it.
+`;
+
 /**
  * Render a prompt template by replacing {{VARIABLE}} placeholders.
  */

@@ -74,6 +74,32 @@ export interface CreateTaskInput {
   createdBy?: string;
 }
 
+// ── Review Draft types (PR Review Assistant) ────────────────────────────────
+
+export interface ReviewFileComment {
+  path: string;
+  line?: number;
+  side?: string;
+  body: string;
+}
+
+export interface ReviewDraft {
+  id: string;
+  taskId: string;
+  prUrl: string;
+  prNumber: number;
+  repoOwner: string;
+  repoName: string;
+  headSha: string;
+  state: "drafting" | "ready" | "submitted" | "stale";
+  verdict: "approve" | "request_changes" | "comment" | null;
+  summary: string | null;
+  fileComments: ReviewFileComment[] | null;
+  submittedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface WorkflowStep {
   id: string;
   title: string;

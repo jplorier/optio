@@ -1,7 +1,7 @@
 import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks, taskEvents, sessionPrs, interactiveSessions } from "../db/schema.js";
+import { tasks, taskEvents, sessionPrs, interactiveSessions, reviewDrafts } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
 import { getGitHubToken } from "../services/github-token-service.js";
 import * as taskService from "../services/task-service.js";
@@ -606,6 +606,55 @@ export function startPrWatcherWorker() {
         }
       } catch (err) {
         logger.warn({ err }, "Failed to run session PR watcher");
+      }
+
+      // --- Review draft staleness detection ---
+      // Check if any ready review drafts have become stale (new commits pushed to PR)
+      try {
+        const readyDrafts = await db
+          .select()
+          .from(reviewDrafts)
+          .where(eq(reviewDrafts.state, "ready"));
+
+        if (readyDrafts.length > 0) {
+          const staleToken = await getServerGithubToken();
+          if (staleToken) {
+            const staleHeaders = {
+              Authorization: `Bearer ${staleToken}`,
+              "User-Agent": "Optio",
+              Accept: "application/vnd.github.v3+json",
+            };
+
+            for (const draft of readyDrafts) {
+              try {
+                const prRes = await fetch(
+                  `https://api.github.com/repos/${draft.repoOwner}/${draft.repoName}/pulls/${draft.prNumber}`,
+                  { headers: staleHeaders },
+                );
+                if (!prRes.ok) continue;
+                const prData = (await prRes.json()) as any;
+
+                if (prData.head?.sha && prData.head.sha !== draft.headSha) {
+                  const { markDraftStale } = await import("../services/pr-review-service.js");
+                  await markDraftStale(draft.id);
+                  logger.info(
+                    {
+                      draftId: draft.id,
+                      taskId: draft.taskId,
+                      oldSha: draft.headSha,
+                      newSha: prData.head.sha,
+                    },
+                    "Review draft marked stale — PR has new commits",
+                  );
+                }
+              } catch (err) {
+                logger.warn({ err, draftId: draft.id }, "Failed to check draft staleness");
+              }
+            }
+          }
+        }
+      } catch (err) {
+        logger.warn({ err }, "Failed to run review draft staleness check");
       }
     },
     { connection: connectionOpts, concurrency: 1 },

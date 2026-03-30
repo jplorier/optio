@@ -64,7 +64,13 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
               {task.taskType === "review" && (
                 <span className="shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-info/10 text-info">
                   <Bot className="w-3 h-3" />
-                  Review
+                  Automatic Review
+                </span>
+              )}
+              {task.taskType === "pr_review" && (
+                <span className="shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary">
+                  <Bot className="w-3 h-3" />
+                  Review Assistant
                 </span>
               )}
             </div>

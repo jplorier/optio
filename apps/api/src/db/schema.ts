@@ -607,6 +607,44 @@ export const optioActions = pgTable(
   ],
 );
 
+// ── Review Drafts (PR Review Assistant) ─────────────────────────────────────
+
+export const reviewDraftStateEnum = pgEnum("review_draft_state", [
+  "drafting",
+  "ready",
+  "submitted",
+  "stale",
+]);
+
+export const reviewDrafts = pgTable(
+  "review_drafts",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    prUrl: text("pr_url").notNull(),
+    prNumber: integer("pr_number").notNull(),
+    repoOwner: text("repo_owner").notNull(),
+    repoName: text("repo_name").notNull(),
+    headSha: text("head_sha").notNull(),
+    state: reviewDraftStateEnum("state").notNull().default("drafting"),
+    verdict: text("verdict"), // "approve" | "request_changes" | "comment"
+    summary: text("summary"),
+    fileComments:
+      jsonb("file_comments").$type<
+        Array<{ path: string; line?: number; side?: string; body: string }>
+      >(),
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("review_drafts_task_id_idx").on(table.taskId),
+    index("review_drafts_state_idx").on(table.state),
+  ],
+);
+
 export const promptTemplates = pgTable("prompt_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull().unique(),
