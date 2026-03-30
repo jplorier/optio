@@ -46,7 +46,7 @@ async function buildTestApp(): Promise<FastifyInstance> {
   app.decorateRequest("user", undefined as any);
   app.decorateRequest("userId", undefined as any);
   app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { workspaceId: "ws-1" };
+    (req as any).user = { id: "user-1", workspaceId: "ws-1" };
     (req as any).userId = "user-1";
     done();
   });

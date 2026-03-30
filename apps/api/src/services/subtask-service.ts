@@ -37,6 +37,7 @@ export async function createSubtask(input: SubtaskInput) {
     repoUrl: parent.repoUrl,
     agentType: input.agentType ?? parent.agentType,
     priority: input.priority ?? Math.max(1, (parent.priority ?? 100) - 1),
+    createdBy: parent.createdBy ?? undefined,
   });
 
   // Set subtask fields
@@ -186,8 +187,8 @@ export async function onSubtaskComplete(subtaskId: string) {
 
       if (repoConfig?.autoMerge) {
         try {
-          const { retrieveSecret } = await import("./secret-service.js");
-          const githubToken = await retrieveSecret("GITHUB_TOKEN");
+          const { getGitHubToken } = await import("./github-token-service.js");
+          const githubToken = await getGitHubToken({ server: true });
 
           // Parse PR number from URL
           const prMatch = parent.prUrl.match(/\/pull\/(\d+)/);

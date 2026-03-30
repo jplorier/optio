@@ -11,6 +11,13 @@ metadata:
     {{- if and .Values.ingress.certManager .Values.ingress.certManager.enabled }}
     cert-manager.io/cluster-issuer: {{ .Values.ingress.certManager.clusterIssuer | quote }}
     {{- end }}
+    # Block /api/internal/* from public traffic — these endpoints use bearer
+    # token auth (not session auth) and must only be reachable within the cluster.
+    # Pods access them via the K8s service DNS, which bypasses the ingress.
+    nginx.ingress.kubernetes.io/server-snippet: |
+      location /api/internal/ {
+        return 404;
+      }
     {{- with .Values.ingress.annotations }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

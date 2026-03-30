@@ -3,7 +3,7 @@ import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks, taskEvents, sessionPrs, interactiveSessions } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
-import { retrieveSecretWithFallback } from "../services/secret-service.js";
+import { getGitHubToken } from "../services/github-token-service.js";
 import * as taskService from "../services/task-service.js";
 import { updateSessionPr } from "../services/interactive-session-service.js";
 import { taskQueue } from "./task-worker.js";
@@ -148,13 +148,31 @@ export function startPrWatcherWorker() {
   const worker = new Worker(
     "pr-watcher",
     async () => {
-      // Cache GitHub tokens per workspace to avoid repeated DB lookups
+      // Cache GitHub tokens by userId (not taskId) to avoid redundant DB lookups
+      // when multiple tasks from the same user are in pr_opened state.
       const tokenCache = new Map<string, string | null>();
-      const getGithubToken = async (workspaceId: string | null): Promise<string | null> => {
-        const cacheKey = workspaceId ?? "__global__";
+      const getGithubTokenForTask = async (task: {
+        id: string;
+        createdBy: string | null;
+      }): Promise<string | null> => {
+        const cacheKey = task.createdBy ?? "__server__";
         if (tokenCache.has(cacheKey)) return tokenCache.get(cacheKey)!;
         try {
-          const token = await retrieveSecretWithFallback("GITHUB_TOKEN", "global", workspaceId);
+          const token = task.createdBy
+            ? await getGitHubToken({ userId: task.createdBy })
+            : await getGitHubToken({ server: true });
+          tokenCache.set(cacheKey, token);
+          return token;
+        } catch {
+          tokenCache.set(cacheKey, null);
+          return null;
+        }
+      };
+      const getServerGithubToken = async (): Promise<string | null> => {
+        const cacheKey = "__server__";
+        if (tokenCache.has(cacheKey)) return tokenCache.get(cacheKey)!;
+        try {
+          const token = await getGitHubToken({ server: true });
           tokenCache.set(cacheKey, token);
           return token;
         } catch {
@@ -176,8 +194,7 @@ export function startPrWatcherWorker() {
 
       if (openPrTasks.length > 0) {
         for (const task of openPrTasks) {
-          const taskWsId = task.workspaceId ?? null;
-          const githubToken = await getGithubToken(taskWsId);
+          const githubToken = await getGithubTokenForTask(task);
           if (!githubToken) continue;
 
           const headers = {
@@ -284,7 +301,7 @@ export function startPrWatcherWorker() {
 
             // --- Decide what action to take ---
             const { getRepoByUrl } = await import("../services/repo-service.js");
-            const repoConfig = await getRepoByUrl(task.repoUrl, taskWsId);
+            const repoConfig = await getRepoByUrl(task.repoUrl, task.workspaceId ?? null);
             const existingReview = await db
               .select({ id: tasks.id })
               .from(tasks)
@@ -521,7 +538,7 @@ export function startPrWatcherWorker() {
               sql`${sessionPrs.sessionId} IN ${sessionIds} AND (${sessionPrs.prState} IS NULL OR ${sessionPrs.prState} = 'open')`,
             );
 
-          const sessionGithubToken = await getGithubToken(null);
+          const sessionGithubToken = await getServerGithubToken();
           if (openSessionPrs.length > 0 && sessionGithubToken) {
             const sessionHeaders = {
               Authorization: `Bearer ${sessionGithubToken}`,
