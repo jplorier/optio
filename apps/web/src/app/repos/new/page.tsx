@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
+import { NumberInput } from "@/components/number-input";
 import { toast } from "sonner";
 import { PRESET_IMAGES, type PresetImageId } from "@optio/shared";
 import {
@@ -605,24 +606,24 @@ function AgentStep({
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-xs text-text-muted mb-1">Max Turns</label>
-          <input
-            type="number"
+          <NumberInput
             min={1}
             max={1000}
             value={maxTurnsCoding}
-            onChange={(e) => setMaxTurnsCoding(parseInt(e.target.value, 10) || 250)}
+            onChange={(v) => setMaxTurnsCoding(v)}
+            fallback={250}
             placeholder="250"
             className={inputClass}
           />
         </div>
         <div>
           <label className="block text-xs text-text-muted mb-1">Max Concurrent Tasks</label>
-          <input
-            type="number"
+          <NumberInput
             min={1}
             max={50}
             value={maxConcurrentTasks}
-            onChange={(e) => setMaxConcurrentTasks(parseInt(e.target.value, 10) || 2)}
+            onChange={(v) => setMaxConcurrentTasks(v)}
+            fallback={2}
             className={inputClass}
           />
         </div>

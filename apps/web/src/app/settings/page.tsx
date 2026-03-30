@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
+import { NumberInput } from "@/components/number-input";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -962,15 +963,12 @@ function OptioAgentSettings() {
         <p className="text-xs text-text-muted mb-2">
           Maximum back-and-forth exchanges per session (5–50).
         </p>
-        <input
-          type="number"
-          value={maxTurns}
-          onChange={(e) => {
-            const v = parseInt(e.target.value, 10);
-            if (!isNaN(v)) setMaxTurns(Math.max(5, Math.min(50, v)));
-          }}
+        <NumberInput
           min={5}
           max={50}
+          value={maxTurns}
+          onChange={(v) => setMaxTurns(v)}
+          fallback={25}
           className="w-32 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
         />
       </div>

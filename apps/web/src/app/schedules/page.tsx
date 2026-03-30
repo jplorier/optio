@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api-client";
+import { NumberInput } from "@/components/number-input";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -448,40 +449,32 @@ export default function SchedulesPage() {
               </div>
               <div>
                 <label className="block text-sm text-text-muted mb-1">Max Retries</label>
-                <input
-                  type="number"
+                <NumberInput
                   min={0}
                   max={10}
                   value={form.taskConfig.maxRetries}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     setForm((f) => ({
                       ...f,
-                      taskConfig: {
-                        ...f.taskConfig,
-                        maxRetries: parseInt(e.target.value, 10) || 0,
-                      },
+                      taskConfig: { ...f.taskConfig, maxRetries: v },
                     }))
                   }
-                  className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                  fallback={0}
                 />
               </div>
               <div>
                 <label className="block text-sm text-text-muted mb-1">Priority</label>
-                <input
-                  type="number"
+                <NumberInput
                   min={1}
                   max={1000}
                   value={form.taskConfig.priority}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     setForm((f) => ({
                       ...f,
-                      taskConfig: {
-                        ...f.taskConfig,
-                        priority: parseInt(e.target.value, 10) || 100,
-                      },
+                      taskConfig: { ...f.taskConfig, priority: v },
                     }))
                   }
-                  className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                  fallback={100}
                 />
               </div>
             </div>

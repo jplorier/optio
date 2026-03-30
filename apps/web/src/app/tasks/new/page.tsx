@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
+import { NumberInput } from "@/components/number-input";
 import { Loader2, Sparkles, Save, BookTemplate, Link2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -303,14 +304,12 @@ export default function NewTaskPage() {
           <p className="text-xs text-text-muted/60 mb-1.5">
             Lower number = higher priority. Default is 100.
           </p>
-          <input
-            type="number"
+          <NumberInput
             min={1}
             max={1000}
             value={form.priority}
-            onChange={(e) =>
-              setForm((f) => ({ ...f, priority: parseInt(e.target.value, 10) || 100 }))
-            }
+            onChange={(v) => setForm((f) => ({ ...f, priority: v }))}
+            fallback={100}
             className="w-24 px-3 py-2 rounded-lg bg-bg-card border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
           />
         </div>

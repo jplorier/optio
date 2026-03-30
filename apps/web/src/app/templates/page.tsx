@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api-client";
+import { NumberInput } from "@/components/number-input";
 import { Loader2, Plus, Trash2, FileText, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
@@ -175,14 +176,12 @@ export default function TemplatesPage() {
             </div>
             <div>
               <label className="block text-sm text-text-muted mb-1.5">Priority</label>
-              <input
-                type="number"
+              <NumberInput
                 min={1}
                 max={1000}
                 value={form.priority}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, priority: parseInt(e.target.value, 10) || 100 }))
-                }
+                onChange={(v) => setForm((f) => ({ ...f, priority: v }))}
+                fallback={100}
                 className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
               />
             </div>

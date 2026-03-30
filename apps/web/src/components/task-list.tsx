@@ -561,9 +561,8 @@ export function TaskList() {
                 <DollarSign className="w-3 h-3 inline" /> Cost Min
               </label>
               <input
-                type="number"
-                step="0.01"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 value={filters.costMin}
                 onChange={(e) => updateFilter("costMin", e.target.value)}
                 placeholder="0.00"
@@ -575,9 +574,8 @@ export function TaskList() {
                 <DollarSign className="w-3 h-3 inline" /> Cost Max
               </label>
               <input
-                type="number"
-                step="0.01"
-                min="0"
+                type="text"
+                inputMode="decimal"
                 value={filters.costMax}
                 onChange={(e) => updateFilter("costMax", e.target.value)}
                 placeholder="99.99"

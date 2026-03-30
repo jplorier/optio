@@ -334,7 +334,8 @@ export function ReviewDraftPanel({ taskId, taskState }: ReviewDraftPanelProps) {
                         )
                       }
                       placeholder="Line"
-                      type="number"
+                      type="text"
+                      inputMode="numeric"
                       className="w-20 px-2 py-1 rounded bg-bg-card border border-border text-xs focus:border-primary focus:outline-none"
                     />
                   </div>

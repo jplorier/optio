@@ -6,6 +6,7 @@ import { api } from "@/lib/api-client";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PRESET_IMAGES, type PresetImageId } from "@optio/shared";
+import { NumberInput } from "@/components/number-input";
 import {
   Loader2,
   FolderGit2,
@@ -349,13 +350,12 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           </div>
           <div>
             <label className="block text-xs text-text-muted mb-1">Max concurrent tasks</label>
-            <input
-              type="number"
+            <NumberInput
               min={1}
               max={50}
               value={maxConcurrentTasks}
-              onChange={(e) => setMaxConcurrentTasks(parseInt(e.target.value, 10) || 2)}
-              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+              onChange={(v) => setMaxConcurrentTasks(v)}
+              fallback={2}
             />
           </div>
         </div>
@@ -367,13 +367,12 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-xs text-text-muted mb-1">Max pod instances</label>
-            <input
-              type="number"
+            <NumberInput
               min={1}
               max={20}
               value={maxPodInstances}
-              onChange={(e) => setMaxPodInstances(parseInt(e.target.value, 10) || 1)}
-              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+              onChange={(v) => setMaxPodInstances(v)}
+              fallback={1}
             />
             <p className="text-[10px] text-text-muted/60 mt-1">
               Pod replicas for this repo. Extra pods are created when demand exceeds single-pod
@@ -382,13 +381,12 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           </div>
           <div>
             <label className="block text-xs text-text-muted mb-1">Max agents per pod</label>
-            <input
-              type="number"
+            <NumberInput
               min={1}
               max={50}
               value={maxAgentsPerPod}
-              onChange={(e) => setMaxAgentsPerPod(parseInt(e.target.value, 10) || 2)}
-              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+              onChange={(v) => setMaxAgentsPerPod(v)}
+              fallback={2}
             />
             <p className="text-[10px] text-text-muted/60 mt-1">
               Max concurrent agents (worktrees) in a single pod.
@@ -689,14 +687,13 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                 </div>
                 <div>
                   <label className="block text-xs text-text-muted mb-1">Max Turns</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min={1}
                     max={100}
                     value={maxTurnsReview}
-                    onChange={(e) => setMaxTurnsReview(parseInt(e.target.value, 10) || 10)}
+                    onChange={(v) => setMaxTurnsReview(v)}
+                    fallback={10}
                     placeholder="10"
-                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
                   />
                 </div>
               </div>
@@ -873,12 +870,12 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         </div>
         <div>
           <label className="block text-xs text-text-muted mb-1">Max Turns</label>
-          <input
-            type="number"
+          <NumberInput
             min={1}
             max={1000}
             value={maxTurnsCoding}
-            onChange={(e) => setMaxTurnsCoding(parseInt(e.target.value, 10) || 250)}
+            onChange={(v) => setMaxTurnsCoding(v)}
+            fallback={250}
             placeholder="250"
             className="w-48 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           />
