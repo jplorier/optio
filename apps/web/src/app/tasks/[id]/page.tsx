@@ -30,9 +30,13 @@ import {
   Key,
   Check,
   Copy,
+  Plus,
+  X,
+  Link2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOptioChatStore } from "@/hooks/use-optio-chat";
+import { AddDependencyDialog } from "@/components/add-dependency-dialog";
 
 export default function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -48,6 +52,7 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const [tokenSaving, setTokenSaving] = useState(false);
   const [dependents, setDependents] = useState<any[]>([]);
   const [showCreateSubtask, setShowCreateSubtask] = useState(false);
+  const [showAddDependency, setShowAddDependency] = useState(false);
   const optioChat = useOptioChatStore();
   const [newSubtask, setNewSubtask] = useState({
     title: "",
@@ -595,62 +600,105 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         )}
 
       {/* Dependencies */}
-      {(dependencies.length > 0 || dependents.length > 0) && (
-        <div className="shrink-0 border-b border-border bg-bg px-4 py-2.5">
-          <div className="max-w-5xl mx-auto">
-            {dependencies.length > 0 && (
-              <div className="mb-2">
-                <h3 className="text-xs font-medium text-text-muted mb-1">
-                  Depends on (
-                  {
-                    dependencies.filter(
-                      (d: any) => d.state === "completed" || d.state === "pr_opened",
-                    ).length
-                  }
-                  /{dependencies.length} complete)
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {dependencies.map((dep: any) => (
-                    <Link
-                      key={dep.id}
-                      href={`/tasks/${dep.id}`}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border",
-                        dep.state === "completed" || dep.state === "pr_opened"
-                          ? "border-green-500/30 text-green-400 bg-green-500/5"
-                          : dep.state === "failed"
-                            ? "border-red-500/30 text-red-400 bg-red-500/5"
-                            : "border-border text-text-muted bg-bg-card",
-                      )}
-                    >
+      <div className="shrink-0 border-b border-border bg-bg px-4 py-2.5">
+        <div className="max-w-5xl mx-auto">
+          <div className={dependencies.length > 0 ? "mb-2" : ""}>
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-xs font-medium text-text-muted">
+                {dependencies.length > 0
+                  ? `Depends on (${dependencies.filter((d: any) => d.state === "completed" || d.state === "pr_opened").length}/${dependencies.length} complete)`
+                  : "Dependencies"}
+              </h3>
+              <button
+                onClick={() => setShowAddDependency(true)}
+                className="flex items-center gap-1 text-xs text-primary hover:underline"
+              >
+                <Plus className="w-3 h-3" />
+                Add Dependency
+              </button>
+            </div>
+            {dependencies.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {dependencies.map((dep: any) => (
+                  <div
+                    key={dep.id}
+                    className={cn(
+                      "inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border group",
+                      dep.state === "completed" || dep.state === "pr_opened"
+                        ? "border-green-500/30 text-green-400 bg-green-500/5"
+                        : dep.state === "failed"
+                          ? "border-red-500/30 text-red-400 bg-red-500/5"
+                          : "border-border text-text-muted bg-bg-card",
+                    )}
+                  >
+                    <Link href={`/tasks/${dep.id}`} className="inline-flex items-center gap-1.5">
                       {dep.title}
                       <span className="opacity-60">{dep.state}</span>
                     </Link>
-                  ))}
-                </div>
-              </div>
-            )}
-            {dependents.length > 0 && (
-              <div>
-                <h3 className="text-xs font-medium text-text-muted mb-1">
-                  Blocks ({dependents.length} task{dependents.length !== 1 ? "s" : ""})
-                </h3>
-                <div className="flex flex-wrap gap-1.5">
-                  {dependents.map((dep: any) => (
-                    <Link
-                      key={dep.id}
-                      href={`/tasks/${dep.id}`}
-                      className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border text-text-muted bg-bg-card hover:bg-bg-hover"
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (!confirm(`Remove dependency on "${dep.title}"?`)) return;
+                        try {
+                          await api.removeTaskDependency(id, dep.id);
+                          setDependencies((prev) => prev.filter((d: any) => d.id !== dep.id));
+                          toast.success("Dependency removed");
+                        } catch (err) {
+                          toast.error(
+                            err instanceof Error ? err.message : "Failed to remove dependency",
+                          );
+                        }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-bg-hover transition-opacity"
+                      title="Remove dependency"
                     >
-                      {dep.title}
-                      <span className="opacity-60">{dep.state}</span>
-                    </Link>
-                  ))}
-                </div>
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                ))}
               </div>
+            ) : (
+              <p className="text-xs text-text-muted/60">
+                No dependencies. Add one to ensure this task waits for another to complete.
+              </p>
             )}
           </div>
+          {dependents.length > 0 && (
+            <div>
+              <h3 className="text-xs font-medium text-text-muted mb-1">
+                Blocks ({dependents.length} task{dependents.length !== 1 ? "s" : ""})
+              </h3>
+              <div className="flex flex-wrap gap-1.5">
+                {dependents.map((dep: any) => (
+                  <Link
+                    key={dep.id}
+                    href={`/tasks/${dep.id}`}
+                    className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border border-border text-text-muted bg-bg-card hover:bg-bg-hover"
+                  >
+                    {dep.title}
+                    <span className="opacity-60">{dep.state}</span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* Add Dependency Dialog */}
+      {showAddDependency && (
+        <AddDependencyDialog
+          taskId={id}
+          existingDependencyIds={dependencies.map((d: any) => d.id)}
+          onAdd={async (depId) => {
+            await api.addTaskDependencies(id, [depId]);
+            const res = await api.getTaskDependencies(id);
+            setDependencies(res.dependencies);
+            setShowAddDependency(false);
+            toast.success("Dependency added");
+          }}
+          onClose={() => setShowAddDependency(false)}
+        />
       )}
 
       {/* Subtasks */}
