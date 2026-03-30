@@ -21,7 +21,7 @@ export interface EnabledProvider {
 /** Returns providers that have their client ID configured. */
 export function getEnabledProviders(): EnabledProvider[] {
   const result: EnabledProvider[] = [];
-  if (process.env.GITHUB_OAUTH_CLIENT_ID) {
+  if (process.env.GITHUB_OAUTH_CLIENT_ID || process.env.GITHUB_APP_CLIENT_ID) {
     result.push({ name: "github", displayName: "GitHub" });
   }
   if (process.env.GOOGLE_OAUTH_CLIENT_ID) {

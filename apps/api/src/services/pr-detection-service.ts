@@ -1,5 +1,5 @@
 import { TASK_BRANCH_PREFIX } from "@optio/shared";
-import { retrieveSecretWithFallback } from "./secret-service.js";
+import { getGitHubToken } from "./github-token-service.js";
 import { logger } from "../logger.js";
 
 export interface ExistingPr {
@@ -39,9 +39,9 @@ export async function checkExistingPr(
 
   let githubToken: string | null = null;
   try {
-    githubToken = await retrieveSecretWithFallback("GITHUB_TOKEN", "global", workspaceId);
+    githubToken = await getGitHubToken({ server: true });
   } catch {
-    logger.debug("No GITHUB_TOKEN available — skipping existing PR check");
+    logger.debug("No GitHub token available — skipping existing PR check");
     return null;
   }
   if (!githubToken) return null;

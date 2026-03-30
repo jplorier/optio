@@ -198,6 +198,7 @@ export async function runWorkflow(
       repoUrl,
       agentType: step.agentType ?? "claude-code",
       workspaceId: opts?.workspaceId ?? null,
+      createdBy: opts?.createdBy,
     });
     taskMapping[step.id] = task.id;
 

@@ -20,6 +20,14 @@ spec:
     - {{ .Values.gatewayAPI.hostname | quote }}
   {{- end }}
   rules:
+    # Block /api/internal/* from public traffic — these endpoints use bearer
+    # token auth (not session auth) and must only be reachable within the cluster.
+    # Pods access them via the K8s service DNS, which bypasses the gateway.
+    # Per the Gateway API spec, a rule with no backendRefs returns 404.
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api/internal/
     - matches:
         - path:
             type: PathPrefix

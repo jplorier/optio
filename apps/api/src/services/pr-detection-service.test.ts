@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { parseOwnerRepo, checkExistingPr } from "./pr-detection-service.js";
 
-// Mock secret-service
-vi.mock("./secret-service.js", () => ({
-  retrieveSecretWithFallback: vi.fn(),
+// Mock github-token-service
+const mockGetGitHubToken = vi.fn();
+vi.mock("./github-token-service.js", () => ({
+  getGitHubToken: (...args: unknown[]) => mockGetGitHubToken(...args),
 }));
 
 // Mock logger
@@ -55,6 +56,7 @@ describe("checkExistingPr", () => {
   const mockFetch = vi.fn();
 
   beforeEach(() => {
+    vi.clearAllMocks();
     vi.stubGlobal("fetch", mockFetch);
     mockFetch.mockReset();
   });
@@ -64,8 +66,7 @@ describe("checkExistingPr", () => {
   });
 
   it("returns PR when an open PR exists for the task branch", async () => {
-    const { retrieveSecretWithFallback } = await import("./secret-service.js");
-    vi.mocked(retrieveSecretWithFallback).mockResolvedValue("ghp_test_token");
+    mockGetGitHubToken.mockResolvedValue("ghp_test_token");
 
     mockFetch.mockResolvedValue({
       ok: true,
@@ -98,8 +99,7 @@ describe("checkExistingPr", () => {
   });
 
   it("returns null when no PR exists", async () => {
-    const { retrieveSecretWithFallback } = await import("./secret-service.js");
-    vi.mocked(retrieveSecretWithFallback).mockResolvedValue("ghp_test_token");
+    mockGetGitHubToken.mockResolvedValue("ghp_test_token");
 
     mockFetch.mockResolvedValue({
       ok: true,
@@ -111,9 +111,8 @@ describe("checkExistingPr", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null when GITHUB_TOKEN is unavailable", async () => {
-    const { retrieveSecretWithFallback } = await import("./secret-service.js");
-    vi.mocked(retrieveSecretWithFallback).mockRejectedValue(new Error("No token"));
+  it("returns null when no GitHub token is available", async () => {
+    mockGetGitHubToken.mockRejectedValue(new Error("No token"));
 
     const result = await checkExistingPr("https://github.com/owner/repo", "task-789", null);
 
@@ -122,8 +121,7 @@ describe("checkExistingPr", () => {
   });
 
   it("returns null when GitHub API returns an error", async () => {
-    const { retrieveSecretWithFallback } = await import("./secret-service.js");
-    vi.mocked(retrieveSecretWithFallback).mockResolvedValue("ghp_test_token");
+    mockGetGitHubToken.mockResolvedValue("ghp_test_token");
 
     mockFetch.mockResolvedValue({
       ok: false,
@@ -143,8 +141,7 @@ describe("checkExistingPr", () => {
   });
 
   it("returns null when fetch throws a network error", async () => {
-    const { retrieveSecretWithFallback } = await import("./secret-service.js");
-    vi.mocked(retrieveSecretWithFallback).mockResolvedValue("ghp_test_token");
+    mockGetGitHubToken.mockResolvedValue("ghp_test_token");
 
     mockFetch.mockRejectedValue(new Error("Network error"));
 
@@ -153,9 +150,8 @@ describe("checkExistingPr", () => {
     expect(result).toBeNull();
   });
 
-  it("passes workspace ID to secret resolution", async () => {
-    const { retrieveSecretWithFallback } = await import("./secret-service.js");
-    vi.mocked(retrieveSecretWithFallback).mockResolvedValue("ghp_test_token");
+  it("uses server context for token resolution", async () => {
+    mockGetGitHubToken.mockResolvedValue("ghp_test_token");
 
     mockFetch.mockResolvedValue({
       ok: true,
@@ -164,10 +160,6 @@ describe("checkExistingPr", () => {
 
     await checkExistingPr("https://github.com/owner/repo", "task-ws", "workspace-42");
 
-    expect(retrieveSecretWithFallback).toHaveBeenCalledWith(
-      "GITHUB_TOKEN",
-      "global",
-      "workspace-42",
-    );
+    expect(mockGetGitHubToken).toHaveBeenCalledWith({ server: true });
   });
 });
