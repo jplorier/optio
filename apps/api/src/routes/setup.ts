@@ -37,8 +37,16 @@ export async function setupRoutes(app: FastifyInstance) {
       }
     } catch {}
 
+    // Check for Copilot token
+    const hasCopilotToken = secretNames.includes("COPILOT_GITHUB_TOKEN");
+
     const hasAnyAgentKey =
-      hasAnthropicKey || hasOpenAIKey || usingSubscription || hasOauthToken || hasCodexAppServer;
+      hasAnthropicKey ||
+      hasOpenAIKey ||
+      usingSubscription ||
+      hasOauthToken ||
+      hasCodexAppServer ||
+      hasCopilotToken;
 
     let runtimeHealthy = false;
     try {
@@ -55,6 +63,7 @@ export async function setupRoutes(app: FastifyInstance) {
         anthropicKey: { done: hasAnthropicKey, label: "Anthropic API key" },
         openaiKey: { done: hasOpenAIKey, label: "OpenAI API key" },
         codexAppServer: { done: hasCodexAppServer, label: "Codex app-server" },
+        copilotToken: { done: hasCopilotToken, label: "GitHub Copilot token" },
         anyAgentKey: { done: hasAnyAgentKey, label: "At least one agent API key" },
       },
     });
@@ -97,6 +106,34 @@ export async function setupRoutes(app: FastifyInstance) {
         const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
         reply.send({ valid: false, error: body.error?.message ?? `API returned ${res.status}` });
       }
+    } catch (err) {
+      reply.send({ valid: false, error: String(err) });
+    }
+  });
+
+  // Validate a GitHub Copilot token
+  app.post("/api/setup/validate/copilot-token", async (req, reply) => {
+    const { token } = req.body as { token: string };
+    if (!token) return reply.status(400).send({ valid: false, error: "Token is required" });
+
+    // Classic PATs (ghp_*) are not supported by Copilot CLI
+    if (token.startsWith("ghp_")) {
+      return reply.send({
+        valid: false,
+        error:
+          "Classic personal access tokens (ghp_) are not supported by Copilot. Use a fine-grained PAT with the Copilot Requests permission.",
+      });
+    }
+
+    try {
+      const res = await fetch("https://api.github.com/user", {
+        headers: { Authorization: `Bearer ${token}`, "User-Agent": "Optio" },
+      });
+      if (!res.ok) {
+        return reply.send({ valid: false, error: `GitHub returned ${res.status}` });
+      }
+      const user = (await res.json()) as { login: string; name: string };
+      reply.send({ valid: true, user: { login: user.login, name: user.name } });
     } catch (err) {
       reply.send({ valid: false, error: String(err) });
     }

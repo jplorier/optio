@@ -211,6 +211,8 @@ export const repos = pgTable(
     claudeContextWindow: text("claude_context_window").default("1m"), // "200k" or "1m"
     claudeThinking: boolean("claude_thinking").notNull().default(true),
     claudeEffort: text("claude_effort").default("high"), // "low", "medium", "high"
+    copilotModel: text("copilot_model"), // null = use copilot default
+    copilotEffort: text("copilot_effort"), // "low", "medium", "high"
     maxTurnsCoding: integer("max_turns_coding"), // null = use global default (250)
     maxTurnsReview: integer("max_turns_review"), // null = use global default (10)
     autoResume: boolean("auto_resume").notNull().default(false),

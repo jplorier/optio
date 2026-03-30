@@ -16,7 +16,7 @@ const features = [
   {
     title: "Multi-Agent Support",
     description:
-      "Run Claude Code or OpenAI Codex. Configure model, prompt template, and settings per repository. Launch review agents as subtasks with separate prompts.",
+      "Run Claude Code, OpenAI Codex, or GitHub Copilot. Configure model, prompt template, and settings per repository. Launch review agents as subtasks with separate prompts.",
     color: "#34d399",
   },
   {
@@ -471,7 +471,9 @@ export default function Home() {
                     </div>
                   </div>
                 </div>
-                <p className="mt-3 text-[10px] text-text-muted">{"\u26A1"} = Claude Code / Codex</p>
+                <p className="mt-3 text-[10px] text-text-muted">
+                  {"\u26A1"} = Claude Code / Codex / Copilot
+                </p>
               </div>
             </div>
             <div className="hidden md:flex justify-center py-1">

@@ -9,7 +9,7 @@ const createTemplateSchema = z.object({
   name: z.string().min(1),
   repoUrl: z.string().optional(),
   prompt: z.string().min(1),
-  agentType: z.enum(["claude-code", "codex"]).optional(),
+  agentType: z.enum(["claude-code", "codex", "copilot"]).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
@@ -18,7 +18,7 @@ const updateTemplateSchema = z.object({
   name: z.string().min(1).optional(),
   repoUrl: z.string().nullable().optional(),
   prompt: z.string().min(1).optional(),
-  agentType: z.enum(["claude-code", "codex"]).optional(),
+  agentType: z.enum(["claude-code", "codex", "copilot"]).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
   metadata: z.record(z.unknown()).optional(),
 });
@@ -28,7 +28,7 @@ const createFromTemplateSchema = z.object({
   repoUrl: z.string().url().optional(),
   repoBranch: z.string().optional(),
   prompt: z.string().optional(),
-  agentType: z.enum(["claude-code", "codex"]).optional(),
+  agentType: z.enum(["claude-code", "codex", "copilot"]).optional(),
   priority: z.number().int().min(1).max(1000).optional(),
   maxRetries: z.number().int().min(0).max(10).optional(),
   metadata: z.record(z.unknown()).optional(),

@@ -314,6 +314,12 @@ export const api = {
       body: JSON.stringify({ key }),
     }),
 
+  validateCopilotToken: (token: string) =>
+    request<{ valid: boolean; error?: string; user?: { login: string; name: string } }>(
+      "/api/setup/validate/copilot-token",
+      { method: "POST", body: JSON.stringify({ token }) },
+    ),
+
   validateRepo: (repoUrl: string, token?: string) =>
     request<{
       valid: boolean;

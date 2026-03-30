@@ -28,6 +28,9 @@ RUN corepack enable && corepack prepare pnpm@10 --activate
 # Claude Code
 RUN npm install -g @anthropic-ai/claude-code
 
+# GitHub Copilot CLI
+RUN npm install -g @github/copilot
+
 # Python 3 (minimal — needed for setup file injection)
 RUN apt-get update && apt-get install -y python3 \
     && rm -rf /var/lib/apt/lists/*

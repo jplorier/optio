@@ -20,6 +20,8 @@ export interface RepoRecord {
   claudeContextWindow: string | null;
   claudeThinking: boolean;
   claudeEffort: string | null;
+  copilotModel: string | null;
+  copilotEffort: string | null;
   maxTurnsCoding: number | null;
   maxTurnsReview: number | null;
   autoResume: boolean;

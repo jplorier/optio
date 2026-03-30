@@ -244,6 +244,7 @@ export default function NewTaskPage() {
             >
               <option value="claude-code">Claude Code</option>
               <option value="codex">OpenAI Codex</option>
+              <option value="copilot">GitHub Copilot</option>
             </select>
           </div>
         </div>
