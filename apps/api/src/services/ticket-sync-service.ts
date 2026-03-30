@@ -22,8 +22,6 @@ export async function syncAllTickets(): Promise<number> {
       const tickets = await provider.fetchActionableTickets(providerConfig.config);
 
       for (const ticket of tickets) {
-        const agentType = ticket.labels.includes("codex") ? "codex" : "claude-code";
-
         const repoUrl = ticket.repo
           ? normalizeRepoUrl(`https://github.com/${ticket.repo}`)
           : (providerConfig.config as any).repoUrl;
@@ -70,6 +68,16 @@ export async function syncAllTickets(): Promise<number> {
               .map((a) => `- [${a.filename}](${a.url})${a.mimeType ? ` (${a.mimeType})` : ""}`)
               .join("\n");
         }
+
+        // Resolve agent type: ticket label > repo default > "claude-code"
+        const { getRepoByUrl } = await import("./repo-service.js");
+        const repoConfig = await getRepoByUrl(repoUrl);
+        const labelAgent = ticket.labels.includes("codex")
+          ? "codex"
+          : ticket.labels.includes("copilot")
+            ? "copilot"
+            : null;
+        const agentType = labelAgent ?? repoConfig?.defaultAgentType ?? "claude-code";
 
         const task = await taskService.createTask({
           title: ticket.title,

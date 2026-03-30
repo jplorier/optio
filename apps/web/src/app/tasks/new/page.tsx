@@ -41,6 +41,7 @@ export default function NewTaskPage() {
             repoId: first.id,
             repoUrl: first.repoUrl,
             repoBranch: first.defaultBranch ?? "main",
+            agentType: first.defaultAgentType ?? "claude-code",
           }));
         }
       })
@@ -109,6 +110,7 @@ export default function NewTaskPage() {
         repoId: repo.id,
         repoUrl: repo.repoUrl,
         repoBranch: repo.defaultBranch ?? "main",
+        agentType: repo.defaultAgentType ?? "claude-code",
       }));
     }
   };

@@ -42,7 +42,7 @@ const createTaskSchema = z.object({
   prompt: z.string().min(1),
   repoUrl: z.string().url(),
   repoBranch: z.string().optional(),
-  agentType: z.enum(["claude-code", "codex"]),
+  agentType: z.enum(["claude-code", "codex", "copilot"]).optional(),
   ticketSource: z.string().optional(),
   ticketExternalId: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
@@ -123,8 +123,19 @@ export async function taskRoutes(app: FastifyInstance) {
   app.post("/api/tasks", { preHandler: [requireRole("member")] }, async (req, reply) => {
     const input = createTaskSchema.parse(req.body);
     const { dependsOn, ...taskInput } = input;
+
+    // Resolve agentType: explicit > repo default > "claude-code"
+    let resolvedAgentType: string = taskInput.agentType ?? "";
+    if (!resolvedAgentType) {
+      const repoConfig = await import("../services/repo-service.js").then((m) =>
+        m.getRepoByUrl(taskInput.repoUrl, req.user?.workspaceId ?? null),
+      );
+      resolvedAgentType = repoConfig?.defaultAgentType ?? "claude-code";
+    }
+
     const task = await taskService.createTask({
       ...taskInput,
+      agentType: resolvedAgentType,
       createdBy: req.user?.id,
       workspaceId: req.user?.workspaceId ?? null,
     });

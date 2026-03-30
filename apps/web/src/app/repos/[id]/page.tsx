@@ -43,6 +43,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [customDockerfile, setCustomDockerfile] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [autoMerge, setAutoMerge] = useState(false);
+  const [defaultAgentType, setDefaultAgentType] = useState("claude-code");
   const [promptOverride, setPromptOverride] = useState("");
   const [useCustomPrompt, setUseCustomPrompt] = useState(false);
   const [defaultBranch, setDefaultBranch] = useState("main");
@@ -104,6 +105,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setCustomDockerfile(r.customDockerfile ?? "");
         if (r.setupCommands || r.customDockerfile) setShowAdvanced(true);
         setAutoMerge(r.autoMerge);
+        setDefaultAgentType(r.defaultAgentType ?? "claude-code");
         setAutoResume(r.autoResume ?? false);
         setMaxConcurrentTasks(r.maxConcurrentTasks ?? 2);
         setMaxPodInstances(r.maxPodInstances ?? 1);
@@ -174,6 +176,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setupCommands: setupCommands || undefined,
         customDockerfile: customDockerfile || null,
         autoMerge,
+        defaultAgentType,
         autoResume,
         maxConcurrentTasks,
         maxPodInstances,
@@ -795,6 +798,23 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             <span className="text-sm">Auto-merge PR when checks pass and review completes</span>
           </label>
         </PipelineStage>
+      </section>
+
+      {/* Default Agent */}
+      <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
+        <h2 className="text-sm font-medium">Default Agent</h2>
+        <p className="text-xs text-text-muted">
+          Choose the default coding agent for new tasks on this repo. Users can override per-task.
+        </p>
+        <select
+          value={defaultAgentType}
+          onChange={(e) => setDefaultAgentType(e.target.value)}
+          className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+        >
+          <option value="claude-code">Claude Code</option>
+          <option value="codex">OpenAI Codex</option>
+          <option value="copilot">GitHub Copilot</option>
+        </select>
       </section>
 
       {/* Agent Settings */}

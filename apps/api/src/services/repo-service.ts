@@ -15,6 +15,7 @@ export interface RepoRecord {
   setupCommands: string | null;
   customDockerfile: string | null;
   autoMerge: boolean;
+  defaultAgentType: string;
   promptTemplateOverride: string | null;
   claudeModel: string | null;
   claudeContextWindow: string | null;
@@ -141,6 +142,7 @@ export async function updateRepo(
     setupCommands?: string;
     customDockerfile?: string | null;
     autoMerge?: boolean;
+    defaultAgentType?: string;
     promptTemplateOverride?: string | null;
     defaultBranch?: string;
     claudeModel?: string;

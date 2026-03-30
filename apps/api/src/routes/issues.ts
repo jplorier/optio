@@ -226,7 +226,7 @@ export async function issueRoutes(app: FastifyInstance) {
       title: body.title,
       prompt: `${body.title}\n\n${body.body}${commentsSection}`,
       repoUrl: repo.repoUrl,
-      agentType: body.agentType ?? "claude-code",
+      agentType: body.agentType ?? repo.defaultAgentType ?? "claude-code",
       ticketSource: "github",
       ticketExternalId: String(body.issueNumber),
       metadata: { issueUrl: `https://github.com/${owner}/${repoName}/issues/${body.issueNumber}` },

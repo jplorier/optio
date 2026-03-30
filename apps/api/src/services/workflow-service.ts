@@ -196,7 +196,7 @@ export async function runWorkflow(
       title: step.title,
       prompt: step.prompt,
       repoUrl,
-      agentType: step.agentType ?? "claude-code",
+      agentType: step.agentType ?? "claude-code", // workflow steps define their own agent; repo default not used here
       workspaceId: opts?.workspaceId ?? null,
       createdBy: opts?.createdBy,
     });
