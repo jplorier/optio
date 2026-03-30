@@ -14,7 +14,8 @@
   "dependencies": {
     "@optio/shared": "workspace:*",
     "@octokit/rest": "^21.1.1",
-    "@linear/sdk": "^37.0.0"
+    "@linear/sdk": "^37.0.0",
+    "jira.js": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.15.0",

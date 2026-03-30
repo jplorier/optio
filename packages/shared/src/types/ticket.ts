@@ -1,6 +1,7 @@
 export enum TicketSource {
   GITHUB = "github",
   LINEAR = "linear",
+  JIRA = "jira",
 }
 
 export interface Ticket {
@@ -12,6 +13,7 @@ export interface Ticket {
   labels: string[];
   assignee?: string;
   repo?: string;
+  attachments?: Array<{ filename: string; url: string; mimeType?: string }>;
   metadata: Record<string, unknown>;
 }
 
