@@ -14,7 +14,11 @@ vi.mock("../services/github-app-service.js", () => ({
   isGitHubAppConfigured: (...args: unknown[]) => mockIsGitHubAppConfigured(...args),
 }));
 
-import githubAppRoutes, { getCredentialSecret, resetCredentialSecret } from "./github-app.js";
+import githubAppRoutes from "./github-app.js";
+import {
+  getCredentialSecret,
+  resetCredentialSecret,
+} from "../services/credential-secret-service.js";
 
 // ─── Helpers ───
 

@@ -23,7 +23,7 @@ import { publishEvent } from "../services/event-bus.js";
 import { resolveSecretsForTask, retrieveSecretWithFallback } from "../services/secret-service.js";
 import { getPromptTemplate } from "../services/prompt-template-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
-import { getCredentialSecret } from "../routes/github-app.js";
+import { getCredentialSecret } from "../services/credential-secret-service.js";
 import { logger } from "../logger.js";
 
 const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
