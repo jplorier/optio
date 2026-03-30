@@ -279,7 +279,7 @@ export default function ApiReferencePage() {
 
       <h2 className="mt-10 text-2xl font-bold text-text-heading">Tickets</h2>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Manage external ticket provider integrations (GitHub Issues, Linear).
+        Manage external ticket provider integrations (GitHub Issues, Linear, Jira).
       </p>
       <RouteTable
         routes={[

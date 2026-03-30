@@ -104,7 +104,7 @@ k8s/            Local dev K8s manifests`}</CodeBlock>
               ["packages/shared/", "Types, state machine, prompt renderer, error classifier"],
               ["packages/container-runtime/", "Kubernetes container runtime interface"],
               ["packages/agent-adapters/", "Claude Code, Codex, and Copilot agent adapters"],
-              ["packages/ticket-providers/", "GitHub Issues and Linear ticket providers"],
+              ["packages/ticket-providers/", "GitHub Issues, Linear, and Jira ticket providers"],
             ].map(([path, contents]) => (
               <tr key={path}>
                 <td className="px-4 py-3 font-mono text-text-heading">{path}</td>

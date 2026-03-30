@@ -133,7 +133,7 @@ export default function ArchitecturePage() {
         </li>
         <li>
           <strong className="text-text-heading">Ticket Sync</strong> — Syncs tasks from GitHub
-          Issues and Linear tickets.
+          Issues, Linear, and Jira tickets.
         </li>
         <li>
           <strong className="text-text-heading">Webhook Worker</strong> — Delivers outgoing webhook
@@ -190,8 +190,8 @@ export default function ArchitecturePage() {
           and Copilot adapters (auth, environment, config)
         </li>
         <li>
-          <strong className="text-text-heading">@optio/ticket-providers</strong> — GitHub Issues and
-          Linear ticket sync
+          <strong className="text-text-heading">@optio/ticket-providers</strong> — GitHub Issues,
+          Linear, and Jira ticket sync
         </li>
       </ul>
     </>

@@ -20,9 +20,9 @@ const features = [
     color: "#34d399",
   },
   {
-    title: "GitHub & Linear Intake",
+    title: "GitHub, Linear & Jira Intake",
     description:
-      "Pull tasks from GitHub Issues, Linear tickets, or create them manually. One-click assign from the web UI kicks off the full pipeline.",
+      "Pull tasks from GitHub Issues, Linear, or Jira tickets, or create them manually. One-click assign from the web UI kicks off the full pipeline.",
     color: "#f0a040",
   },
   {

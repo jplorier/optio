@@ -5,7 +5,7 @@ import { Callout } from "@/components/docs/callout";
 
 export const metadata: Metadata = {
   title: "Integrations",
-  description: "Integrate Optio with GitHub Issues, Linear, Slack, and webhooks.",
+  description: "Integrate Optio with GitHub Issues, Linear, Jira, Slack, and webhooks.",
 };
 
 export default function IntegrationsPage() {

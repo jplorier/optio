@@ -4,7 +4,7 @@ Context and conventions for AI assistants working on the Optio codebase.
 
 ## What is Optio?
 
-Optio is a workflow orchestration system for AI coding agents. Think of it as "CI/CD where the build step is an AI agent." Users submit tasks (manually or from GitHub Issues), and Optio:
+Optio is a workflow orchestration system for AI coding agents. Think of it as "CI/CD where the build step is an AI agent." Users submit tasks (manually or from GitHub Issues, Linear, or Jira), and Optio:
 
 1. Spins up an isolated Kubernetes pod for the repository (pod-per-repo)
 2. Creates a git worktree for the task (multiple tasks can run concurrently per repo)
@@ -342,7 +342,7 @@ packages/
                       error classifier, constants, normalize-repo-url
   container-runtime/  ContainerRuntime interface, DockerContainerRuntime, KubernetesContainerRuntime
   agent-adapters/     AgentAdapter interface, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter
-  ticket-providers/   TicketProvider interface, GitHubTicketProvider, LinearTicketProvider
+  ticket-providers/   TicketProvider interface, GitHubTicketProvider, LinearTicketProvider, JiraTicketProvider
 
 Dockerfile.api        API server Docker image (tsx-based)
 Dockerfile.web        Web UI Docker image (Next.js production build)
@@ -534,7 +534,7 @@ Six BullMQ workers run as part of the API server:
 1. **task-worker** — main job processor, handles concurrency, dependency checks, provisioning, agent execution, result parsing
 2. **pr-watcher-worker** — polls GitHub PRs every 30s, tracks CI/review status, triggers reviews, auto-resumes on conflicts/failures, handles merge/close
 3. **repo-cleanup-worker** — health checks every 60s, auto-restart crashed pods, clean orphan worktrees, idle cleanup
-4. **ticket-sync-worker** — syncs tickets from configured providers (GitHub Issues, Linear)
+4. **ticket-sync-worker** — syncs tickets from configured providers (GitHub Issues, Linear, Jira)
 5. **webhook-worker** — delivers webhook events to configured endpoints
 6. **schedule-worker** — checks and triggers scheduled/recurring tasks
 
@@ -622,7 +622,7 @@ Six BullMQ workers run as part of the API server:
 - Agent images are built locally — `setup-local.sh` handles this, but CI push to a registry is not yet configured
 - `setup-local.sh` installs `metrics-server` automatically; production clusters should install it separately
 - Workspace RBAC roles (admin/member/viewer) are in the schema but not fully enforced in all routes
-- Notion ticket provider is a stub (GitHub Issues and Linear are implemented)
+- Notion ticket provider is a stub (GitHub Issues, Linear, and Jira are implemented)
 - Some duplicate-numbered migration files exist from concurrent agent branches — the drizzle journal (`meta/_journal.json`) is authoritative
 - OAuth tokens from `claude setup-token` have limited scopes and may not support usage tracking (Keychain-extracted tokens have full scopes)
 - The API container runs via `tsx` (TypeScript execution) rather than compiled JS, since workspace packages export `./src/index.ts` not `./dist/index.js`

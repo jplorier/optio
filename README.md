@@ -5,7 +5,7 @@
 [![CI](https://github.com/jonwiggins/optio/actions/workflows/ci.yml/badge.svg)](https://github.com/jonwiggins/optio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-Optio turns coding tasks into merged pull requests — without human babysitting. Submit a task (manually, from a GitHub Issue, or from Linear), and Optio handles the rest: provisions an isolated environment, runs an AI agent, opens a PR, monitors CI, triggers code review, auto-fixes failures, and merges when everything passes.
+Optio turns coding tasks into merged pull requests — without human babysitting. Submit a task (manually, from a GitHub Issue, Linear, or Jira), and Optio handles the rest: provisions an isolated environment, runs an AI agent, opens a PR, monitors CI, triggers code review, auto-fixes failures, and merges when everything passes.
 
 The feedback loop is what makes it different. When CI fails, the agent is automatically resumed with the failure context. When a reviewer requests changes, the agent picks up the review comments and pushes a fix. When everything passes, the PR is squash-merged and the issue is closed. You describe the work; Optio drives it to completion.
 
@@ -27,13 +27,13 @@ You create a task          Optio runs the agent           Optio closes the loop
 
   GitHub Issue              Provision repo pod             CI fails?
   Manual task       ──→     Create git worktree    ──→       → Resume agent with failure context
-  Linear ticket             Run Claude / Codex / Copilot   Review requests changes?
+  Linear / Jira ticket      Run Claude / Codex / Copilot   Review requests changes?
                             Open a PR                        → Resume agent with feedback
                                                            CI passes + approved?
                                                              → Squash-merge + close issue
 ```
 
-1. **Intake** — tasks come from the web UI, GitHub Issues (one-click assign), or Linear tickets
+1. **Intake** — tasks come from the web UI, GitHub Issues (one-click assign), Linear, or Jira tickets
 2. **Provisioning** — Optio finds or creates a Kubernetes pod for the repo, creates a git worktree for isolation
 3. **Execution** — the AI agent (Claude Code, OpenAI Codex, or GitHub Copilot) runs with your configured prompt, model, and settings
 4. **PR lifecycle** — Optio polls the PR every 30s for CI status, review state, and merge readiness
@@ -46,7 +46,7 @@ You create a task          Optio runs the agent           Optio closes the loop
 - **Pod-per-repo architecture** — one long-lived Kubernetes pod per repo with git worktree isolation, multi-pod scaling, and idle cleanup
 - **Code review agent** — automatically launches a review agent as a subtask, with a separate prompt and model
 - **Per-repo configuration** — model, prompt template, container image, concurrency limits, and setup commands, all tunable per repository
-- **GitHub Issues and Linear intake** — assign issues to Optio from the UI or via ticket sync
+- **GitHub Issues, Linear, and Jira intake** — assign issues to Optio from the UI or via ticket sync
 - **Real-time dashboard** — live log streaming, pipeline progress, cost analytics, and cluster health
 
 ## Architecture
@@ -176,7 +176,7 @@ packages/
   shared/             Types, task state machine, prompt templates, error classifier
   container-runtime/  Kubernetes pod lifecycle, exec, log streaming
   agent-adapters/     Claude Code + Codex + Copilot prompt/auth adapters
-  ticket-providers/   GitHub Issues, Linear
+  ticket-providers/   GitHub Issues, Linear, Jira
 
 images/               Container Dockerfiles: base, node, python, go, rust, full
 helm/optio/           Helm chart for production Kubernetes deployment
