@@ -13,9 +13,12 @@ export interface LogEntry {
   metadata?: Record<string, unknown>;
 }
 
+const HISTORICAL_LIMIT = 10000;
+
 export function useLogs(taskId: string) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [connected, setConnected] = useState(false);
+  const [capped, setCapped] = useState(false);
   const clientRef = useRef<WsClient | null>(null);
   const historicalCountRef = useRef(0);
 
@@ -61,7 +64,7 @@ export function useLogs(taskId: string) {
     setConnected(true);
 
     api
-      .getTaskLogs(taskId, { limit: 500 })
+      .getTaskLogs(taskId, { limit: HISTORICAL_LIMIT })
       .then((res) => {
         const historical = res.logs.map((l: any) => ({
           content: l.content,
@@ -71,6 +74,7 @@ export function useLogs(taskId: string) {
           metadata: l.metadata ?? undefined,
         }));
         historicalCountRef.current = historical.length;
+        if (historical.length >= HISTORICAL_LIMIT) setCapped(true);
 
         // Deduplicate: drop any live events already in the historical set
         const historicalKeys = new Set(historical.map((l: LogEntry) => l.timestamp + l.content));
@@ -93,5 +97,5 @@ export function useLogs(taskId: string) {
 
   const clear = useCallback(() => setLogs([]), []);
 
-  return { logs, connected, clear };
+  return { logs, connected, capped, clear };
 }

@@ -100,7 +100,7 @@ function HighlightedText({ text, search }: { text: string; search: string }) {
 }
 
 export function LogViewer({ taskId }: { taskId: string }) {
-  const { logs, connected, clear } = useLogs(taskId);
+  const { logs, connected, capped, clear } = useLogs(taskId);
   const containerRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const [showThinking, setShowThinking] = useState(false);
@@ -327,7 +327,7 @@ export function LogViewer({ taskId }: { taskId: string }) {
           />
           <span className="font-medium">{connected ? "Live" : "Ended"}</span>
           <span className="text-text-muted/30">&middot;</span>
-          <span className="tabular-nums">{logs.length} events</span>
+          <span className="tabular-nums">{capped ? `>${logs.length}` : logs.length} events</span>
           {logs.length > 1 && (
             <>
               <span className="text-text-muted/30">&middot;</span>
