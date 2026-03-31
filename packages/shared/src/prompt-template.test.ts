@@ -102,7 +102,7 @@ describe("DEFAULT_PROMPT_TEMPLATE", () => {
       AUTO_MERGE: "false",
       ISSUE_NUMBER: "42",
     });
-    expect(result).toContain('--body "Closes #42"');
+    expect(result).toContain("Closes #42");
     expect(result).not.toContain("Implements task");
   });
 
@@ -116,7 +116,7 @@ describe("DEFAULT_PROMPT_TEMPLATE", () => {
       AUTO_MERGE: "false",
       ISSUE_NUMBER: "",
     });
-    expect(result).toContain('--body "Implements task abc-123"');
+    expect(result).toContain("Implements task abc-123");
     expect(result).not.toContain("Closes #");
   });
 });

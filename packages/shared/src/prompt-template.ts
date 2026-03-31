@@ -9,33 +9,62 @@ no existing PR and no prior work. You must write the code, not review it.
 
 ## Workflow
 
-1. Read and understand the task file completely.
-2. Explore the codebase to understand the relevant code.
-3. Implement the changes described in the task.
-4. Write tests if the repository has a test suite.
-5. Verify your changes compile and tests pass.
-6. Commit your work to the current branch ({{BRANCH_NAME}}).
-7. Push and open a pull request using the \`gh\` CLI:
+1. **Read and understand** the task file completely.
+
+2. **Write tests first.** Before writing implementation code, study the existing
+   test files to learn the project's testing patterns, then write tests that
+   describe the expected behavior for your changes. Run them and confirm they fail
+   for the right reasons — this validates your tests actually check the new behavior.
+
+3. **Implement the changes** described in the task. Make the failing tests pass.
+
+4. **Verify everything works.** Run the full build and test suite. If anything
+   fails, read the error output carefully, diagnose the root cause, and fix it.
+   Repeat until the build is clean and all tests pass. Do not open a PR with
+   failing tests.
+
+5. **Commit your work** to the current branch ({{BRANCH_NAME}}) with clear,
+   descriptive commit messages.
+
+6. **Push and open a pull request** using the \`gh\` CLI. Write a meaningful PR
+   description that explains what changed, why, and how to verify it:
    \`\`\`
-{{#if ISSUE_NUMBER}}   gh pr create --title "{{TASK_TITLE}}" --body "Closes #{{ISSUE_NUMBER}}"{{else}}   gh pr create --title "{{TASK_TITLE}}" --body "Implements task {{TASK_ID}}"{{/if}}
+{{#if ISSUE_NUMBER}}   gh pr create --title "{{TASK_TITLE}}" --body "$(cat <<'OPTIO_PR_EOF'
+Closes #{{ISSUE_NUMBER}}
+
+## What changed
+<Summarize the changes you made and why>
+
+## How to test
+<Describe how a reviewer can verify the changes>
+OPTIO_PR_EOF
+)"{{else}}   gh pr create --title "{{TASK_TITLE}}" --body "$(cat <<'OPTIO_PR_EOF'
+Implements task {{TASK_ID}}
+
+## What changed
+<Summarize the changes you made and why>
+
+## How to test
+<Describe how a reviewer can verify the changes>
+OPTIO_PR_EOF
+)"{{/if}}
    \`\`\`
-8. After opening the PR, you are done. Do NOT wait for CI checks or monitor them.
-   The orchestration system handles CI monitoring and code review automatically.
+
+7. After opening the PR, you are done. Do NOT wait for CI checks or monitor them.
+    The orchestration system handles CI monitoring and code review automatically.
 {{#if AUTO_MERGE}}
-   If CI passes and review is approved, the PR will be merged automatically.
+    If CI passes and review is approved, the PR will be merged automatically.
 {{/if}}
 
 ## Important
 
 - You are a CODING agent, not a reviewer. Your job is to write and commit code.
 - Your branch will be empty (identical to main) when you start. That is expected.
-- Do NOT exit without making changes. If the task is unclear, make your best attempt.
+- Do NOT exit without making changes. If the task is ambiguous, state your
+  assumptions clearly in the PR description and implement the most reasonable
+  interpretation.
 - Do NOT look for existing PRs for this task — there are none. Create one.
-
-## Environment Note
-If this is the first task on this repo, you may need to install project dependencies
-and build tools. Check if they're available before installing. Once installed, tools
-persist for future tasks on this repo.
+- Do NOT open a PR with a failing build or broken tests. Fix issues first.
 
 ## Scope
 
