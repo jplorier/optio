@@ -1,11 +1,35 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   shouldNotifySlack,
   isNotifiableState,
   buildSlackMessage,
   NOTIFIABLE_STATES,
+  resolveSlackConfig,
+  sendSlackNotification,
+  notifySlackOnTransition,
+  handleSlackAction,
 } from "./slack-service.js";
 import type { RepoRecord } from "./repo-service.js";
+
+// --- Mocks for async-imported modules ---
+
+vi.mock("./secret-service.js", () => ({
+  retrieveSecret: vi.fn(),
+}));
+
+vi.mock("./task-service.js", () => ({
+  getTask: vi.fn(),
+  transitionTask: vi.fn(),
+}));
+
+vi.mock("../workers/task-worker.js", () => ({
+  taskQueue: { add: vi.fn() },
+}));
+
+vi.stubGlobal(
+  "fetch",
+  vi.fn(() => Promise.resolve({ ok: true, text: () => Promise.resolve("ok") })),
+);
 
 function makeRepoConfig(overrides: Partial<RepoRecord> = {}): RepoRecord {
   return {
@@ -227,5 +251,242 @@ describe("buildSlackMessage", () => {
     expect(msg.text).toContain("Minimal task");
     const fieldsBlock = msg.blocks[1] as { fields: { text: string }[] };
     expect(fieldsBlock.fields.length).toBe(2); // only repo + status, no cost or PR
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tests for async / side-effecting exports
+// ---------------------------------------------------------------------------
+
+describe("resolveSlackConfig", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("returns repo webhook URL and channel when configured", async () => {
+    const repo = makeRepoConfig({
+      slackWebhookUrl: "https://hooks.slack.com/services/T01/B01/repo",
+      slackChannel: "#deployments",
+    });
+    const result = await resolveSlackConfig(repo);
+    expect(result).toEqual({
+      webhookUrl: "https://hooks.slack.com/services/T01/B01/repo",
+      channel: "#deployments",
+    });
+  });
+
+  it("falls back to global webhook from secret-service when repo has none", async () => {
+    const { retrieveSecret } = await import("./secret-service.js");
+    const mockRetrieve = vi.mocked(retrieveSecret);
+    mockRetrieve.mockResolvedValueOnce("https://hooks.slack.com/services/T01/B01/global");
+
+    const repo = makeRepoConfig({ slackWebhookUrl: null, slackEnabled: false });
+    const result = await resolveSlackConfig(repo);
+    expect(result).toEqual({ webhookUrl: "https://hooks.slack.com/services/T01/B01/global" });
+    expect(mockRetrieve).toHaveBeenCalledWith("SLACK_WEBHOOK_URL");
+  });
+
+  it("returns null when neither repo nor global webhook is configured", async () => {
+    const { retrieveSecret } = await import("./secret-service.js");
+    vi.mocked(retrieveSecret).mockRejectedValueOnce(new Error("not found"));
+
+    const repo = makeRepoConfig({ slackWebhookUrl: null, slackEnabled: false });
+    const result = await resolveSlackConfig(repo);
+    expect(result).toBeNull();
+  });
+
+  it("returns null when repo config is null", async () => {
+    const { retrieveSecret } = await import("./secret-service.js");
+    vi.mocked(retrieveSecret).mockRejectedValueOnce(new Error("not found"));
+
+    const result = await resolveSlackConfig(null);
+    expect(result).toBeNull();
+  });
+});
+
+describe("sendSlackNotification", () => {
+  const task = {
+    id: "task-send-1",
+    title: "Deploy widget",
+    repoUrl: "https://github.com/acme/widget",
+    state: "completed" as any,
+    prUrl: null,
+    costUsd: null,
+    errorMessage: null,
+  };
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("sends POST to webhook URL with correct Block Kit payload", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve("ok") } as Response);
+
+    await sendSlackNotification("https://hooks.slack.com/services/T/B/x", task, "completed");
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url, opts] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://hooks.slack.com/services/T/B/x");
+    expect(opts!.method).toBe("POST");
+    expect(opts!.headers).toEqual({ "Content-Type": "application/json" });
+
+    const body = JSON.parse(opts!.body as string);
+    expect(body.text).toContain("Deploy widget");
+    expect(body.blocks).toBeDefined();
+    expect(body.attachments).toBeDefined();
+    expect(body.channel).toBeUndefined();
+  });
+
+  it("includes channel in payload when provided", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve("ok") } as Response);
+
+    await sendSlackNotification(
+      "https://hooks.slack.com/services/T/B/x",
+      task,
+      "completed",
+      "#ops",
+    );
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1]!.body as string);
+    expect(body.channel).toBe("#ops");
+  });
+
+  it("throws when webhook returns non-OK response", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve("server error"),
+    } as Response);
+
+    await expect(
+      sendSlackNotification("https://hooks.slack.com/services/T/B/x", task, "completed"),
+    ).rejects.toThrow("Slack webhook returned 500: server error");
+  });
+});
+
+describe("notifySlackOnTransition", () => {
+  const task = {
+    id: "task-notify-1",
+    title: "Fix bug",
+    repoUrl: "https://github.com/acme/widget",
+    state: "failed" as any,
+    prUrl: null,
+    costUsd: null,
+    errorMessage: "boom",
+  };
+
+  beforeEach(() => vi.clearAllMocks());
+
+  it("sends notification for notifiable state with valid config", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockResolvedValueOnce({ ok: true, text: () => Promise.resolve("ok") } as Response);
+
+    const repo = makeRepoConfig();
+    await notifySlackOnTransition(task, "failed", repo);
+
+    expect(mockFetch).toHaveBeenCalledOnce();
+    const [url] = mockFetch.mock.calls[0];
+    expect(url).toBe("https://hooks.slack.com/services/T00/B00/xxx");
+  });
+
+  it("skips non-notifiable states silently", async () => {
+    const mockFetch = vi.mocked(fetch);
+    const repo = makeRepoConfig();
+
+    await notifySlackOnTransition(task, "running", repo);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("catches and logs errors without throwing", async () => {
+    const mockFetch = vi.mocked(fetch);
+    mockFetch.mockRejectedValueOnce(new Error("network down"));
+
+    const repo = makeRepoConfig();
+
+    // Should NOT throw despite internal error
+    await expect(notifySlackOnTransition(task, "failed", repo)).resolves.toBeUndefined();
+  });
+});
+
+describe("handleSlackAction", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("retries failed task on retry_task action", async () => {
+    const taskService = await import("./task-service.js");
+    const { taskQueue } = await import("../workers/task-worker.js");
+
+    vi.mocked(taskService.getTask).mockResolvedValueOnce({
+      id: "task-ha-1",
+      title: "Retry me",
+      state: "failed",
+    } as any);
+    vi.mocked(taskService.transitionTask).mockResolvedValueOnce(undefined as any);
+    vi.mocked(taskQueue.add).mockResolvedValueOnce(undefined as any);
+
+    const result = await handleSlackAction("retry_task", "task-ha-1");
+
+    expect(taskService.transitionTask).toHaveBeenCalledWith("task-ha-1", "queued", "slack_retry");
+    expect(taskQueue.add).toHaveBeenCalledWith(
+      "process-task",
+      { taskId: "task-ha-1" },
+      expect.objectContaining({ attempts: 1 }),
+    );
+    expect(result.text).toContain("Retry me");
+    expect(result.text).toContain("queued for retry");
+  });
+
+  it("cancels task on cancel_task action", async () => {
+    const taskService = await import("./task-service.js");
+
+    vi.mocked(taskService.getTask).mockResolvedValueOnce({
+      id: "task-ha-2",
+      title: "Cancel me",
+      state: "running",
+    } as any);
+    vi.mocked(taskService.transitionTask).mockResolvedValueOnce(undefined as any);
+
+    const result = await handleSlackAction("cancel_task", "task-ha-2");
+
+    expect(taskService.transitionTask).toHaveBeenCalledWith(
+      "task-ha-2",
+      "cancelled",
+      "slack_cancel",
+    );
+    expect(result.text).toContain("Cancel me");
+    expect(result.text).toContain("cancelled");
+  });
+
+  it("returns error message when task not found", async () => {
+    const taskService = await import("./task-service.js");
+    vi.mocked(taskService.getTask).mockResolvedValueOnce(null as any);
+
+    const result = await handleSlackAction("retry_task", "task-missing");
+
+    expect(result.text).toContain("Task not found");
+    expect(result.text).toContain("task-missing");
+  });
+
+  it("returns error message on transition failure", async () => {
+    const taskService = await import("./task-service.js");
+
+    vi.mocked(taskService.getTask).mockResolvedValueOnce({
+      id: "task-ha-3",
+      title: "Fail transition",
+      state: "completed",
+    } as any);
+    vi.mocked(taskService.transitionTask).mockRejectedValueOnce(
+      new Error("Invalid transition from completed to queued"),
+    );
+
+    const result = await handleSlackAction("retry_task", "task-ha-3");
+
+    expect(result.text).toContain("Failed to retry task");
+    expect(result.text).toContain("Invalid transition");
+  });
+
+  it("returns unknown action message for unrecognized actions", async () => {
+    const result = await handleSlackAction("do_something_weird", "task-ha-4");
+
+    expect(result.text).toContain("Unknown action");
+    expect(result.text).toContain("do_something_weird");
   });
 });
