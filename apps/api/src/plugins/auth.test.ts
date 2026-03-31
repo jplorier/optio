@@ -20,7 +20,12 @@ vi.mock("../services/workspace-service.js", () => ({
   ensureUserHasWorkspace: () => "ws-1",
 }));
 
-import { requireRole } from "./auth.js";
+const mockListSecrets = vi.fn();
+vi.mock("../services/secret-service.js", () => ({
+  listSecrets: (...args: unknown[]) => mockListSecrets(...args),
+}));
+
+import { requireRole, isSetupComplete, resetSetupCompleteCache } from "./auth.js";
 
 // ─── Helpers ───
 
@@ -151,5 +156,63 @@ describe("requireRole", () => {
       const res = await inject(await buildApp("viewer", null));
       expect(res.statusCode).toBe(403);
     });
+  });
+});
+
+describe("isSetupComplete", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSetupCompleteCache();
+  });
+
+  it("returns true when an agent key secret exists", async () => {
+    mockListSecrets.mockResolvedValue([{ name: "ANTHROPIC_API_KEY" }]);
+    expect(await isSetupComplete()).toBe(true);
+  });
+
+  it("returns true for OPENAI_API_KEY", async () => {
+    mockListSecrets.mockResolvedValue([{ name: "OPENAI_API_KEY" }]);
+    expect(await isSetupComplete()).toBe(true);
+  });
+
+  it("returns true for CLAUDE_CODE_OAUTH_TOKEN", async () => {
+    mockListSecrets.mockResolvedValue([{ name: "CLAUDE_CODE_OAUTH_TOKEN" }]);
+    expect(await isSetupComplete()).toBe(true);
+  });
+
+  it("returns true for COPILOT_GITHUB_TOKEN", async () => {
+    mockListSecrets.mockResolvedValue([{ name: "COPILOT_GITHUB_TOKEN" }]);
+    expect(await isSetupComplete()).toBe(true);
+  });
+
+  it("returns false when no agent key secrets exist", async () => {
+    mockListSecrets.mockResolvedValue([{ name: "GITHUB_TOKEN" }]);
+    expect(await isSetupComplete()).toBe(false);
+  });
+
+  it("returns false when secrets list is empty", async () => {
+    mockListSecrets.mockResolvedValue([]);
+    expect(await isSetupComplete()).toBe(false);
+  });
+
+  it("returns false when listSecrets throws", async () => {
+    mockListSecrets.mockRejectedValue(new Error("db error"));
+    expect(await isSetupComplete()).toBe(false);
+  });
+
+  it("caches the result across calls", async () => {
+    mockListSecrets.mockResolvedValue([{ name: "ANTHROPIC_API_KEY" }]);
+    await isSetupComplete();
+    await isSetupComplete();
+    expect(mockListSecrets).toHaveBeenCalledTimes(1);
+  });
+
+  it("refreshes after cache reset", async () => {
+    mockListSecrets.mockResolvedValue([{ name: "ANTHROPIC_API_KEY" }]);
+    await isSetupComplete();
+    resetSetupCompleteCache();
+    mockListSecrets.mockResolvedValue([]);
+    expect(await isSetupComplete()).toBe(false);
+    expect(mockListSecrets).toHaveBeenCalledTimes(2);
   });
 });

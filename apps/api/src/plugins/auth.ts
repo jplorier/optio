@@ -3,6 +3,7 @@ import fp from "fastify-plugin";
 import { validateSession, type SessionUser } from "../services/session-service.js";
 import { isAuthDisabled } from "../services/oauth/index.js";
 import { getUserRole, ensureUserHasWorkspace } from "../services/workspace-service.js";
+import { listSecrets } from "../services/secret-service.js";
 import type { WorkspaceRole } from "@optio/shared";
 
 declare module "fastify" {
@@ -45,11 +46,50 @@ const WORKSPACE_HEADER = "x-workspace-id";
 const PUBLIC_ROUTES = [
   "/api/health",
   "/api/auth/",
-  "/api/setup/",
+  "/api/setup/status",
   "/api/webhooks/",
   "/ws/",
   "/api/internal/git-credentials",
 ];
+
+/**
+ * Secrets whose presence indicates that initial setup has been completed.
+ * Once any agent API key is configured, setup POST routes require auth.
+ */
+const AGENT_KEY_SECRETS = [
+  "ANTHROPIC_API_KEY",
+  "OPENAI_API_KEY",
+  "CLAUDE_CODE_OAUTH_TOKEN",
+  "COPILOT_GITHUB_TOKEN",
+];
+
+let _setupCompleteCache: { value: boolean; expires: number } | null = null;
+const SETUP_CACHE_TTL_MS = 60_000; // 60 seconds
+
+/**
+ * Returns true when at least one agent API key secret exists, indicating
+ * initial setup is complete. Result is cached for 60 seconds.
+ */
+export async function isSetupComplete(): Promise<boolean> {
+  const now = Date.now();
+  if (_setupCompleteCache && now < _setupCompleteCache.expires) {
+    return _setupCompleteCache.value;
+  }
+  try {
+    const allSecrets = await listSecrets();
+    const names = allSecrets.map((s) => s.name);
+    const complete = AGENT_KEY_SECRETS.some((k) => names.includes(k));
+    _setupCompleteCache = { value: complete, expires: now + SETUP_CACHE_TTL_MS };
+    return complete;
+  } catch {
+    return false;
+  }
+}
+
+/** Reset the setup-complete cache (for testing). */
+export function resetSetupCompleteCache(): void {
+  _setupCompleteCache = null;
+}
 
 function isPublicRoute(url: string): boolean {
   return PUBLIC_ROUTES.some((prefix) => url.startsWith(prefix));
@@ -73,6 +113,14 @@ async function authPlugin(app: FastifyInstance) {
 
     // Public routes — no auth needed
     if (isPublicRoute(req.url)) return;
+
+    // Setup routes (other than /status) are public only before initial setup.
+    // Once setup is complete they require authentication like any other route.
+    if (req.url.startsWith("/api/setup/")) {
+      const complete = await isSetupComplete();
+      if (!complete) return; // Allow without auth during initial setup
+      // Fall through to normal auth check
+    }
 
     // Token resolution order: Bearer header → session cookie → query param (WS)
     const token =

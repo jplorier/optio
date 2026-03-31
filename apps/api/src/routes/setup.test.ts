@@ -21,13 +21,23 @@ vi.mock("../services/auth-service.js", () => ({
   isSubscriptionAvailable: () => false,
 }));
 
+let authDisabled = false;
+vi.mock("../services/oauth/index.js", () => ({
+  isAuthDisabled: () => authDisabled,
+}));
+
 import { setupRoutes } from "./setup.js";
 
 // ─── Helpers ───
 
-async function buildTestApp(): Promise<FastifyInstance> {
+async function buildTestApp(user?: { workspaceRole: string } | null): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
   app.decorateRequest("user", undefined as any);
+  if (user !== undefined) {
+    app.addHook("onRequest", async (req) => {
+      (req as any).user = user;
+    });
+  }
   await setupRoutes(app);
   await app.ready();
   return app;
@@ -334,5 +344,102 @@ describe("POST /api/setup/repos", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().repos).toHaveLength(1);
     expect(res.json().repos[0].fullName).toBe("org/repo");
+  });
+});
+
+describe("admin guard on POST setup routes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    authDisabled = false;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("allows POST requests when no user is set (setup not yet complete)", async () => {
+    const app = await buildTestApp(); // no user
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ login: "testuser", name: "Test" }),
+      }),
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/setup/validate/github-token",
+      payload: { token: "ghp_test" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().valid).toBe(true);
+  });
+
+  it("allows POST requests for admin users", async () => {
+    const app = await buildTestApp({ workspaceRole: "admin" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ login: "testuser", name: "Test" }),
+      }),
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/setup/validate/github-token",
+      payload: { token: "ghp_test" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().valid).toBe(true);
+  });
+
+  it("rejects POST requests for non-admin users with 403", async () => {
+    const app = await buildTestApp({ workspaceRole: "member" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/setup/validate/github-token",
+      payload: { token: "ghp_test" },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error).toContain("Admin role required");
+  });
+
+  it("rejects viewer role on POST routes", async () => {
+    const app = await buildTestApp({ workspaceRole: "viewer" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/setup/validate/anthropic-key",
+      payload: { key: "sk-ant-test" },
+    });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("skips admin guard when auth is disabled", async () => {
+    authDisabled = true;
+    const app = await buildTestApp({ workspaceRole: "viewer" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ login: "testuser", name: "Test" }),
+      }),
+    );
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/setup/validate/github-token",
+      payload: { token: "ghp_test" },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().valid).toBe(true);
   });
 });
