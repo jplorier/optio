@@ -503,6 +503,8 @@ export function startTaskWorker() {
           : undefined;
         let lastHeartbeat = Date.now();
         const HEARTBEAT_INTERVAL_MS = 60_000;
+        // Buffer for partial NDJSON lines split across chunks
+        let lineBuf = "";
 
         for await (const chunk of execSession.stdout as AsyncIterable<Buffer>) {
           const text = chunk.toString();
@@ -516,7 +518,11 @@ export function startTaskWorker() {
             lastHeartbeat = now;
           }
 
-          for (const line of text.split("\n")) {
+          const parts = (lineBuf + text).split("\n");
+          // Last element is either empty (text ended with \n) or a partial line
+          lineBuf = parts.pop() ?? "";
+
+          for (const line of parts) {
             if (!line.trim()) continue;
 
             // Parse as structured agent event (format depends on agent type)
@@ -580,6 +586,25 @@ export function startTaskWorker() {
                 }
               }
             }
+          }
+        }
+
+        // Flush any remaining partial line in the buffer
+        if (lineBuf.trim()) {
+          const parsed =
+            task.agentType === "codex"
+              ? parseCodexEvent(lineBuf, taskId)
+              : task.agentType === "copilot"
+                ? parseCopilotEvent(lineBuf, taskId)
+                : parseClaudeEvent(lineBuf, taskId);
+          for (const entry of parsed.entries) {
+            await taskService.appendTaskLog(
+              taskId,
+              entry.content,
+              "stdout",
+              entry.type,
+              entry.metadata,
+            );
           }
         }
 

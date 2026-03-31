@@ -599,6 +599,48 @@ function LogLine({
 }) {
   const type = log.logType ?? "text";
 
+  // Handle raw JSON events that leaked through as "text" (e.g. due to chunk splitting)
+  if (type === "text" && log.content.startsWith('{"type":')) {
+    try {
+      const event = JSON.parse(log.content);
+      if (event.type === "user" && event.message?.content) {
+        const results = event.message.content
+          .filter((b: any) => b.type === "tool_result")
+          .map((b: any) => {
+            const raw = typeof b.content === "string" ? b.content : "";
+            const trimmed = raw.length > 300 ? raw.slice(0, 300) + "…" : raw;
+            return trimmed.replace(/\\n/g, "\n").replace(/\\t/g, "\t").replace(/\\"/g, '"');
+          })
+          .filter(Boolean);
+        if (results.length > 0) {
+          return (
+            <div className="py-0.5 pl-5 text-text-muted/50 overflow-auto max-h-60">
+              <pre className="whitespace-pre-wrap break-all text-[11px] leading-relaxed">
+                {results.join("\n")}
+              </pre>
+            </div>
+          );
+        }
+        return null;
+      }
+      if (event.type === "assistant" && event.message?.content) {
+        const texts = event.message.content
+          .filter((b: any) => b.type === "text" && b.text)
+          .map((b: any) => b.text);
+        if (texts.length > 0) {
+          return (
+            <div className="py-0.5 text-text/90 whitespace-pre-wrap break-words">
+              {texts.join("\n")}
+            </div>
+          );
+        }
+        return null;
+      }
+    } catch {
+      // Not valid JSON despite the prefix — fall through to normal text rendering
+    }
+  }
+
   if (type === "system") {
     return (
       <div className="flex items-center gap-2 py-1 text-info/50 font-sans text-[11px] my-0.5 log-system">
