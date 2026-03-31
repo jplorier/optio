@@ -1,12 +1,14 @@
 import type { FastifyInstance } from "fastify";
-import { KubeConfig, CoreV1Api } from "@kubernetes/client-node";
-import { getRuntime } from "../services/container-service.js";
 import { getSettings } from "../services/optio-settings-service.js";
-import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { authenticateWs } from "./ws-auth.js";
 import { logger } from "../logger.js";
-import { OPTIO_TOOL_CATEGORIES, type OptioToolDefinition } from "@optio/shared";
-import type { ExecSession } from "@optio/shared";
+import {
+  OPTIO_TOOL_SCHEMAS,
+  OPTIO_TOOL_CATEGORIES,
+  type OptioToolDefinition,
+  type OptioToolSchema,
+} from "@optio/shared";
+import { executeToolCall, truncateToolResult } from "../services/optio-tool-executor.js";
 import {
   getClientIp,
   trackConnection,
@@ -16,10 +18,19 @@ import {
   WS_CLOSE_MESSAGE_TOO_LARGE,
 } from "./ws-limits.js";
 
-const NAMESPACE = "optio";
-const POD_ROLE_LABEL = "optio.pod-role=optio";
+// ─── Constants ───────────────────────────────────────────────────────────────
 
-// ─── Per-user concurrency tracking ───
+const ANTHROPIC_API_URL = process.env.ANTHROPIC_API_BASE_URL ?? "https://api.anthropic.com";
+
+const ANTHROPIC_MODEL_MAP: Record<string, string> = {
+  opus: "claude-opus-4-6",
+  sonnet: "claude-sonnet-4-6",
+  haiku: "claude-haiku-4-5-20251001",
+};
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+const DEFAULT_MAX_TURNS = 10;
+
+// ─── Per-user concurrency tracking ──────────────────────────────────────────
 
 /** Map of userId → active WebSocket (only one active conversation per user). */
 const activeConnections = new Map<string, WebSocket>();
@@ -29,64 +40,32 @@ export function _resetActiveConnections(): void {
   activeConnections.clear();
 }
 
-// ─── Optio pod discovery ───
+// ─── Anthropic API types ────────────────────────────────────────────────────
 
-let cachedPod: { ready: boolean; podName: string | null } | null = null;
-let cachedAt = 0;
-const CACHE_TTL_MS = 10_000;
-
-/** @internal Reset the pod cache — only for tests. */
-export function _resetPodCache(): void {
-  cachedPod = null;
-  cachedAt = 0;
+export interface AnthropicContentBlock {
+  type: "text" | "tool_use" | "tool_result";
+  text?: string;
+  id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  tool_use_id?: string;
+  content?: string;
+  is_error?: boolean;
 }
 
-function getK8sApi(): CoreV1Api {
-  const kc = new KubeConfig();
-  kc.loadFromDefault();
-  return kc.makeApiClient(CoreV1Api);
+interface AnthropicTool {
+  name: string;
+  description: string;
+  input_schema: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
 }
 
-async function findOptioPod(): Promise<{ ready: boolean; podName: string | null }> {
-  const now = Date.now();
-  if (cachedPod && now - cachedAt < CACHE_TTL_MS) {
-    return cachedPod;
-  }
+// ─── Tool confirmation classification ───────────────────────────────────────
 
-  try {
-    const k8s = getK8sApi();
-    const res = await k8s.listNamespacedPod({
-      namespace: NAMESPACE,
-      labelSelector: POD_ROLE_LABEL,
-    });
-
-    const pods = res.items ?? [];
-    if (pods.length === 0) {
-      cachedPod = { ready: false, podName: null };
-      cachedAt = now;
-      return cachedPod;
-    }
-
-    const pod = pods[0];
-    const podName = pod.metadata?.name ?? null;
-    const phase = pod.status?.phase;
-    const conditions = pod.status?.conditions ?? [];
-    const readyCondition = conditions.find((c) => c.type === "Ready");
-    const ready = phase === "Running" && readyCondition?.status === "True";
-
-    cachedPod = { ready, podName };
-    cachedAt = now;
-    return cachedPod;
-  } catch {
-    cachedPod = { ready: false, podName: null };
-    cachedAt = now;
-    return cachedPod;
-  }
-}
-
-// ─── Tool confirmation classification ───
-
-/** Tool names that require user confirmation before execution. */
+/** Tool name prefixes that indicate write operations requiring confirmation. */
 const WRITE_TOOL_PREFIXES = [
   "create_",
   "retry_",
@@ -103,8 +82,12 @@ export function toolRequiresConfirmation(toolName: string): boolean {
   return WRITE_TOOL_PREFIXES.some((prefix) => toolName.startsWith(prefix));
 }
 
-// ─── System prompt builder ───
+// ─── Tool definition builders ───────────────────────────────────────────────
 
+/**
+ * Build a plain-text tool listing from OPTIO_TOOL_CATEGORIES.
+ * Kept for backward compatibility — the main flow now uses toAnthropicTools().
+ */
 export function buildToolDefinitionsBlock(enabledTools: string[]): string {
   const allTools: OptioToolDefinition[] = OPTIO_TOOL_CATEGORIES.flatMap((cat) => cat.tools);
   const tools =
@@ -117,52 +100,51 @@ export function buildToolDefinitionsBlock(enabledTools: string[]): string {
   return lines.join("\n");
 }
 
+/**
+ * Convert OPTIO_TOOL_SCHEMAS into the Anthropic Messages API tool format,
+ * optionally filtering to a set of enabled tool names.
+ */
+export function toAnthropicTools(
+  schemas: OptioToolSchema[],
+  enabledTools: string[],
+): AnthropicTool[] {
+  const filtered =
+    enabledTools.length > 0 ? schemas.filter((s) => enabledTools.includes(s.name)) : schemas;
+  return filtered.map((s) => ({
+    name: s.name,
+    description: s.description,
+    input_schema: s.input_schema,
+  }));
+}
+
+// ─── System prompt builder ──────────────────────────────────────────────────
+
 export function buildSystemPrompt(settings: {
   systemPrompt: string;
-  enabledTools: string[];
   confirmWrites: boolean;
 }): string {
-  const toolBlock = buildToolDefinitionsBlock(settings.enabledTools);
-
   const parts: string[] = [
     `You are Optio, an AI operations assistant for managing coding agent tasks and infrastructure.`,
     `You help users manage their task pipeline: retry failed tasks, cancel tasks, update repo settings, check status, and more.`,
     ``,
-    `## Available Operations`,
-    toolBlock,
-    ``,
-    `## Response Format`,
-    ``,
-    `For read-only operations (list_*, get_*, watch_*), respond directly with the information.`,
-    ``,
+    `## Instructions`,
+    `- Use the provided tools to query the Optio API and perform operations.`,
+    `- For read operations, call the appropriate tool and present the results clearly.`,
+    `- Be concise and direct.`,
+    `- When listing tasks, show task ID, title, state, and age.`,
+    `- When errors occur, explain what went wrong and suggest fixes.`,
+    `- For bulk operations, summarize what will be affected before acting.`,
   ];
 
   if (settings.confirmWrites) {
     parts.push(
-      `For write operations (create, retry, cancel, update, delete, restart, manage, assign, bulk), you MUST propose the action first using this exact JSON format on its own line:`,
       ``,
-      "```",
-      `ACTION_PROPOSAL: {"description": "<what you want to do>", "items": ["<action item 1>", "<action item 2>"]}`,
-      "```",
-      ``,
-      `Wait for the user to approve before executing. Never execute write operations without proposing first.`,
-      `After the user approves, execute the actions and report results using this format:`,
-      ``,
-      "```",
-      `ACTION_RESULT: {"success": true, "summary": "<what was done>"}`,
-      "```",
-      ``,
+      `## Write Operation Policy`,
+      `For write operations (create, retry, cancel, update, delete, restart, assign, bulk),` +
+        ` explain what you intend to do BEFORE calling the tool.` +
+        ` The system will ask the user for confirmation automatically.`,
     );
   }
-
-  parts.push(
-    `## Guidelines`,
-    `- Be concise and direct`,
-    `- When listing tasks, show task ID, title, state, and age`,
-    `- When errors occur, explain what went wrong and suggest fixes`,
-    `- For bulk operations, summarize what will be affected before proposing`,
-    `- Use the Optio API at $OPTIO_API_URL for all operations`,
-  );
 
   if (settings.systemPrompt) {
     parts.push(``, `## Additional Instructions`, settings.systemPrompt);
@@ -171,7 +153,7 @@ export function buildSystemPrompt(settings: {
   return parts.join("\n");
 }
 
-// ─── Action proposal parser ───
+// ─── Action proposal / result parsers (kept for backward compat) ────────────
 
 export interface ParsedActionProposal {
   description: string;
@@ -214,7 +196,183 @@ export function parseActionResult(text: string): ParsedActionResult | null {
   return null;
 }
 
-// ─── WebSocket handler ───
+// ─── Anthropic streaming ────────────────────────────────────────────────────
+
+interface StreamedBlock {
+  type: "text" | "tool_use";
+  text?: string;
+  id?: string;
+  name?: string;
+  partialJson?: string;
+  input?: Record<string, unknown>;
+}
+
+/**
+ * Stream an Anthropic Messages API response (SSE), forwarding text deltas
+ * to the WebSocket in real time. Returns the collected content blocks and
+ * stop reason once the stream ends.
+ */
+export async function streamAnthropicResponse(
+  response: Response,
+  send: (msg: Record<string, unknown>) => void,
+): Promise<{
+  content: AnthropicContentBlock[];
+  stopReason: string;
+  inputTokens: number;
+  outputTokens: number;
+}> {
+  const blocks: StreamedBlock[] = [];
+  let stopReason = "";
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const data = line.slice(6).trim();
+      if (!data || data === "[DONE]") continue;
+
+      let event: Record<string, unknown>;
+      try {
+        event = JSON.parse(data);
+      } catch {
+        continue;
+      }
+
+      switch (event.type) {
+        case "message_start": {
+          const msg = event.message as Record<string, unknown> | undefined;
+          const usage = msg?.usage as Record<string, number> | undefined;
+          if (usage) inputTokens = usage.input_tokens ?? 0;
+          break;
+        }
+        case "content_block_start": {
+          const idx = event.index as number;
+          const block = event.content_block as Record<string, unknown>;
+          if (block.type === "text") {
+            blocks[idx] = { type: "text", text: "" };
+          } else if (block.type === "tool_use") {
+            blocks[idx] = {
+              type: "tool_use",
+              id: block.id as string,
+              name: block.name as string,
+              partialJson: "",
+            };
+          }
+          break;
+        }
+        case "content_block_delta": {
+          const idx = event.index as number;
+          const delta = event.delta as Record<string, unknown>;
+          const block = blocks[idx];
+          if (!block) break;
+
+          if (delta.type === "text_delta" && block.type === "text") {
+            const text = delta.text as string;
+            block.text = (block.text ?? "") + text;
+            send({ type: "text", content: text });
+          } else if (delta.type === "input_json_delta" && block.type === "tool_use") {
+            block.partialJson = (block.partialJson ?? "") + (delta.partial_json as string);
+          }
+          break;
+        }
+        case "content_block_stop": {
+          const idx = event.index as number;
+          const block = blocks[idx];
+          if (block?.type === "tool_use" && block.partialJson) {
+            try {
+              block.input = JSON.parse(block.partialJson);
+            } catch {
+              block.input = {};
+            }
+          }
+          break;
+        }
+        case "message_delta": {
+          const delta = event.delta as Record<string, unknown> | undefined;
+          if (delta?.stop_reason) stopReason = delta.stop_reason as string;
+          const usage = event.usage as Record<string, number> | undefined;
+          if (usage) outputTokens += usage.output_tokens ?? 0;
+          break;
+        }
+      }
+    }
+  }
+
+  // Convert streamed blocks to AnthropicContentBlocks
+  const content: AnthropicContentBlock[] = blocks.filter(Boolean).map((block) => {
+    if (block.type === "text") {
+      return { type: "text" as const, text: block.text ?? "" };
+    }
+    return {
+      type: "tool_use" as const,
+      id: block.id,
+      name: block.name,
+      input: block.input ?? {},
+    };
+  });
+
+  return { content, stopReason, inputTokens, outputTokens };
+}
+
+// ─── Auth helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Retrieve the Anthropic API credentials from the secrets store.
+ * Returns the raw key or token for use with the Messages API.
+ */
+async function getAnthropicAuth(log: {
+  warn: (obj: unknown, msg: string) => void;
+}): Promise<{ apiKey?: string; oauthToken?: string }> {
+  try {
+    const { retrieveSecret } = await import("../services/secret-service.js");
+    const authMode = (await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null)) as string | null;
+
+    if (authMode === "api-key") {
+      const apiKey = await retrieveSecret("ANTHROPIC_API_KEY").catch(() => null);
+      return apiKey ? { apiKey: apiKey as string } : {};
+    } else if (authMode === "oauth-token") {
+      const token = await retrieveSecret("CLAUDE_CODE_OAUTH_TOKEN").catch(() => null);
+      return token ? { oauthToken: token as string } : {};
+    } else if (authMode === "max-subscription") {
+      const { getClaudeAuthToken } = await import("../services/auth-service.js");
+      const result = getClaudeAuthToken();
+      return result.available && result.token ? { oauthToken: result.token } : {};
+    }
+  } catch (err) {
+    log.warn({ err }, "Failed to get Anthropic auth");
+  }
+  return {};
+}
+
+function buildAnthropicHeaders(auth: {
+  apiKey?: string;
+  oauthToken?: string;
+}): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "anthropic-version": "2023-06-01",
+  };
+  if (auth.apiKey) {
+    headers["x-api-key"] = auth.apiKey;
+  } else if (auth.oauthToken) {
+    headers["authorization"] = `Bearer ${auth.oauthToken}`;
+  }
+  return headers;
+}
+
+// ─── WebSocket handler ──────────────────────────────────────────────────────
 
 export async function optioChatWs(app: FastifyInstance) {
   app.get("/ws/optio/chat", { websocket: true }, async (socket, req) => {
@@ -250,11 +408,24 @@ export async function optioChatWs(app: FastifyInstance) {
     activeConnections.set(userId, socket as unknown as WebSocket);
     log.info("Optio chat connected");
 
-    let execSession: ExecSession | null = null;
+    // Extract session token for tool execution (cookie or query param)
+    const cookieHeader = req.headers.cookie ?? "";
+    const sessionMatch = cookieHeader.match(/optio_session=([^;]+)/);
+    const sessionCookie = sessionMatch?.[1] ?? "";
+    const wsToken = (req.query as Record<string, string>)?.token ?? "";
+    const sessionToken = sessionCookie || wsToken;
+
     let isProcessing = false;
-    let outputBuffer = "";
-    let accumulatedText = "";
+    let abortController: AbortController | null = null;
     let currentActionId: string | null = null;
+
+    // Conversation state for the multi-turn tool-use loop
+    let conversationMessages: Array<{
+      role: "user" | "assistant";
+      content: string | AnthropicContentBlock[];
+    }> = [];
+    let pendingWriteToolCalls: AnthropicContentBlock[] = [];
+    let pendingReadResults: AnthropicContentBlock[] = [];
 
     const send = (msg: Record<string, unknown>) => {
       if (socket.readyState === 1) {
@@ -266,25 +437,143 @@ export async function optioChatWs(app: FastifyInstance) {
     send({ type: "status", status: "ready" });
 
     /**
-     * Build the conversation context into a single prompt string.
-     * Each message in conversationContext is { role, content }.
+     * Run the tool-use loop: call Anthropic Messages API, handle tool calls,
+     * repeat until the model stops or we hit maxTurns.
      */
-    const buildPromptWithContext = (
-      userMessage: string,
-      conversationContext: Array<{ role: string; content: string }>,
-    ): string => {
-      if (!conversationContext.length) return userMessage;
+    const runToolLoop = async (
+      systemPrompt: string,
+      tools: AnthropicTool[],
+      auth: { apiKey?: string; oauthToken?: string },
+      model: string,
+      maxTurns: number,
+      confirmWrites: boolean,
+    ) => {
+      const headers = buildAnthropicHeaders(auth);
 
-      const contextLines = conversationContext.map((msg) => {
-        const prefix = msg.role === "user" ? "User" : "Assistant";
-        return `${prefix}: ${msg.content}`;
-      });
+      for (let turn = 0; turn < maxTurns; turn++) {
+        abortController = new AbortController();
 
-      return [...contextLines, `User: ${userMessage}`].join("\n\n");
+        const body = {
+          model,
+          system: systemPrompt,
+          messages: conversationMessages,
+          ...(tools.length > 0 ? { tools } : {}),
+          max_tokens: 4096,
+          stream: true,
+        };
+
+        let response: Response;
+        try {
+          response = await fetch(`${ANTHROPIC_API_URL}/v1/messages`, {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+            signal: abortController.signal,
+          });
+        } catch (err) {
+          if ((err as Error).name === "AbortError") {
+            log.info("Anthropic API call aborted");
+            return;
+          }
+          throw err;
+        }
+
+        if (!response.ok) {
+          const errorBody = await response.text();
+          log.error({ status: response.status, body: errorBody }, "Anthropic API error");
+          send({
+            type: "error",
+            message: `API error (${response.status}): ${errorBody.slice(0, 200)}`,
+          });
+          return;
+        }
+
+        const { content, stopReason } = await streamAnthropicResponse(response, send);
+
+        abortController = null;
+
+        // Add assistant response to conversation
+        conversationMessages.push({ role: "assistant", content });
+
+        // If no tool calls, we're done
+        if (stopReason !== "tool_use") {
+          return;
+        }
+
+        // Separate tool calls into reads and writes
+        const toolCalls = content.filter((b) => b.type === "tool_use");
+        const readCalls = toolCalls.filter((t) => !toolRequiresConfirmation(t.name!));
+        const writeCalls = toolCalls.filter((t) => toolRequiresConfirmation(t.name!));
+
+        // Execute read calls immediately
+        const readResults: AnthropicContentBlock[] = [];
+        for (const tc of readCalls) {
+          const result = await executeToolCall(
+            app,
+            tc.name!,
+            (tc.input ?? {}) as Record<string, unknown>,
+            sessionToken,
+          );
+          readResults.push({
+            type: "tool_result",
+            tool_use_id: tc.id!,
+            content: truncateToolResult(result.result),
+            is_error: !result.success,
+          });
+        }
+
+        // If there are write calls and confirmation is enabled, pause for approval
+        if (writeCalls.length > 0 && confirmWrites) {
+          pendingWriteToolCalls = writeCalls;
+          pendingReadResults = readResults;
+
+          const items = writeCalls.map((tc) => `${tc.name}(${JSON.stringify(tc.input)})`);
+          currentActionId = `action-${Date.now()}`;
+          send({
+            type: "action_proposal",
+            actionId: currentActionId,
+            description: `Execute ${writeCalls.length} write operation(s)`,
+            items,
+          });
+          send({ type: "status", status: "waiting_for_approval" });
+          return; // Wait for approve/deny message
+        }
+
+        // Execute write calls immediately (no confirmation needed)
+        const writeResults: AnthropicContentBlock[] = [];
+        for (const tc of writeCalls) {
+          const result = await executeToolCall(
+            app,
+            tc.name!,
+            (tc.input ?? {}) as Record<string, unknown>,
+            sessionToken,
+          );
+          writeResults.push({
+            type: "tool_result",
+            tool_use_id: tc.id!,
+            content: truncateToolResult(result.result),
+            is_error: !result.success,
+          });
+          send({
+            type: "action_result",
+            success: result.success,
+            summary: `${tc.name}: ${result.success ? "success" : "failed"}`,
+          });
+        }
+
+        // Feed all tool results back to the model
+        conversationMessages.push({
+          role: "user",
+          content: [...readResults, ...writeResults],
+        });
+      }
+
+      // Max turns reached
+      send({ type: "text", content: "\n\n(Reached maximum conversation turns)" });
     };
 
     /**
-     * Execute a single claude -p invocation in the Optio pod.
+     * Process a new user message.
      */
     const runPrompt = async (
       userMessage: string,
@@ -296,24 +585,18 @@ export async function optioChatWs(app: FastifyInstance) {
       }
 
       isProcessing = true;
-      accumulatedText = "";
       currentActionId = null;
+      pendingWriteToolCalls = [];
+      pendingReadResults = [];
       send({ type: "status", status: "thinking" });
 
-      // Check pod readiness
-      const enabled = process.env.OPTIO_POD_ENABLED === "true";
-      if (!enabled) {
-        send({ type: "error", message: "Optio pod is not enabled" });
-        isProcessing = false;
-        send({ type: "status", status: "ready" });
-        return;
-      }
-
-      const podInfo = await findOptioPod();
-      if (!podInfo.ready || !podInfo.podName) {
+      // Get Anthropic credentials
+      const auth = await getAnthropicAuth(log);
+      if (!auth.apiKey && !auth.oauthToken) {
         send({
           type: "error",
-          message: "Optio is starting up, try again in a moment",
+          message:
+            "No Anthropic credentials configured. Set up an API key or OAuth token in the setup wizard.",
         });
         isProcessing = false;
         send({ type: "status", status: "ready" });
@@ -322,114 +605,116 @@ export async function optioChatWs(app: FastifyInstance) {
 
       // Load settings
       const settings = await getSettings(user.workspaceId);
+      const model = ANTHROPIC_MODEL_MAP[settings.model] ?? DEFAULT_MODEL;
+      const maxTurns = settings.maxTurns || DEFAULT_MAX_TURNS;
 
-      // Build the full prompt
+      // Build system prompt (tool definitions are passed separately to the API)
       const systemPrompt = buildSystemPrompt({
         systemPrompt: settings.systemPrompt,
-        enabledTools: settings.enabledTools,
         confirmWrites: settings.confirmWrites,
       });
-      const conversationPrompt = buildPromptWithContext(userMessage, conversationContext);
-      const fullPrompt = `${systemPrompt}\n\n---\n\n${conversationPrompt}`;
 
-      // Build the claude command
-      const escapedPrompt = fullPrompt.replace(/'/g, "'\\''");
-      const modelFlag = settings.model ? `--model ${settings.model}` : "";
+      // Build tool definitions in Anthropic format
+      const tools = toAnthropicTools(OPTIO_TOOL_SCHEMAS, settings.enabledTools);
 
-      // Build auth env vars
-      const authEnv = await buildAuthEnv(log);
-
-      const script = [
-        "set -e",
-        // Set auth env vars
-        ...Object.entries(authEnv).map(([k, v]) => `export ${k}='${v.replace(/'/g, "'\\''")}'`),
-        // Run claude in one-shot prompt mode
-        `claude -p '${escapedPrompt}' ${modelFlag} --output-format stream-json --verbose --dangerously-skip-permissions 2>&1 || true`,
-      ].join("\n");
-
-      const rt = getRuntime();
-      const handle = { id: podInfo.podName, name: podInfo.podName };
+      // Build messages from conversation context
+      conversationMessages = [];
+      for (const msg of conversationContext) {
+        conversationMessages.push({
+          role: msg.role === "user" ? "user" : "assistant",
+          content: msg.content,
+        });
+      }
+      conversationMessages.push({ role: "user", content: userMessage });
 
       try {
-        execSession = await rt.exec(handle, ["bash", "-c", script], { tty: false });
-
-        execSession.stdout.on("data", (chunk: Buffer) => {
-          outputBuffer += chunk.toString("utf-8");
-
-          // Process complete lines
-          const lines = outputBuffer.split("\n");
-          outputBuffer = lines.pop() ?? "";
-
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            processOutputLine(line);
-          }
-        });
-
-        execSession.stderr.on("data", (chunk: Buffer) => {
-          const text = chunk.toString("utf-8").trim();
-          if (text) {
-            log.warn({ stderr: text }, "Agent stderr");
-          }
-        });
-
-        // Wait for exec to finish
-        await new Promise<void>((resolve) => {
-          execSession!.stdout.on("end", () => {
-            // Process remaining buffer
-            if (outputBuffer.trim()) {
-              processOutputLine(outputBuffer);
-              outputBuffer = "";
-            }
-            resolve();
-          });
-        });
+        await runToolLoop(systemPrompt, tools, auth, model, maxTurns, settings.confirmWrites);
       } catch (err) {
-        log.error({ err }, "Failed to run claude prompt in Optio pod");
-        send({ type: "error", message: "Failed to execute agent prompt" });
+        log.error({ err }, "Tool loop failed");
+        send({ type: "error", message: "Failed to process request" });
       } finally {
-        isProcessing = false;
-        execSession = null;
-
-        // Check if we accumulated an action proposal
-        const proposal = parseActionProposal(accumulatedText);
-        if (proposal) {
-          currentActionId = `action-${Date.now()}`;
-          send({
-            type: "action_proposal",
-            actionId: currentActionId,
-            description: proposal.description,
-            items: proposal.items,
-          });
-          send({ type: "status", status: "waiting_for_approval" });
-        } else {
-          const result = parseActionResult(accumulatedText);
-          if (result) {
-            send({
-              type: "action_result",
-              success: result.success,
-              summary: result.summary,
-            });
-          }
+        if (!currentActionId) {
+          // Only mark ready if we're not waiting for approval
+          isProcessing = false;
           send({ type: "status", status: "ready" });
         }
       }
     };
 
     /**
-     * Process a single line of NDJSON output from claude.
+     * Continue the tool-use loop after user approves or denies a write action.
      */
-    const processOutputLine = (line: string) => {
-      const { entries } = parseClaudeEvent(line, `optio-${userId}`);
-      for (const entry of entries) {
-        if (entry.type === "text") {
-          accumulatedText += entry.content;
-          send({ type: "text", content: entry.content });
+    const continueAfterDecision = async (approved: boolean, feedback?: string) => {
+      send({ type: "status", status: approved ? "executing" : "thinking" });
+
+      const auth = await getAnthropicAuth(log);
+      if (!auth.apiKey && !auth.oauthToken) {
+        send({ type: "error", message: "No Anthropic credentials configured" });
+        isProcessing = false;
+        send({ type: "status", status: "ready" });
+        return;
+      }
+
+      const settings = await getSettings(user.workspaceId);
+      const model = ANTHROPIC_MODEL_MAP[settings.model] ?? DEFAULT_MODEL;
+      const maxTurns = settings.maxTurns || DEFAULT_MAX_TURNS;
+      const systemPrompt = buildSystemPrompt({
+        systemPrompt: settings.systemPrompt,
+        confirmWrites: settings.confirmWrites,
+      });
+      const tools = toAnthropicTools(OPTIO_TOOL_SCHEMAS, settings.enabledTools);
+
+      // Build tool results for the pending write calls
+      const writeResults: AnthropicContentBlock[] = [];
+      for (const tc of pendingWriteToolCalls) {
+        if (approved) {
+          const result = await executeToolCall(
+            app,
+            tc.name!,
+            (tc.input ?? {}) as Record<string, unknown>,
+            sessionToken,
+          );
+          writeResults.push({
+            type: "tool_result",
+            tool_use_id: tc.id!,
+            content: truncateToolResult(result.result),
+            is_error: !result.success,
+          });
+          send({
+            type: "action_result",
+            success: result.success,
+            summary: `${tc.name}: ${result.success ? "success" : "failed"}`,
+          });
+        } else {
+          writeResults.push({
+            type: "tool_result",
+            tool_use_id: tc.id!,
+            content: feedback
+              ? `User denied this action. Feedback: "${feedback}"`
+              : "User denied this action.",
+            is_error: true,
+          });
         }
-        // We still send other event types as info for debugging/logging
-        if (entry.type === "error") {
-          send({ type: "error", message: entry.content });
-        }
+      }
+
+      // Append all tool results (reads executed earlier + writes just resolved)
+      conversationMessages.push({
+        role: "user",
+        content: [...pendingReadResults, ...writeResults],
+      });
+
+      pendingWriteToolCalls = [];
+      pendingReadResults = [];
+      currentActionId = null;
+
+      try {
+        await runToolLoop(systemPrompt, tools, auth, model, maxTurns, settings.confirmWrites);
+      } catch (err) {
+        log.error({ err }, "Tool loop continuation failed");
+        send({ type: "error", message: "Failed to continue" });
+      } finally {
+        isProcessing = false;
+        send({ type: "status", status: "ready" });
       }
     };
 
@@ -465,6 +750,8 @@ export async function optioChatWs(app: FastifyInstance) {
           runPrompt(msg.content, msg.conversationContext ?? []).catch((err) => {
             log.error({ err }, "Prompt execution failed");
             send({ type: "error", message: "Prompt failed" });
+            isProcessing = false;
+            send({ type: "status", status: "ready" });
           });
           break;
 
@@ -473,24 +760,12 @@ export async function optioChatWs(app: FastifyInstance) {
             send({ type: "error", message: "No pending action to approve" });
             return;
           }
-          {
-            const approvalContext = [
-              ...(msg.conversationContext ?? []),
-              {
-                role: "assistant" as const,
-                content: accumulatedText,
-              },
-            ];
-            currentActionId = null;
-            send({ type: "status", status: "executing" });
-            runPrompt(
-              "The user approved. Execute the proposed actions now.",
-              approvalContext,
-            ).catch((err) => {
-              log.error({ err }, "Approval execution failed");
-              send({ type: "error", message: "Execution failed" });
-            });
-          }
+          continueAfterDecision(true).catch((err) => {
+            log.error({ err }, "Approval execution failed");
+            send({ type: "error", message: "Execution failed" });
+            isProcessing = false;
+            send({ type: "status", status: "ready" });
+          });
           break;
 
         case "deny":
@@ -498,37 +773,26 @@ export async function optioChatWs(app: FastifyInstance) {
             send({ type: "error", message: "No pending action to deny" });
             return;
           }
-          {
-            const feedback = msg.feedback ?? "The user declined.";
-            const denyContext = [
-              ...(msg.conversationContext ?? []),
-              {
-                role: "assistant" as const,
-                content: accumulatedText,
-              },
-            ];
-            currentActionId = null;
-            runPrompt(
-              `The user declined. Their feedback: "${feedback}". Ask them what they'd like to change.`,
-              denyContext,
-            ).catch((err) => {
-              log.error({ err }, "Denial follow-up failed");
-              send({ type: "error", message: "Follow-up failed" });
-            });
-          }
+          continueAfterDecision(false, msg.feedback).catch((err) => {
+            log.error({ err }, "Denial follow-up failed");
+            send({ type: "error", message: "Follow-up failed" });
+            isProcessing = false;
+            send({ type: "status", status: "ready" });
+          });
           break;
 
         case "interrupt":
-          if (execSession) {
-            log.info("Interrupting Optio agent process");
-            execSession.close();
-            execSession = null;
-            isProcessing = false;
-            outputBuffer = "";
-            accumulatedText = "";
-            currentActionId = null;
-            send({ type: "status", status: "ready" });
+          if (abortController) {
+            log.info("Interrupting Anthropic API call");
+            abortController.abort();
+            abortController = null;
           }
+          isProcessing = false;
+          currentActionId = null;
+          pendingWriteToolCalls = [];
+          pendingReadResults = [];
+          conversationMessages = [];
+          send({ type: "status", status: "ready" });
           break;
 
         default:
@@ -540,45 +804,10 @@ export async function optioChatWs(app: FastifyInstance) {
       log.info("Optio chat disconnected");
       releaseConnection(clientIp);
       activeConnections.delete(userId);
-      if (execSession) {
-        execSession.close();
-        execSession = null;
+      if (abortController) {
+        abortController.abort();
+        abortController = null;
       }
     });
   });
-}
-
-// ─── Auth helpers (shared with session-chat.ts pattern) ───
-
-async function buildAuthEnv(log: {
-  warn: (obj: any, msg: string) => void;
-}): Promise<Record<string, string>> {
-  const env: Record<string, string> = {};
-
-  try {
-    const { retrieveSecret } = await import("../services/secret-service.js");
-    const authMode = (await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null)) as string | null;
-
-    if (authMode === "api-key") {
-      const apiKey = await retrieveSecret("ANTHROPIC_API_KEY").catch(() => null);
-      if (apiKey) {
-        env.ANTHROPIC_API_KEY = apiKey as string;
-      }
-    } else if (authMode === "max-subscription") {
-      const { getClaudeAuthToken } = await import("../services/auth-service.js");
-      const result = getClaudeAuthToken();
-      if (result.available && result.token) {
-        env.CLAUDE_CODE_OAUTH_TOKEN = result.token;
-      }
-    } else if (authMode === "oauth-token") {
-      const token = await retrieveSecret("CLAUDE_CODE_OAUTH_TOKEN").catch(() => null);
-      if (token) {
-        env.CLAUDE_CODE_OAUTH_TOKEN = token as string;
-      }
-    }
-  } catch (err) {
-    log.warn({ err }, "Failed to build auth env for Optio chat");
-  }
-
-  return env;
 }

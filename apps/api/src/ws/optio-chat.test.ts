@@ -5,14 +5,15 @@ import {
   buildSystemPrompt,
   parseActionProposal,
   parseActionResult,
+  toAnthropicTools,
+  streamAnthropicResponse,
   _resetActiveConnections,
-  _resetPodCache,
 } from "./optio-chat.js";
+import { OPTIO_TOOL_SCHEMAS } from "@optio/shared";
 
 describe("optio-chat", () => {
   beforeEach(() => {
     _resetActiveConnections();
-    _resetPodCache();
   });
 
   // ─── toolRequiresConfirmation ───
@@ -42,7 +43,7 @@ describe("optio-chat", () => {
     });
   });
 
-  // ─── buildToolDefinitionsBlock ───
+  // ─── buildToolDefinitionsBlock (backward compat) ───
 
   describe("buildToolDefinitionsBlock", () => {
     it("returns all tools when enabledTools is empty", () => {
@@ -68,53 +69,93 @@ describe("optio-chat", () => {
     });
   });
 
+  // ─── toAnthropicTools ───
+
+  describe("toAnthropicTools", () => {
+    it("returns all tools when enabledTools is empty", () => {
+      const tools = toAnthropicTools(OPTIO_TOOL_SCHEMAS, []);
+      expect(tools.length).toBe(OPTIO_TOOL_SCHEMAS.length);
+      const names = tools.map((t) => t.name);
+      expect(names).toContain("list_tasks");
+      expect(names).toContain("get_task");
+      expect(names).toContain("create_task");
+      expect(names).toContain("get_cost_analytics");
+    });
+
+    it("filters to enabled tools", () => {
+      const tools = toAnthropicTools(OPTIO_TOOL_SCHEMAS, ["list_tasks", "get_task"]);
+      expect(tools.length).toBe(2);
+      expect(tools[0].name).toBe("list_tasks");
+      expect(tools[1].name).toBe("get_task");
+    });
+
+    it("returns tools in Anthropic format with name, description, input_schema", () => {
+      const tools = toAnthropicTools(OPTIO_TOOL_SCHEMAS, ["list_tasks"]);
+      expect(tools.length).toBe(1);
+      const tool = tools[0];
+      expect(tool).toHaveProperty("name", "list_tasks");
+      expect(tool).toHaveProperty("description");
+      expect(tool).toHaveProperty("input_schema");
+      expect(tool.input_schema.type).toBe("object");
+      expect(tool.input_schema.properties).toBeDefined();
+      // Should NOT include endpoint or method (Anthropic format only)
+      expect(tool).not.toHaveProperty("endpoint");
+      expect(tool).not.toHaveProperty("method");
+      expect(tool).not.toHaveProperty("category");
+    });
+
+    it("preserves input_schema properties and required fields", () => {
+      const tools = toAnthropicTools(OPTIO_TOOL_SCHEMAS, ["create_task"]);
+      const tool = tools[0];
+      expect(tool.input_schema.properties).toHaveProperty("title");
+      expect(tool.input_schema.properties).toHaveProperty("repoUrl");
+      expect(tool.input_schema.properties).toHaveProperty("prompt");
+      expect(tool.input_schema.required).toEqual(["title", "repoUrl", "prompt"]);
+    });
+  });
+
   // ─── buildSystemPrompt ───
 
   describe("buildSystemPrompt", () => {
     it("includes Optio persona", () => {
       const prompt = buildSystemPrompt({
         systemPrompt: "",
-        enabledTools: [],
         confirmWrites: true,
       });
       expect(prompt).toContain("You are Optio");
       expect(prompt).toContain("operations assistant");
     });
 
-    it("includes tool definitions", () => {
+    it("includes instructions about using tools", () => {
       const prompt = buildSystemPrompt({
         systemPrompt: "",
-        enabledTools: [],
-        confirmWrites: true,
-      });
-      expect(prompt).toContain("Available Operations");
-      expect(prompt).toContain("list_tasks");
-    });
-
-    it("includes action proposal format when confirmWrites is true", () => {
-      const prompt = buildSystemPrompt({
-        systemPrompt: "",
-        enabledTools: [],
-        confirmWrites: true,
-      });
-      expect(prompt).toContain("ACTION_PROPOSAL");
-      expect(prompt).toContain("Wait for the user to approve");
-    });
-
-    it("omits action proposal format when confirmWrites is false", () => {
-      const prompt = buildSystemPrompt({
-        systemPrompt: "",
-        enabledTools: [],
         confirmWrites: false,
       });
-      expect(prompt).not.toContain("ACTION_PROPOSAL");
-      expect(prompt).not.toContain("Wait for the user to approve");
+      expect(prompt).toContain("Use the provided tools");
+      expect(prompt).toContain("Be concise and direct");
+    });
+
+    it("includes write operation policy when confirmWrites is true", () => {
+      const prompt = buildSystemPrompt({
+        systemPrompt: "",
+        confirmWrites: true,
+      });
+      expect(prompt).toContain("Write Operation Policy");
+      expect(prompt).toContain("confirmation automatically");
+    });
+
+    it("omits write operation policy when confirmWrites is false", () => {
+      const prompt = buildSystemPrompt({
+        systemPrompt: "",
+        confirmWrites: false,
+      });
+      expect(prompt).not.toContain("Write Operation Policy");
+      expect(prompt).not.toContain("confirmation automatically");
     });
 
     it("appends custom system prompt", () => {
       const prompt = buildSystemPrompt({
         systemPrompt: "Always respond in Japanese.",
-        enabledTools: [],
         confirmWrites: true,
       });
       expect(prompt).toContain("Additional Instructions");
@@ -124,7 +165,6 @@ describe("optio-chat", () => {
     it("omits additional instructions when systemPrompt is empty", () => {
       const prompt = buildSystemPrompt({
         systemPrompt: "",
-        enabledTools: [],
         confirmWrites: true,
       });
       expect(prompt).not.toContain("Additional Instructions");
@@ -204,6 +244,98 @@ ACTION_RESULT: {"success": true, "summary": "Retried 3 tasks successfully"}`;
     it("returns null when required fields are missing", () => {
       const text = 'ACTION_RESULT: {"success": true}';
       expect(parseActionResult(text)).toBeNull();
+    });
+  });
+
+  // ─── streamAnthropicResponse ───
+
+  describe("streamAnthropicResponse", () => {
+    /** Build a fake Response from SSE lines. */
+    function fakeSSEResponse(events: string[]): Response {
+      const body = events.join("\n") + "\n";
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        },
+      });
+      return new Response(stream);
+    }
+
+    it("streams text deltas to send callback", async () => {
+      const events = [
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":10}}}',
+        'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":" world"}}',
+        'data: {"type":"content_block_stop","index":0}',
+        'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}',
+        'data: {"type":"message_stop"}',
+      ];
+
+      const sent: Record<string, unknown>[] = [];
+      const result = await streamAnthropicResponse(fakeSSEResponse(events), (msg) =>
+        sent.push(msg),
+      );
+
+      expect(sent).toEqual([
+        { type: "text", content: "Hello" },
+        { type: "text", content: " world" },
+      ]);
+      expect(result.content).toEqual([{ type: "text", text: "Hello world" }]);
+      expect(result.stopReason).toBe("end_turn");
+      expect(result.inputTokens).toBe(10);
+      expect(result.outputTokens).toBe(5);
+    });
+
+    it("collects tool_use blocks from streaming", async () => {
+      const events = [
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":20}}}',
+        'data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}',
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Checking..."}}',
+        'data: {"type":"content_block_stop","index":0}',
+        'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_123","name":"list_tasks","input":{}}}',
+        'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"state\\":"}}',
+        'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"\\"failed\\"}"}}',
+        'data: {"type":"content_block_stop","index":1}',
+        'data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":15}}',
+        'data: {"type":"message_stop"}',
+      ];
+
+      const sent: Record<string, unknown>[] = [];
+      const result = await streamAnthropicResponse(fakeSSEResponse(events), (msg) =>
+        sent.push(msg),
+      );
+
+      // Only text deltas should be sent to client
+      expect(sent).toEqual([{ type: "text", content: "Checking..." }]);
+
+      expect(result.content.length).toBe(2);
+      expect(result.content[0]).toEqual({ type: "text", text: "Checking..." });
+      expect(result.content[1]).toEqual({
+        type: "tool_use",
+        id: "toolu_123",
+        name: "list_tasks",
+        input: { state: "failed" },
+      });
+      expect(result.stopReason).toBe("tool_use");
+    });
+
+    it("handles empty stream gracefully", async () => {
+      const events = [
+        'data: {"type":"message_start","message":{"usage":{"input_tokens":0}}}',
+        'data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}',
+        'data: {"type":"message_stop"}',
+      ];
+
+      const sent: Record<string, unknown>[] = [];
+      const result = await streamAnthropicResponse(fakeSSEResponse(events), (msg) =>
+        sent.push(msg),
+      );
+
+      expect(sent).toEqual([]);
+      expect(result.content).toEqual([]);
+      expect(result.stopReason).toBe("end_turn");
     });
   });
 });
