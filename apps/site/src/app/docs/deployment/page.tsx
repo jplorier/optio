@@ -376,7 +376,7 @@ kubectl get pvc -n optio`}</CodeBlock>
           {
             title: "Integrations",
             href: "/docs/guides/integrations",
-            description: "Connect GitHub Issues, Linear, Slack",
+            description: "Connect GitHub Issues, Linear, Jira, Notion, Slack",
           },
           {
             title: "API Reference",

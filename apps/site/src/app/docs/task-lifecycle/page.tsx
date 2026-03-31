@@ -108,7 +108,9 @@ export default function TaskLifecyclePage() {
         Here&apos;s the detailed flow when a task is processed:
       </p>
       <ol className="mt-4 list-decimal pl-5 space-y-2 text-[14px] text-text-muted">
-        <li>User creates a task via the UI, GitHub Issue assignment, or Linear ticket</li>
+        <li>
+          User creates a task via the UI, GitHub Issue assignment, Linear, Jira, or Notion ticket
+        </li>
         <li>
           Task is inserted and transitions{" "}
           <code className="rounded bg-bg-hover px-1.5 py-0.5 text-[13px] font-mono">

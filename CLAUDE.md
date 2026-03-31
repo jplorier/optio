@@ -4,7 +4,7 @@ Context and conventions for AI assistants working on the Optio codebase.
 
 ## What is Optio?
 
-Optio is a workflow orchestration system for AI coding agents. Think of it as "CI/CD where the build step is an AI agent." Users submit tasks (manually or from GitHub Issues, Linear, or Jira), and Optio:
+Optio is a workflow orchestration system for AI coding agents. Think of it as "CI/CD where the build step is an AI agent." Users submit tasks (manually or from GitHub Issues, Linear, Jira, or Notion), and Optio:
 
 1. Spins up an isolated Kubernetes pod for the repository (pod-per-repo)
 2. Creates a git worktree for the task (multiple tasks can run concurrently per repo)
@@ -534,7 +534,7 @@ Six BullMQ workers run as part of the API server:
 1. **task-worker** — main job processor, handles concurrency, dependency checks, provisioning, agent execution, result parsing
 2. **pr-watcher-worker** — polls GitHub PRs every 30s, tracks CI/review status, triggers reviews, auto-resumes on conflicts/failures, handles merge/close
 3. **repo-cleanup-worker** — health checks every 60s, auto-restart crashed pods, clean orphan worktrees, idle cleanup
-4. **ticket-sync-worker** — syncs tickets from configured providers (GitHub Issues, Linear, Jira)
+4. **ticket-sync-worker** — syncs tickets from configured providers (GitHub Issues, Linear, Jira, Notion)
 5. **webhook-worker** — delivers webhook events to configured endpoints
 6. **schedule-worker** — checks and triggers scheduled/recurring tasks
 

@@ -20,9 +20,9 @@ const features = [
     color: "#34d399",
   },
   {
-    title: "GitHub, Linear & Jira Intake",
+    title: "GitHub, Linear, Jira & Notion Intake",
     description:
-      "Pull tasks from GitHub Issues, Linear, or Jira tickets, or create them manually. One-click assign from the web UI kicks off the full pipeline.",
+      "Pull tasks from GitHub Issues, Linear, Jira, or Notion, or create them manually. One-click assign from the web UI kicks off the full pipeline.",
     color: "#f0a040",
   },
   {
@@ -40,7 +40,7 @@ const features = [
 ];
 
 const stages = [
-  { name: "Intake", description: "GitHub Issue, Linear, or manual", icon: "\u2192" },
+  { name: "Intake", description: "GitHub, Linear, Jira, Notion, or manual", icon: "\u2192" },
   { name: "Queued", description: "Enters the pipeline", icon: "\u25C7" },
   { name: "Provisioning", description: "Find or create pod", icon: "\u2699" },
   { name: "Running", description: "Agent writes code", icon: "\u26A1" },

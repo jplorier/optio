@@ -15,7 +15,7 @@ export default function GettingStartedPage() {
       <p className="mt-4 text-text-muted leading-relaxed">
         Optio is a workflow orchestration system for AI coding agents. Think of it as &quot;CI/CD
         where the build step is an AI agent.&quot; You submit tasks — from GitHub Issues, Linear,
-        Jira tickets, or manually — and Optio handles the full lifecycle: provisioning an isolated
+        Jira, Notion, or manually — and Optio handles the full lifecycle: provisioning an isolated
         environment, running the agent, opening a PR, monitoring CI, handling code review, and
         merging when everything passes.
       </p>

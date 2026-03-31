@@ -133,7 +133,7 @@ export default function ArchitecturePage() {
         </li>
         <li>
           <strong className="text-text-heading">Ticket Sync</strong> — Syncs tasks from GitHub
-          Issues, Linear, and Jira tickets.
+          Issues, Linear, Jira, and Notion.
         </li>
         <li>
           <strong className="text-text-heading">Webhook Worker</strong> — Delivers outgoing webhook
@@ -191,7 +191,7 @@ export default function ArchitecturePage() {
         </li>
         <li>
           <strong className="text-text-heading">@optio/ticket-providers</strong> — GitHub Issues,
-          Linear, and Jira ticket sync
+          Linear, Jira, and Notion ticket sync
         </li>
       </ul>
     </>

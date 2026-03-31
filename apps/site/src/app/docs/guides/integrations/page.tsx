@@ -5,7 +5,7 @@ import { Callout } from "@/components/docs/callout";
 
 export const metadata: Metadata = {
   title: "Integrations",
-  description: "Integrate Optio with GitHub Issues, Linear, Jira, Slack, and webhooks.",
+  description: "Integrate Optio with GitHub Issues, Linear, Jira, Notion, Slack, and webhooks.",
 };
 
 export default function IntegrationsPage() {
@@ -145,6 +145,108 @@ export default function IntegrationsPage() {
         </li>
         <li>Duplicate issues are not re-synced (deduplication by external ID)</li>
       </ul>
+
+      <h2 className="mt-10 text-2xl font-bold text-text-heading">Jira</h2>
+      <p className="mt-3 text-text-muted leading-relaxed">
+        Optio integrates with Jira as a ticket provider, syncing Jira issues into Optio tasks.
+      </p>
+
+      <h3 className="mt-6 text-lg font-semibold text-text-heading">Setup</h3>
+      <ol className="mt-3 list-decimal pl-5 space-y-2 text-[14px] text-text-muted">
+        <li>
+          Add a Jira ticket provider in <strong className="text-text-heading">Settings</strong>
+        </li>
+        <li>Configure your Jira base URL, email, API token, and project key</li>
+        <li>The ticket sync worker polls Jira for new issues matching your configuration</li>
+      </ol>
+      <div className="mt-3">
+        <CodeBlock title="API: Create Jira provider">{`POST /api/tickets/providers
+{
+  "source": "jira",
+  "config": {
+    "baseUrl": "https://your-org.atlassian.net",
+    "email": "you@example.com",
+    "apiToken": "your-jira-api-token",
+    "projectKey": "PROJ"
+  },
+  "enabled": true
+}`}</CodeBlock>
+      </div>
+
+      <h2 className="mt-10 text-2xl font-bold text-text-heading">Notion</h2>
+      <p className="mt-3 text-text-muted leading-relaxed">
+        Optio integrates with Notion as a ticket provider, syncing pages from a Notion database into
+        Optio tasks. Pages are filtered by a configurable multi-select label (default:{" "}
+        <code className="rounded bg-bg-hover px-1.5 py-0.5 text-[13px] font-mono">optio</code>).
+      </p>
+
+      <h3 className="mt-6 text-lg font-semibold text-text-heading">Setup</h3>
+      <ol className="mt-3 list-decimal pl-5 space-y-2 text-[14px] text-text-muted">
+        <li>
+          Create an internal integration at{" "}
+          <a
+            href="https://www.notion.so/my-integrations"
+            className="text-primary-light hover:underline"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            notion.so/my-integrations
+          </a>
+        </li>
+        <li>Share your database with the integration</li>
+        <li>
+          Add a Notion ticket provider in <strong className="text-text-heading">Settings</strong>{" "}
+          with the integration token and database ID
+        </li>
+      </ol>
+      <div className="mt-3">
+        <CodeBlock title="API: Create Notion provider">{`POST /api/tickets/providers
+{
+  "source": "notion",
+  "config": {
+    "apiKey": "ntn_...",
+    "databaseId": "your-database-id"
+  },
+  "enabled": true
+}`}</CodeBlock>
+      </div>
+
+      <h3 className="mt-6 text-lg font-semibold text-text-heading">Configuration Options</h3>
+      <div className="mt-4 overflow-hidden rounded-xl border border-border bg-bg-card">
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="border-b border-border bg-bg-subtle">
+              <th className="px-4 py-3 text-left font-semibold text-text-heading">Field</th>
+              <th className="px-4 py-3 text-left font-semibold text-text-heading">Default</th>
+              <th className="px-4 py-3 text-left font-semibold text-text-heading">Description</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border/50">
+            {[
+              ["apiKey", "(required)", "Notion integration token"],
+              ["databaseId", "(required)", "Notion database ID"],
+              ["label", '"optio"', "Multi-select label to filter pages"],
+              ["statusProperty", '"Status"', "Name of the status property"],
+              ["doneValue", '"Done"', "Status value that marks a page as done"],
+              ["titleProperty", '"Name"', "Name of the title property"],
+              ["maxPages", "unlimited", "Maximum pages to fetch per sync"],
+            ].map(([field, def, desc]) => (
+              <tr key={field}>
+                <td className="px-4 py-3 font-mono text-text-heading">{field}</td>
+                <td className="px-4 py-3 text-text-muted">{def}</td>
+                <td className="px-4 py-3 text-text-muted">{desc}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <Callout type="tip">
+        Add an{" "}
+        <code className="rounded bg-bg-hover px-1.5 py-0.5 text-[13px] font-mono">optio</code> tag
+        to a multi-select property on your Notion pages to control which pages get picked up by the
+        sync. Only pages with this label are created as tasks.
+      </Callout>
 
       <h2 className="mt-10 text-2xl font-bold text-text-heading">Slack</h2>
       <p className="mt-3 text-text-muted leading-relaxed">
