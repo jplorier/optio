@@ -1,4 +1,5 @@
 import { logger } from "../logger.js";
+import { assertSsrfSafe } from "../utils/ssrf.js";
 import type { TaskState } from "@optio/shared";
 import type { RepoRecord } from "./repo-service.js";
 
@@ -220,6 +221,9 @@ export async function sendSlackNotification(
   if (channel) {
     payload.channel = channel;
   }
+
+  // SSRF protection: verify URL does not resolve to a private/internal address
+  await assertSsrfSafe(webhookUrl);
 
   const response = await fetch(webhookUrl, {
     method: "POST",

@@ -1,9 +1,12 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { isSsrfSafeUrl } from "../utils/ssrf.js";
 import * as webhookService from "../services/webhook-service.js";
 
 const createWebhookSchema = z.object({
-  url: z.string().url(),
+  url: z.string().url().refine(isSsrfSafeUrl, {
+    message: "URL must not target private or internal addresses",
+  }),
   events: z
     .array(
       z.enum([

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { isSsrfSafeUrl } from "../utils/ssrf.js";
 import { handleSlackAction, sendSlackNotification } from "../services/slack-service.js";
 import { logger } from "../logger.js";
 
@@ -56,7 +57,9 @@ export async function slackRoutes(app: FastifyInstance) {
    */
   app.post("/api/slack/test", async (req, reply) => {
     const schema = z.object({
-      webhookUrl: z.string().url(),
+      webhookUrl: z.string().url().refine(isSsrfSafeUrl, {
+        message: "URL must not target private or internal addresses",
+      }),
       channel: z.string().optional(),
     });
     const { webhookUrl, channel } = schema.parse(req.body);

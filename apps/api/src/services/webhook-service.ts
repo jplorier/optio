@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { eq, desc } from "drizzle-orm";
+import { assertSsrfSafe } from "../utils/ssrf.js";
 import { db } from "../db/client.js";
 import { webhooks, webhookDeliveries } from "../db/schema.js";
 import { encrypt, decrypt } from "./secret-service.js";
@@ -243,6 +244,9 @@ export async function deliverWebhook(
   let error: string | undefined;
 
   try {
+    // SSRF protection: verify URL does not resolve to a private/internal address
+    await assertSsrfSafe(webhook.url);
+
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10_000); // 10s timeout
 
