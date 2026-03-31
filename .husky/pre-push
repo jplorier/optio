@@ -1,1 +1,1 @@
-pnpm turbo test
+pnpm turbo test 2>&1
