@@ -41,7 +41,10 @@ const createTaskSchema = z.object({
   title: z.string().min(1),
   prompt: z.string().min(1),
   repoUrl: z.string().url(),
-  repoBranch: z.string().optional(),
+  repoBranch: z
+    .string()
+    .regex(/^[a-zA-Z0-9._\/-]+$/, "Invalid branch name")
+    .optional(),
   agentType: z.enum(["claude-code", "codex", "copilot"]).optional(),
   ticketSource: z.string().optional(),
   ticketExternalId: z.string().optional(),

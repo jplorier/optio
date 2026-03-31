@@ -26,7 +26,10 @@ const updateTemplateSchema = z.object({
 const createFromTemplateSchema = z.object({
   title: z.string().min(1),
   repoUrl: z.string().url().optional(),
-  repoBranch: z.string().optional(),
+  repoBranch: z
+    .string()
+    .regex(/^[a-zA-Z0-9._\/-]+$/, "Invalid branch name")
+    .optional(),
   prompt: z.string().optional(),
   agentType: z.enum(["claude-code", "codex", "copilot"]).optional(),
   priority: z.number().int().min(1).max(1000).optional(),

