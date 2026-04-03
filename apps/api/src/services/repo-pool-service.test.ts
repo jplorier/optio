@@ -53,6 +53,13 @@ vi.mock("./container-service.js", () => ({
   }),
 }));
 
+vi.mock("node:child_process", () => ({
+  execFile: vi.fn(
+    (_cmd: string, _args: string[], cb: (err: null, stdout: string, stderr: string) => void) =>
+      cb(null, "", ""),
+  ),
+}));
+
 vi.mock("drizzle-orm", () => ({
   eq: vi.fn(),
   and: vi.fn(),
