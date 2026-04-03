@@ -248,15 +248,19 @@ export const DEFAULT_PR_REVIEW_PROMPT_TEMPLATE = `You are a code review assistan
 export function renderPromptTemplate(template: string, vars: Record<string, string>): string {
   let result = template;
 
-  // Handle {{#if VAR}}...{{else}}...{{/if}} blocks
-  result = result.replace(
-    /\{\{#if\s+(\w+)\}\}([\s\S]*?)(?:\{\{else\}\}([\s\S]*?))?\{\{\/if\}\}/g,
-    (_match, varName: string, ifBlock: string, elseBlock: string | undefined) => {
-      const value = vars[varName];
-      const truthy = value && value !== "false" && value !== "0";
-      return truthy ? ifBlock : (elseBlock ?? "");
-    },
-  );
+  // Handle {{#if VAR}}...{{else}}...{{/if}} blocks (process innermost first to support nesting)
+  const ifPattern =
+    /\{\{#if\s+(\w+)\}\}((?:(?!\{\{#if\s)[\s\S])*?)(?:\{\{else\}\}((?:(?!\{\{#if\s)[\s\S])*?))?\{\{\/if\}\}/g;
+  while (ifPattern.test(result)) {
+    result = result.replace(
+      ifPattern,
+      (_match, varName: string, ifBlock: string, elseBlock: string | undefined) => {
+        const value = vars[varName];
+        const truthy = value && value !== "false" && value !== "0";
+        return truthy ? ifBlock : (elseBlock ?? "");
+      },
+    );
+  }
 
   // Handle simple {{VAR}} replacements
   result = result.replace(/\{\{(\w+)\}\}/g, (_match, varName: string) => {
