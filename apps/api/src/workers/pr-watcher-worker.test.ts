@@ -210,6 +210,17 @@ describe("determinePrAction", () => {
     ).toEqual({ action: "auto_merge" });
   });
 
+  it("auto-merges when no CI checks and autoMerge on", () => {
+    expect(
+      determinePrAction({
+        ...defaults,
+        checksStatus: "none",
+        autoMerge: true,
+        blockingSubtasksComplete: true,
+      }),
+    ).toEqual({ action: "auto_merge" });
+  });
+
   it("does not auto-merge when blocking subtasks pending", () => {
     const result = determinePrAction({
       ...defaults,

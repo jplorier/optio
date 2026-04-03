@@ -118,8 +118,9 @@ export function determinePrAction(opts: {
     return { action: "launch_review" };
   }
 
-  // Auto-merge: CI passing + subtasks done + autoMerge enabled
-  if (opts.checksStatus === "passing" && opts.prState === "open" && opts.autoMerge) {
+  // Auto-merge: CI passing (or no checks) + subtasks done + autoMerge enabled
+  const checksOk = opts.checksStatus === "passing" || opts.checksStatus === "none";
+  if (checksOk && opts.prState === "open" && opts.autoMerge) {
     if (opts.blockingSubtasksComplete) return { action: "auto_merge" };
   }
 
