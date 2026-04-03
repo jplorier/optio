@@ -343,12 +343,18 @@ export default function SetupPage() {
     try {
       for (const repo of repos) {
         if (repo.fullName && repo.url) {
-          await api.createRepoConfig({
-            repoUrl: repo.url,
-            fullName: repo.fullName,
-            defaultBranch: repo.defaultBranch,
-            isPrivate: repo.isPrivate,
-          });
+          try {
+            await api.createRepoConfig({
+              repoUrl: repo.url,
+              fullName: repo.fullName,
+              defaultBranch: repo.defaultBranch,
+              isPrivate: repo.isPrivate,
+            });
+          } catch (err) {
+            // Repo already exists from a previous setup — safe to skip
+            if (err instanceof Error && err.message.includes("already been added")) continue;
+            throw err;
+          }
         }
       }
       goNext();
@@ -628,17 +634,18 @@ export default function SetupPage() {
                               <Loader2 className="w-3 h-3 animate-spin" /> Checking for existing
                               token...
                             </span>
-                          ) : oauthExpired ? (
-                            <span className="text-xs text-error flex items-center gap-2">
-                              <AlertTriangle className="w-3 h-3" /> OAuth token has expired — paste
-                              a new one below
-                            </span>
                           ) : oauthTokenDetected ? (
                             <span className="text-xs text-success flex items-center gap-1">
                               <CheckCircle className="w-3 h-3" /> Claude subscription token detected
                             </span>
                           ) : (
                             <>
+                              {oauthExpired && (
+                                <span className="text-xs text-error flex items-center gap-2">
+                                  <AlertTriangle className="w-3 h-3" /> OAuth token has expired —
+                                  paste a new one below
+                                </span>
+                              )}
                               <div>
                                 <p className="text-xs text-text-muted mb-1.5">
                                   Run this in a terminal to copy your token:
