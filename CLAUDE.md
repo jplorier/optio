@@ -464,6 +464,17 @@ helm upgrade optio helm/optio -n optio --reuse-values
 helm uninstall optio -n optio
 ```
 
+## Workflow
+
+After completing feature work (implementation, bug fix, etc.), automatically rebuild and redeploy to the local cluster without asking. Run these steps:
+
+1. `docker build -t optio-api:latest -f Dockerfile.api .` and `docker build -t optio-web:latest -f Dockerfile.web .` (in parallel)
+2. `helm upgrade optio helm/optio -n optio --reset-then-reuse-values`
+3. `kubectl rollout restart deployment/optio-api deployment/optio-web -n optio`
+4. Wait for rollouts, then verify health at `http://localhost:30400/api/health`
+
+If only API code changed, rebuild/restart only `optio-api`. If only web code changed, rebuild/restart only `optio-web`.
+
 ## Conventions
 
 - **ESM everywhere**: all packages use `"type": "module"` with `.js` extensions in imports (TypeScript resolves them to `.ts`)

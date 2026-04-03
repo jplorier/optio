@@ -73,15 +73,30 @@ function extractParts(url: string): { host: string; path: string } | null {
 
 /**
  * Clean a path segment: strip .git suffix, trailing slashes, and extract
- * exactly the owner/repo portion (ignore deeper path segments like /-/...).
+ * owner/repo. For GitLab subgroups the owner includes the full namespace
+ * path (e.g. "group/subgroup"), with the last segment as the repo.
+ * For GitHub-style URLs, takes the first two segments only.
  */
-function cleanOwnerRepo(rawPath: string): { owner: string; repo: string } | null {
-  const p = rawPath.replace(/\.git\/?$/, "").replace(/\/+$/, "");
+function cleanOwnerRepo(
+  rawPath: string,
+  platform: GitPlatformType = "github",
+): { owner: string; repo: string } | null {
+  let p = rawPath.replace(/\.git\/?$/, "").replace(/\/+$/, "");
 
-  // Split and take first two segments (owner/repo)
+  // Strip GitLab path suffixes like /-/... or /merge_requests/...
+  if (platform === "gitlab") {
+    p = p.replace(/\/?-\/.*$/, "").replace(/\/merge_requests\/.*$/, "");
+  }
+
   const parts = p.split("/").filter(Boolean);
   if (parts.length < 2) return null;
 
+  if (platform === "gitlab") {
+    // GitLab: last segment is the project, everything before is the namespace
+    return { owner: parts.slice(0, -1).join("/"), repo: parts[parts.length - 1] };
+  }
+
+  // GitHub: always owner/repo (first two segments)
   return { owner: parts[0], repo: parts[1] };
 }
 
@@ -93,11 +108,11 @@ export function parseRepoUrl(url: string): RepoIdentifier | null {
   const extracted = extractParts(url);
   if (!extracted) return null;
 
-  const ownerRepo = cleanOwnerRepo(extracted.path);
-  if (!ownerRepo) return null;
-
   const host = extracted.host.toLowerCase();
   const platform = detectPlatform(host);
+
+  const ownerRepo = cleanOwnerRepo(extracted.path, platform);
+  if (!ownerRepo) return null;
 
   return {
     platform,

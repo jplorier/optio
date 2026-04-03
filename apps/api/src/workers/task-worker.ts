@@ -10,6 +10,8 @@ import {
   type PresetImageId,
   msUntilOffPeak,
   classifyError,
+  parseRepoUrl,
+  parsePrUrl,
 } from "@optio/shared";
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
@@ -237,7 +239,11 @@ export function startTaskWorker() {
 
         // repoConfig already loaded above for concurrency check
 
-        const repoName = task.repoUrl.replace(/.*github\.com[/:]/, "").replace(/\.git$/, "");
+        const parsedRepo = parseRepoUrl(task.repoUrl);
+        const repoName = parsedRepo
+          ? `${parsedRepo.owner}/${parsedRepo.repo}`
+          : task.repoUrl.replace(/.*[/:]([^/]+\/[^/.]+).*/, "$1");
+        const isGitLab = parsedRepo?.platform === "gitlab";
         const branchName = `${TASK_BRANCH_PREFIX}${task.id}`;
         const taskFilePath = TASK_FILE_PATH;
 
@@ -249,6 +255,7 @@ export function startTaskWorker() {
           REPO_NAME: repoName,
           AUTO_MERGE: String(promptConfig.autoMerge),
           ISSUE_NUMBER: task.ticketExternalId ?? "",
+          GIT_PLATFORM_GITLAB: isGitLab ? "true" : "",
         });
 
         const taskFileContent = renderTaskFile({
@@ -334,6 +341,18 @@ export function startTaskWorker() {
         );
         const allEnv: Record<string, string> = { ...agentConfig.env, ...resolvedSecrets };
 
+        // Resolve git platform tokens (not part of adapter requiredSecrets since they're infra-level)
+        for (const secretName of ["GITHUB_TOKEN", "GITLAB_TOKEN", "GITLAB_HOST"]) {
+          if (!allEnv[secretName]) {
+            const val = await retrieveSecretWithFallback(
+              secretName,
+              "global",
+              taskWorkspaceId,
+            ).catch(() => null);
+            if (val) allEnv[secretName] = val as string;
+          }
+        }
+
         // Inject credential URLs for dynamic GitHub token resolution.
         // OPTIO_API_INTERNAL_URL is the K8s service URL (set by Helm chart).
         // Falls back to localhost for local dev where API_HOST is the bind address.
@@ -405,6 +424,8 @@ export function startTaskWorker() {
           OPTIO_GIT_CREDENTIAL_URL: allEnv.OPTIO_GIT_CREDENTIAL_URL,
           OPTIO_CREDENTIAL_SECRET: allEnv.OPTIO_CREDENTIAL_SECRET,
           ...(allEnv.GITHUB_TOKEN ? { GITHUB_TOKEN: allEnv.GITHUB_TOKEN } : {}),
+          ...(allEnv.GITLAB_TOKEN ? { GITLAB_TOKEN: allEnv.GITLAB_TOKEN } : {}),
+          ...(allEnv.GITLAB_HOST ? { GITLAB_HOST: allEnv.GITLAB_HOST } : {}),
           ...(process.env.GITHUB_APP_BOT_NAME
             ? { GITHUB_APP_BOT_NAME: process.env.GITHUB_APP_BOT_NAME }
             : {}),
@@ -506,6 +527,14 @@ export function startTaskWorker() {
         // Buffer for partial NDJSON lines split across chunks
         let lineBuf = "";
 
+        // Capture stderr for diagnostics (e.g. bash parse errors, git warnings)
+        let stderrData = "";
+        (async () => {
+          for await (const chunk of execSession.stderr as AsyncIterable<Buffer>) {
+            stderrData += chunk.toString();
+          }
+        })().catch(() => {});
+
         for await (const chunk of execSession.stdout as AsyncIterable<Buffer>) {
           const text = chunk.toString();
           allLogs += text;
@@ -551,24 +580,25 @@ export function startTaskWorker() {
               // agent referencing another repo's PR (e.g. via gh pr list on a
               // dependency) would store the wrong URL.
               if (!capturedPrUrl) {
-                const prUrlPattern = /https:\/\/github\.com\/[^\s"]+\/pull\/\d+/g;
+                // Match both GitHub PR URLs and GitLab MR URLs (web URLs only, not API URLs)
+                const prUrlPattern =
+                  /https:\/\/(?![\w.-]+\/api\/)[^\s"]+\/(?:pull\/\d+|-\/merge_requests\/\d+)/g;
                 const prMatches = entry.content.match(prUrlPattern);
                 if (prMatches) {
                   const taskBranch = `optio/task-${taskId}`;
                   const content = entry.content.trim();
                   const looksLikeJsonArray =
                     content.startsWith("[") && content.includes('"number"');
-                  // Filter to only URLs matching the task's repo
-                  const expectedRepo = task.repoUrl
-                    .replace(/.*github\.com[/:]/, "")
-                    .replace(/\.git$/, "")
-                    .toLowerCase();
+                  // Filter to only URLs matching the task's repo using parsePrUrl
+                  const taskRepo = parseRepoUrl(task.repoUrl);
                   const repoMatches = prMatches.filter((url) => {
-                    const urlRepo = url
-                      .replace(/.*github\.com\//, "")
-                      .replace(/\/pull\/.*/, "")
-                      .toLowerCase();
-                    return urlRepo === expectedRepo;
+                    const parsed = parsePrUrl(url);
+                    if (!parsed || !taskRepo) return false;
+                    return (
+                      parsed.owner.toLowerCase() === taskRepo.owner.toLowerCase() &&
+                      parsed.repo.toLowerCase() === taskRepo.repo.toLowerCase() &&
+                      parsed.host === taskRepo.host
+                    );
                   });
                   if (repoMatches.length > 0) {
                     if (!looksLikeJsonArray) {
@@ -609,6 +639,9 @@ export function startTaskWorker() {
         }
 
         // Exec finished — determine result
+        if (stderrData) {
+          log.warn({ stderrPreview: stderrData.slice(0, 500) }, "Exec stderr output");
+        }
         // Before processing results, verify this worker still owns the task.
         // A force-redo may have reset the task while we were streaming.
         const taskAfterExec = await taskService.getTask(taskId);
@@ -645,17 +678,17 @@ export function startTaskWorker() {
         //      inside code the agent wrote, or PRs from other repos).
         let fallbackPrUrl = result.prUrl;
         if (fallbackPrUrl) {
-          const expectedRepo = task.repoUrl
-            .replace(/.*github\.com[/:]/, "")
-            .replace(/\.git$/, "")
-            .toLowerCase();
-          const urlRepo = fallbackPrUrl
-            .replace(/.*github\.com\//, "")
-            .replace(/\/pull\/.*/, "")
-            .toLowerCase();
-          if (urlRepo !== expectedRepo) {
+          const parsedPr = parsePrUrl(fallbackPrUrl);
+          const taskRepo = parseRepoUrl(task.repoUrl);
+          if (
+            !parsedPr ||
+            !taskRepo ||
+            parsedPr.owner.toLowerCase() !== taskRepo.owner.toLowerCase() ||
+            parsedPr.repo.toLowerCase() !== taskRepo.repo.toLowerCase() ||
+            parsedPr.host !== taskRepo.host
+          ) {
             log.info(
-              { resultPrUrl: fallbackPrUrl, expectedRepo },
+              { resultPrUrl: fallbackPrUrl, expectedRepo: task.repoUrl },
               "Ignoring result.prUrl — wrong repo",
             );
             fallbackPrUrl = undefined;
@@ -1045,9 +1078,14 @@ export function buildAgentCommand(
     maxTurnsReview?: number;
   },
 ): string[] {
-  const prompt = opts?.resumePrompt
-    ? `${opts.resumePrompt}\n\n---\n\nOriginal task prompt for context:\n${env.OPTIO_PROMPT}`
-    : env.OPTIO_PROMPT;
+  // Build the final prompt. For resume, prepend the resume text to the original.
+  // The prompt is passed via $OPTIO_PROMPT env var (set by the base64-decoded env block)
+  // to avoid bash interpreting command substitutions in the prompt text (e.g. heredocs).
+  if (opts?.resumePrompt) {
+    // Override OPTIO_PROMPT with the combined resume + original prompt
+    const combined = `${opts.resumePrompt}\n\n---\n\nOriginal task prompt for context:\n${env.OPTIO_PROMPT}`;
+    env.OPTIO_PROMPT = combined;
+  }
   const maxTurns = opts?.isReview
     ? (opts.maxTurnsReview ?? DEFAULT_MAX_TURNS_REVIEW)
     : (opts?.maxTurnsCoding ?? DEFAULT_MAX_TURNS_CODING);
@@ -1066,15 +1104,24 @@ export function buildAgentCommand(
         ? `--resume ${JSON.stringify(opts.resumeSessionId)}`
         : "";
 
+      // Build --model flag from env vars set by the adapter
+      const modelName = env.OPTIO_CLAUDE_MODEL;
+      const ctxWindow = env.OPTIO_CLAUDE_CONTEXT_WINDOW;
+      let modelFlag = "";
+      if (modelName) {
+        const ctx = ctxWindow === "1m" ? "[1m]" : "";
+        modelFlag = `--model ${modelName}${ctx}`;
+      }
+
       return [
         ...authSetup,
         `echo "[optio] Running Claude Code${opts?.isReview ? " (review)" : ""}..."`,
-        `claude -p ${JSON.stringify(prompt)} \\`,
+        `claude -p "$OPTIO_PROMPT" \\`,
         `  --dangerously-skip-permissions \\`,
         `  --output-format stream-json \\`,
         `  --verbose \\`,
         `  --max-turns ${maxTurns} \\`,
-        `  ${resumeFlag}`.trim(),
+        `  ${modelFlag} ${resumeFlag}`.trim(),
       ];
     }
     case "codex": {
@@ -1084,7 +1131,7 @@ export function buildAgentCommand(
           : "";
       return [
         `echo "[optio] Running OpenAI Codex${appServerFlag ? " (app-server)" : ""}..."`,
-        `codex exec --full-auto ${JSON.stringify(prompt)}${appServerFlag} --json`,
+        `codex exec --full-auto "$OPTIO_PROMPT"${appServerFlag} --json`,
       ];
     }
     case "copilot": {
@@ -1094,7 +1141,7 @@ export function buildAgentCommand(
         `echo "[optio] Running GitHub Copilot..."`,
         `copilot --autopilot --yolo --max-autopilot-continues ${maxTurns} \\`,
         `  --output-format json --no-ask-user${modelFlag}${effortFlag} \\`,
-        `  -p ${JSON.stringify(prompt)}`,
+        `  -p "$OPTIO_PROMPT"`,
       ];
     }
     default:
@@ -1137,9 +1184,7 @@ export function inferExitCode(agentType: string, logs: string): number {
       // Claude: check for is_error in result event, or fatal errors
       const hasResultError = logs.includes('"is_error":true');
       const hasFatalError =
-        logs.includes("fatal:") ||
-        logs.includes("Error: authentication_failed") ||
-        logs.includes("exit 1");
+        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
       return hasResultError || hasFatalError ? 1 : 0;
     }
   }

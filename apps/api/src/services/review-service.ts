@@ -112,12 +112,16 @@ export async function launchReview(parentTaskId: string): Promise<string> {
   const reviewTemplate = repoConfig?.reviewPromptTemplate ?? DEFAULT_REVIEW_PROMPT_TEMPLATE;
   const repoName = `${owner}/${repo}`;
 
+  const parsedRepo = parseRepoUrl(parentTask.repoUrl);
+  const isGitLab = parsedRepo?.platform === "gitlab";
+
   const renderedPrompt = renderPromptTemplate(reviewTemplate, {
     PR_NUMBER: String(prNumber),
     TASK_FILE: REVIEW_TASK_FILE_PATH,
     REPO_NAME: repoName,
     TASK_TITLE: parentTask.title,
     TEST_COMMAND: repoConfig?.testCommand ?? "",
+    GIT_PLATFORM_GITLAB: isGitLab ? "true" : "",
   });
 
   // Build review context file with enriched PR data

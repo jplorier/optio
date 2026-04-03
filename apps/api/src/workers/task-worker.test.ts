@@ -52,11 +52,12 @@ describe("buildAgentCommand", () => {
 
     it("uses resumePrompt with original prompt as context when provided", () => {
       const env = { OPTIO_PROMPT: "Original prompt" };
-      const cmds = buildAgentCommand("claude-code", env, {
+      buildAgentCommand("claude-code", env, {
         resumePrompt: "Fix the tests now",
       });
-      expect(cmds.some((c) => c.includes("Fix the tests now"))).toBe(true);
-      expect(cmds.some((c) => c.includes("Original prompt"))).toBe(true);
+      // The prompt is mutated in env.OPTIO_PROMPT (passed via $OPTIO_PROMPT in the script)
+      expect(env.OPTIO_PROMPT).toContain("Fix the tests now");
+      expect(env.OPTIO_PROMPT).toContain("Original prompt");
     });
 
     it("adds max-subscription auth setup when auth mode is max-subscription", () => {
@@ -81,6 +82,28 @@ describe("buildAgentCommand", () => {
       const env = { OPTIO_PROMPT: "Review" };
       const cmds = buildAgentCommand("claude-code", env, { isReview: true });
       expect(cmds.some((c) => c.includes("(review)"))).toBe(true);
+    });
+
+    it("adds --model flag when OPTIO_CLAUDE_MODEL is set", () => {
+      const env = { OPTIO_PROMPT: "Do work", OPTIO_CLAUDE_MODEL: "opus" };
+      const cmds = buildAgentCommand("claude-code", env);
+      expect(cmds.some((c) => c.includes("--model opus"))).toBe(true);
+    });
+
+    it("adds context window suffix to --model flag", () => {
+      const env = {
+        OPTIO_PROMPT: "Do work",
+        OPTIO_CLAUDE_MODEL: "opus",
+        OPTIO_CLAUDE_CONTEXT_WINDOW: "1m",
+      };
+      const cmds = buildAgentCommand("claude-code", env);
+      expect(cmds.some((c) => c.includes("--model opus[1m]"))).toBe(true);
+    });
+
+    it("does not add --model flag when OPTIO_CLAUDE_MODEL is not set", () => {
+      const env = { OPTIO_PROMPT: "Do work" };
+      const cmds = buildAgentCommand("claude-code", env);
+      expect(cmds.some((c) => c.includes("--model"))).toBe(false);
     });
   });
 
@@ -159,9 +182,9 @@ describe("inferExitCode", () => {
       expect(inferExitCode("claude-code", logs)).toBe(1);
     });
 
-    it("returns 1 when exit 1 appears in logs", () => {
+    it("returns 0 when exit 1 appears in logs (not a real error signal)", () => {
       const logs = "some output\nexit 1\nmore output\n";
-      expect(inferExitCode("claude-code", logs)).toBe(1);
+      expect(inferExitCode("claude-code", logs)).toBe(0);
     });
 
     it("returns 0 when logs contain non-fatal content", () => {

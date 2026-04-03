@@ -141,6 +141,37 @@ describe("parseRepoUrl", () => {
     expect(result!.platform).toBe("github");
   });
 
+  it("parses GitLab subgroup repo URL", () => {
+    const result = parseRepoUrl("https://gitlab.com/group/subgroup/repo");
+    expect(result).toEqual({
+      platform: "gitlab",
+      host: "gitlab.com",
+      owner: "group/subgroup",
+      repo: "repo",
+      apiBaseUrl: "https://gitlab.com/api/v4",
+    });
+  });
+
+  it("parses GitLab deeply nested subgroup repo URL", () => {
+    const result = parseRepoUrl("https://gitlab.com/org/team/sub/project");
+    expect(result).toEqual({
+      platform: "gitlab",
+      host: "gitlab.com",
+      owner: "org/team/sub",
+      repo: "project",
+      apiBaseUrl: "https://gitlab.com/api/v4",
+    });
+  });
+
+  it("GitLab subgroup parseRepoUrl and parsePrUrl owners match", () => {
+    const repoResult = parseRepoUrl("https://gitlab.com/group/subgroup/repo");
+    const prResult = parsePrUrl("https://gitlab.com/group/subgroup/repo/-/merge_requests/42");
+    expect(repoResult).not.toBeNull();
+    expect(prResult).not.toBeNull();
+    expect(repoResult!.owner).toBe(prResult!.owner);
+    expect(repoResult!.repo).toBe(prResult!.repo);
+  });
+
   it("returns null for invalid URLs", () => {
     expect(parseRepoUrl("not-a-url")).toBeNull();
     expect(parseRepoUrl("https://github.com")).toBeNull();

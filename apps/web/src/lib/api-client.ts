@@ -302,6 +302,29 @@ export const api = {
       { method: "POST", body: JSON.stringify({ token }) },
     ),
 
+  validateGitlabToken: (token: string, host?: string) =>
+    request<{ valid: boolean; error?: string; user?: { login: string; name: string } }>(
+      "/api/setup/validate/gitlab-token",
+      { method: "POST", body: JSON.stringify({ token, host }) },
+    ),
+
+  listGitlabRepos: (token: string, host?: string) =>
+    request<{
+      repos: Array<{
+        fullName: string;
+        cloneUrl: string;
+        defaultBranch: string;
+        isPrivate: boolean;
+        description: string;
+        language: string;
+        pushedAt: string;
+      }>;
+      error?: string;
+    }>("/api/setup/repos/gitlab", {
+      method: "POST",
+      body: JSON.stringify({ token, host }),
+    }),
+
   validateAnthropicKey: (key: string) =>
     request<{ valid: boolean; error?: string }>("/api/setup/validate/anthropic-key", {
       method: "POST",

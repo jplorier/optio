@@ -30,6 +30,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       OPTIO_AUTH_MODE: authMode,
     };
 
+    // Pass model info as env vars so buildAgentCommand can add --model flag
+    if (input.claudeModel) {
+      env.OPTIO_CLAUDE_MODEL = input.claudeModel;
+    }
+    if (input.claudeContextWindow) {
+      env.OPTIO_CLAUDE_CONTEXT_WINDOW = input.claudeContextWindow;
+    }
+
     const requiredSecrets: string[] = [];
     const setupFiles: AgentContainerConfig["setupFiles"] = [];
 
@@ -81,7 +89,10 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   parseResult(exitCode: number, logs: string): AgentResult {
-    const prMatch = logs.match(/https:\/\/github\.com\/[^\s"]+\/pull\/\d+/);
+    // Match both GitHub PR URLs and GitLab MR URLs (web URLs only, not API URLs)
+    const prMatch = logs.match(
+      /https:\/\/(?![\w.-]+\/api\/)[^\s"]+\/(?:pull\/\d+|-\/merge_requests\/\d+)/,
+    );
     const costMatch = logs.match(/"total_cost_usd":\s*([\d.]+)/);
 
     // Extract error, token usage, and model from Claude's NDJSON events

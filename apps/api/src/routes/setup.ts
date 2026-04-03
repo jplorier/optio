@@ -50,8 +50,11 @@ export async function setupRoutes(app: FastifyInstance) {
 
       const hasAnthropicKey = secretNames.includes("ANTHROPIC_API_KEY");
       const hasOpenAIKey = secretNames.includes("OPENAI_API_KEY");
-      // GitHub App configured at deployment level satisfies the GitHub token requirement
-      const hasGithubToken = secretNames.includes("GITHUB_TOKEN") || isGitHubAppConfigured();
+      // GitHub App configured at deployment level satisfies the git token requirement
+      const hasGitToken =
+        secretNames.includes("GITHUB_TOKEN") ||
+        isGitHubAppConfigured() ||
+        secretNames.includes("GITLAB_TOKEN");
 
       // Check if using Max subscription or OAuth token mode
       let usingSubscription = false;
@@ -91,13 +94,13 @@ export async function setupRoutes(app: FastifyInstance) {
         runtimeHealthy = await checkRuntimeHealth();
       } catch {}
 
-      const isSetUp = hasAnyAgentKey && hasGithubToken && runtimeHealthy;
+      const isSetUp = hasAnyAgentKey && hasGitToken && runtimeHealthy;
 
       reply.send({
         isSetUp,
         steps: {
           runtime: { done: runtimeHealthy, label: "Container runtime" },
-          githubToken: { done: hasGithubToken, label: "GitHub token" },
+          gitToken: { done: hasGitToken, label: "Git provider token" },
           anthropicKey: { done: hasAnthropicKey, label: "Anthropic API key" },
           openaiKey: { done: hasOpenAIKey, label: "OpenAI API key" },
           codexAppServer: { done: hasCodexAppServer, label: "Codex app-server" },
