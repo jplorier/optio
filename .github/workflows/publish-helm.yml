@@ -1,0 +1,61 @@
+name: Publish Helm Chart
+
+on:
+  push:
+    tags: ["v*"]
+    paths:
+      - "helm/**"
+      - ".github/workflows/publish-helm.yml"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Chart version override (defaults to Chart.yaml version)"
+        required: false
+
+env:
+  REGISTRY: ghcr.io
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-chart:
+    name: Publish Helm chart to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Log in to GHCR (Helm OCI)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
+
+      - name: Resolve chart version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            # Strip leading "v" from tag
+            VERSION="${GITHUB_REF_NAME#v}"
+          elif [[ -n "${{ inputs.version }}" ]]; then
+            VERSION="${{ inputs.version }}"
+          else
+            # Fall back to the version declared in Chart.yaml
+            VERSION=$(grep '^version:' helm/optio/Chart.yaml | awk '{print $2}')
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Resolved chart version: ${VERSION}"
+
+      - name: Stamp version into Chart.yaml
+        run: |
+          sed -i "s/^version:.*/version: ${{ steps.version.outputs.version }}/" helm/optio/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${{ steps.version.outputs.version }}\"/" helm/optio/Chart.yaml
+
+      - name: Package chart
+        run: helm package helm/optio --destination .helm-pkg
+
+      - name: Push chart to GHCR
+        # Pushes to ghcr.io/<owner>/optio/helm/optio:<version>
+        # Install with: helm install optio oci://ghcr.io/<owner>/optio/helm/optio
+        run: helm push .helm-pkg/optio-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/optio/helm
