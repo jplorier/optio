@@ -42,6 +42,15 @@ elif [ -n "${OPTIO_GIT_CREDENTIAL_URL:-}" ] && [ -f /usr/local/bin/optio-git-cre
   # Dynamic credential helper — fetches token from Optio API
   git config --global credential.helper '/usr/local/bin/optio-git-credential'
   echo "[optio] Dynamic git credential helper configured"
+  # Authenticate glab CLI if GitLab token is available
+  if [ -n "${GITLAB_TOKEN:-}" ] && command -v glab >/dev/null 2>&1; then
+    GITLAB_HOST="gitlab.com"
+    case "${OPTIO_REPO_URL}" in
+      *://*) GITLAB_HOST=$(echo "${OPTIO_REPO_URL}" | sed -E 's|.*://([^/]+).*|\1|') ;;
+    esac
+    glab auth login --hostname "${GITLAB_HOST}" --token "${GITLAB_TOKEN}" 2>/dev/null || true
+    echo "[optio] GitLab CLI authenticated (host: ${GITLAB_HOST})"
+  fi
 
 elif [ -n "${GITHUB_TOKEN:-}" ] || [ -n "${GITLAB_TOKEN:-}" ]; then
   # Static PAT fallback — configure credentials for the detected platform
@@ -64,10 +73,9 @@ elif [ -n "${GITHUB_TOKEN:-}" ] || [ -n "${GITLAB_TOKEN:-}" ]; then
         ;;
     esac
     echo "https://oauth2:${GITLAB_TOKEN}@${GITLAB_HOST}" >> ~/.git-credentials
-    # Configure glab CLI if available
+    # Authenticate glab CLI if available
     if command -v glab >/dev/null 2>&1; then
-      glab config set -g token "${GITLAB_TOKEN}" 2>/dev/null || true
-      glab config set -g host "${GITLAB_HOST}" 2>/dev/null || true
+      glab auth login --hostname "${GITLAB_HOST}" --token "${GITLAB_TOKEN}" 2>/dev/null || true
     fi
     echo "[optio] GitLab credentials configured (host: ${GITLAB_HOST})"
   fi

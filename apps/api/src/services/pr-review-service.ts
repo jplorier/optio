@@ -413,15 +413,18 @@ export async function updateReviewDraft(
 
 // ── Submit Review ───────────────────────────────────────────────────────────
 
-export async function submitReviewToGitHub(draftId: string, userId?: string) {
+export async function submitReview(draftId: string, userId?: string) {
   const [draft] = await db.select().from(reviewDrafts).where(eq(reviewDrafts.id, draftId));
   if (!draft) throw new Error("Review draft not found");
   if (!["ready", "stale"].includes(draft.state)) {
     throw new Error(`Cannot submit draft in ${draft.state} state`);
   }
 
-  // Construct repo URL from draft fields
-  const repoUrl = normalizeRepoUrl(`https://github.com/${draft.repoOwner}/${draft.repoName}`);
+  // Derive repo URL from the PR URL (supports both GitHub and GitLab)
+  const parsed = parsePrUrl(draft.prUrl);
+  const repoUrl = parsed
+    ? normalizeRepoUrl(`https://${parsed.host}/${parsed.owner}/${parsed.repo}`)
+    : normalizeRepoUrl(`https://github.com/${draft.repoOwner}/${draft.repoName}`);
   const { platform, ri } = await getGitPlatformForRepo(repoUrl, {
     userId,
     server: !userId,
@@ -464,7 +467,7 @@ export async function submitReviewToGitHub(draftId: string, userId?: string) {
 
   logger.info({ draftId, prNumber: draft.prNumber, event }, "Review submitted");
 
-  return { draft: updated, githubReviewUrl: reviewResult.url };
+  return { draft: updated, reviewUrl: reviewResult.url };
 }
 
 // ── Re-review ───────────────────────────────────────────────────────────────

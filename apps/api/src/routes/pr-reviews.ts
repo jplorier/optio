@@ -69,7 +69,7 @@ export async function prReviewRoutes(app: FastifyInstance) {
     },
   );
 
-  // Submit review to GitHub
+  // Submit review to git platform (GitHub or GitLab)
   app.post(
     "/api/tasks/:id/review-draft/submit",
     { preHandler: [requireRole("member")] },
@@ -79,10 +79,10 @@ export async function prReviewRoutes(app: FastifyInstance) {
       if (!draft) return reply.status(404).send({ error: "No review draft found" });
 
       try {
-        const result = await prReviewService.submitReviewToGitHub(draft.id, req.user?.id);
+        const result = await prReviewService.submitReview(draft.id, req.user?.id);
         reply.send(result);
       } catch (err: any) {
-        logger.warn({ err, taskId: id }, "Failed to submit review to GitHub");
+        logger.warn({ err, taskId: id }, "Failed to submit review");
         reply.status(400).send({ error: err.message });
       }
     },

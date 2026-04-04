@@ -109,7 +109,7 @@ import {
   parseReviewOutput,
   getReviewDraft,
   updateReviewDraft,
-  submitReviewToGitHub,
+  submitReview,
   getPrStatus,
   listOpenPrs,
   mergePr,
@@ -761,9 +761,9 @@ describe("updateReviewDraft", () => {
   });
 });
 
-// ── submitReviewToGitHub ────────────────────────────────────────────
+// ── submitReview ────────────────────────────────────────────
 
-describe("submitReviewToGitHub", () => {
+describe("submitReview", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetGitPlatformForRepo.mockResolvedValue({
@@ -788,7 +788,7 @@ describe("submitReviewToGitHub", () => {
       }),
     });
 
-    await expect(submitReviewToGitHub("no-draft")).rejects.toThrow("Review draft not found");
+    await expect(submitReview("no-draft")).rejects.toThrow("Review draft not found");
   });
 
   it("throws when draft is in drafting state", async () => {
@@ -798,9 +798,7 @@ describe("submitReviewToGitHub", () => {
       }),
     });
 
-    await expect(submitReviewToGitHub("draft-1")).rejects.toThrow(
-      "Cannot submit draft in drafting state",
-    );
+    await expect(submitReview("draft-1")).rejects.toThrow("Cannot submit draft in drafting state");
   });
 
   it("submits review with APPROVE event", async () => {
@@ -819,10 +817,10 @@ describe("submitReviewToGitHub", () => {
       }),
     });
 
-    const result = await submitReviewToGitHub("draft-1");
+    const result = await submitReview("draft-1");
 
     expect(result.draft.state).toBe("submitted");
-    expect(result.githubReviewUrl).toContain("pullrequestreview");
+    expect(result.reviewUrl).toContain("pullrequestreview");
     expect(mockPlatform.submitReview).toHaveBeenCalledWith(
       expect.any(Object),
       42,
@@ -849,7 +847,7 @@ describe("submitReviewToGitHub", () => {
       }),
     });
 
-    await submitReviewToGitHub("draft-1");
+    await submitReview("draft-1");
 
     expect(mockPlatform.submitReview).toHaveBeenCalledWith(
       expect.any(Object),
@@ -875,7 +873,7 @@ describe("submitReviewToGitHub", () => {
       }),
     });
 
-    await submitReviewToGitHub("draft-1");
+    await submitReview("draft-1");
 
     expect(mockPlatform.submitReview).toHaveBeenCalledWith(
       expect.any(Object),
@@ -903,7 +901,7 @@ describe("submitReviewToGitHub", () => {
       }),
     });
 
-    await submitReviewToGitHub("draft-1");
+    await submitReview("draft-1");
 
     const call = mockPlatform.submitReview.mock.calls[0];
     expect(call[2].comments).toHaveLength(2);
@@ -923,7 +921,7 @@ describe("submitReviewToGitHub", () => {
       new Error("GitHub API error 422: Validation failed"),
     );
 
-    await expect(submitReviewToGitHub("draft-1")).rejects.toThrow("GitHub API error 422");
+    await expect(submitReview("draft-1")).rejects.toThrow("GitHub API error 422");
   });
 
   it("marks draft as submitted after success", async () => {
@@ -940,7 +938,7 @@ describe("submitReviewToGitHub", () => {
     });
     vi.mocked(db.update as any).mockReturnValue({ set: updateSetMock });
 
-    const result = await submitReviewToGitHub("draft-1");
+    const result = await submitReview("draft-1");
 
     expect(updateSetMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -965,7 +963,7 @@ describe("submitReviewToGitHub", () => {
       }),
     });
 
-    await submitReviewToGitHub("draft-1", "user-123");
+    await submitReview("draft-1", "user-123");
 
     expect(mockGetGitPlatformForRepo).toHaveBeenCalledWith(
       expect.any(String),
