@@ -223,6 +223,21 @@ describe("getWsBaseUrl", () => {
     expect(getWsBaseUrl()).toBe("ws://custom:9999");
   });
 
+  it("returns ws:// derived from PUBLIC_API_URL when injected", () => {
+    vi.stubEnv("NEXT_PUBLIC_WS_URL", "");
+    Object.defineProperty(globalThis, "window", {
+      value: {
+        location: { protocol: "http:", host: "localhost:30310" },
+        __OPTIO_CONFIG: { publicApiUrl: "http://localhost:30400" },
+      },
+      writable: true,
+      configurable: true,
+    });
+    (globalThis as any).__OPTIO_CONFIG = { publicApiUrl: "http://localhost:30400" };
+    expect(getWsBaseUrl()).toBe("ws://localhost:30400");
+    delete (globalThis as any).__OPTIO_CONFIG;
+  });
+
   it("returns ws:// + host for http: pages", () => {
     vi.stubEnv("NEXT_PUBLIC_WS_URL", "");
     Object.defineProperty(globalThis, "window", {
