@@ -79,15 +79,15 @@ export class JiraTicketProvider implements TicketProvider {
     const jql = jqlParts.join(" AND ");
 
     const allTickets: Ticket[] = [];
-    let startAt = 0;
     const maxResults = 100;
     let pageCount = 1;
+    let nextPageToken: string | undefined;
 
     while (pageCount <= maxPages) {
-      const response = await client.issueSearch.searchForIssuesUsingJql({
+      const response = await client.issueSearch.searchForIssuesUsingJqlEnhancedSearch({
         jql,
-        startAt,
         maxResults,
+        nextPageToken,
         fields: [
           "summary",
           "description",
@@ -128,7 +128,7 @@ export class JiraTicketProvider implements TicketProvider {
           url: `${jiraConfig.baseUrl}/browse/${issue.key}`,
           labels: fields.labels ?? [],
           assignee: fields.assignee?.displayName,
-          repo: undefined,
+          repo: (fields.labels ?? []).find((l: string) => l.startsWith("repo:"))?.slice(5),
           attachments: attachments.length > 0 ? attachments : undefined,
           metadata: {
             key: issue.key,
@@ -141,10 +141,9 @@ export class JiraTicketProvider implements TicketProvider {
         });
       }
 
-      const total = response.total ?? 0;
-      if (startAt + maxResults >= total) break;
+      if (!response.nextPageToken) break;
 
-      startAt += maxResults;
+      nextPageToken = response.nextPageToken;
       pageCount++;
     }
 

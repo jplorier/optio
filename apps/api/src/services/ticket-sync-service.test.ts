@@ -11,6 +11,9 @@ vi.mock("../db/schema.js", () => ({
   ticketProviders: {
     enabled: "ticket_providers.enabled",
   },
+  repos: {
+    repoUrl: "repos.repoUrl",
+  },
 }));
 
 vi.mock("@optio/ticket-providers", () => ({
@@ -180,16 +183,20 @@ describe("ticket-sync-service", () => {
   });
 
   it("uses ticket repo URL when available", async () => {
+    const fromResult = {
+      where: vi.fn().mockResolvedValue([
+        {
+          source: "github",
+          config: { repoUrl: "https://github.com/fallback/repo" },
+          enabled: true,
+        },
+      ]),
+      // Also thenable for db.select({...}).from(repos) (no .where())
+      then: (res: any, rej?: any) =>
+        Promise.resolve([{ repoUrl: "https://github.com/owner/specific-repo" }]).then(res, rej),
+    };
     (db.select as any) = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([
-          {
-            source: "github",
-            config: { repoUrl: "https://github.com/fallback/repo" },
-            enabled: true,
-          },
-        ]),
-      }),
+      from: vi.fn().mockReturnValue(fromResult),
     });
 
     vi.mocked(getTicketProvider).mockReturnValue({

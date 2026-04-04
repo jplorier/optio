@@ -6,7 +6,7 @@ vi.mock("jira.js", () => {
   return {
     Version3Client: vi.fn().mockImplementation(() => ({
       issueSearch: {
-        searchForIssuesUsingJql: vi.fn(),
+        searchForIssuesUsingJqlEnhancedSearch: vi.fn(),
       },
       issueComments: {
         addComment: vi.fn(),
@@ -75,15 +75,14 @@ function baseConfig(): JiraProviderConfig {
 describe("JiraTicketProvider pagination", () => {
   it("fetches a single page when fewer than page size", async () => {
     const issues = Array.from({ length: 3 }, (_, i) => makeJiraIssue(`TEST-${i + 1}`, i + 1));
-    const searchForIssuesUsingJql = vi.fn().mockResolvedValueOnce({
+    const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValueOnce({
       issues,
-      total: 3,
     });
 
     vi.mocked(Version3Client).mockImplementation(
       () =>
         ({
-          issueSearch: { searchForIssuesUsingJql },
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
         }) as unknown as InstanceType<typeof Version3Client>,
     );
 
@@ -91,31 +90,30 @@ describe("JiraTicketProvider pagination", () => {
     const tickets = await provider.fetchActionableTickets(baseConfig());
 
     expect(tickets).toHaveLength(3);
-    expect(searchForIssuesUsingJql).toHaveBeenCalledTimes(1);
-    expect(searchForIssuesUsingJql).toHaveBeenCalledWith(
-      expect.objectContaining({ startAt: 0, maxResults: 100 }),
+    expect(searchForIssuesUsingJqlEnhancedSearch).toHaveBeenCalledTimes(1);
+    expect(searchForIssuesUsingJqlEnhancedSearch).toHaveBeenCalledWith(
+      expect.objectContaining({ maxResults: 100 }),
     );
   });
 
-  it("paginates across multiple pages using startAt offset", async () => {
+  it("paginates across multiple pages using nextPageToken", async () => {
     const page1 = Array.from({ length: 100 }, (_, i) => makeJiraIssue(`TEST-${i + 1}`, i + 1));
     const page2 = Array.from({ length: 30 }, (_, i) => makeJiraIssue(`TEST-${i + 101}`, i + 101));
 
-    const searchForIssuesUsingJql = vi
+    const searchForIssuesUsingJqlEnhancedSearch = vi
       .fn()
       .mockResolvedValueOnce({
         issues: page1,
-        total: 130,
+        nextPageToken: "page2token",
       })
       .mockResolvedValueOnce({
         issues: page2,
-        total: 130,
       });
 
     vi.mocked(Version3Client).mockImplementation(
       () =>
         ({
-          issueSearch: { searchForIssuesUsingJql },
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
         }) as unknown as InstanceType<typeof Version3Client>,
     );
 
@@ -123,28 +121,28 @@ describe("JiraTicketProvider pagination", () => {
     const tickets = await provider.fetchActionableTickets(baseConfig());
 
     expect(tickets).toHaveLength(130);
-    expect(searchForIssuesUsingJql).toHaveBeenCalledTimes(2);
-    expect(searchForIssuesUsingJql).toHaveBeenNthCalledWith(
+    expect(searchForIssuesUsingJqlEnhancedSearch).toHaveBeenCalledTimes(2);
+    expect(searchForIssuesUsingJqlEnhancedSearch).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ startAt: 0 }),
+      expect.objectContaining({ nextPageToken: undefined }),
     );
-    expect(searchForIssuesUsingJql).toHaveBeenNthCalledWith(
+    expect(searchForIssuesUsingJqlEnhancedSearch).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ startAt: 100 }),
+      expect.objectContaining({ nextPageToken: "page2token" }),
     );
   });
 
   it("respects maxPages limit", async () => {
     const fullPage = Array.from({ length: 100 }, (_, i) => makeJiraIssue(`TEST-${i + 1}`, i + 1));
-    const searchForIssuesUsingJql = vi.fn().mockResolvedValue({
+    const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValue({
       issues: fullPage,
-      total: 500,
+      nextPageToken: "nexttoken",
     });
 
     vi.mocked(Version3Client).mockImplementation(
       () =>
         ({
-          issueSearch: { searchForIssuesUsingJql },
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
         }) as unknown as InstanceType<typeof Version3Client>,
     );
 
@@ -152,20 +150,19 @@ describe("JiraTicketProvider pagination", () => {
     const config: JiraProviderConfig = { ...baseConfig(), maxPages: 2 };
     const tickets = await provider.fetchActionableTickets(config);
 
-    expect(searchForIssuesUsingJql).toHaveBeenCalledTimes(2);
+    expect(searchForIssuesUsingJqlEnhancedSearch).toHaveBeenCalledTimes(2);
     expect(tickets).toHaveLength(200);
   });
 
   it("returns empty array when no issues match", async () => {
-    const searchForIssuesUsingJql = vi.fn().mockResolvedValueOnce({
+    const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValueOnce({
       issues: [],
-      total: 0,
     });
 
     vi.mocked(Version3Client).mockImplementation(
       () =>
         ({
-          issueSearch: { searchForIssuesUsingJql },
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
         }) as unknown as InstanceType<typeof Version3Client>,
     );
 
@@ -173,19 +170,18 @@ describe("JiraTicketProvider pagination", () => {
     const tickets = await provider.fetchActionableTickets(baseConfig());
 
     expect(tickets).toHaveLength(0);
-    expect(searchForIssuesUsingJql).toHaveBeenCalledTimes(1);
+    expect(searchForIssuesUsingJqlEnhancedSearch).toHaveBeenCalledTimes(1);
   });
 
   it("passes project filter when projectKey is configured", async () => {
-    const searchForIssuesUsingJql = vi.fn().mockResolvedValueOnce({
+    const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValueOnce({
       issues: [makeJiraIssue("DEV-1", 1)],
-      total: 1,
     });
 
     vi.mocked(Version3Client).mockImplementation(
       () =>
         ({
-          issueSearch: { searchForIssuesUsingJql },
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
         }) as unknown as InstanceType<typeof Version3Client>,
     );
 
@@ -196,7 +192,7 @@ describe("JiraTicketProvider pagination", () => {
     };
     await provider.fetchActionableTickets(config);
 
-    expect(searchForIssuesUsingJql).toHaveBeenCalledWith(
+    expect(searchForIssuesUsingJqlEnhancedSearch).toHaveBeenCalledWith(
       expect.objectContaining({
         jql: expect.stringContaining('project = "DEV"'),
       }),
@@ -205,15 +201,14 @@ describe("JiraTicketProvider pagination", () => {
 
   it("transforms JIRA issue fields to Ticket format correctly", async () => {
     const issue = makeJiraIssue("TEST-123", 1);
-    const searchForIssuesUsingJql = vi.fn().mockResolvedValueOnce({
+    const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValueOnce({
       issues: [issue],
-      total: 1,
     });
 
     vi.mocked(Version3Client).mockImplementation(
       () =>
         ({
-          issueSearch: { searchForIssuesUsingJql },
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
         }) as unknown as InstanceType<typeof Version3Client>,
     );
 
@@ -240,15 +235,14 @@ describe("JiraTicketProvider pagination", () => {
 
   it("includes attachments when present", async () => {
     const issue = makeJiraIssue("TEST-123", 1, true);
-    const searchForIssuesUsingJql = vi.fn().mockResolvedValueOnce({
+    const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValueOnce({
       issues: [issue],
-      total: 1,
     });
 
     vi.mocked(Version3Client).mockImplementation(
       () =>
         ({
-          issueSearch: { searchForIssuesUsingJql },
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
         }) as unknown as InstanceType<typeof Version3Client>,
     );
 
@@ -272,15 +266,14 @@ describe("JiraTicketProvider pagination", () => {
 
   it("converts ADF description to plaintext", async () => {
     const issue = makeJiraIssue("TEST-123", 1);
-    const searchForIssuesUsingJql = vi.fn().mockResolvedValueOnce({
+    const searchForIssuesUsingJqlEnhancedSearch = vi.fn().mockResolvedValueOnce({
       issues: [issue],
-      total: 1,
     });
 
     vi.mocked(Version3Client).mockImplementation(
       () =>
         ({
-          issueSearch: { searchForIssuesUsingJql },
+          issueSearch: { searchForIssuesUsingJqlEnhancedSearch },
         }) as unknown as InstanceType<typeof Version3Client>,
     );
 
