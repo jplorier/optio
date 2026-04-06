@@ -2,6 +2,12 @@ import type { GitPlatformType, RepoIdentifier } from "../types/git-platform.js";
 
 const GITHUB_HOSTS = new Set(["github.com"]);
 
+/**
+ * GITLAB_HOSTS (plural): comma-separated list of all known GitLab hostnames,
+ * used for platform detection when parsing repository URLs.
+ * Distinct from GITLAB_HOST (singular) which is the specific GitLab host
+ * for the current task/auth context (used in scripts and credential helpers).
+ */
 function getGitLabHosts(): Set<string> {
   const hosts = new Set(["gitlab.com"]);
   const env =

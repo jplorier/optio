@@ -2,8 +2,10 @@ import { Queue, Worker } from "bullmq";
 import { eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks, taskEvents, sessionPrs, interactiveSessions, reviewDrafts } from "../db/schema.js";
+import type { GitPlatform, RepoIdentifier } from "@optio/shared";
 import { TaskState, parsePrUrl } from "@optio/shared";
 import { getGitPlatformForRepo, getGitToken } from "../services/git-token-service.js";
+import type { GitTokenContext } from "../services/git-token-service.js";
 import { createGitPlatform } from "../services/git-platform/index.js";
 import * as taskService from "../services/task-service.js";
 import { updateSessionPr } from "../services/interactive-session-service.js";
@@ -149,6 +151,24 @@ export function startPrWatcherWorker() {
   const worker = new Worker(
     "pr-watcher",
     async () => {
+      // Per-cycle cache to avoid redundant token lookups / secret decryption
+      const platformCache = new Map<string, { platform: GitPlatform; ri: RepoIdentifier }>();
+      async function getCachedPlatform(
+        repoUrl: string,
+        context: GitTokenContext,
+      ): Promise<{ platform: GitPlatform; ri: RepoIdentifier } | null> {
+        const key = `${repoUrl}::${context.userId ?? "server"}`;
+        const cached = platformCache.get(key);
+        if (cached) return cached;
+        try {
+          const result = await getGitPlatformForRepo(repoUrl, context);
+          platformCache.set(key, result);
+          return result;
+        } catch {
+          return null;
+        }
+      }
+
       // --- Task PR watching ---
       // Find all tasks with open PRs
       // Watch pr_opened tasks + failed tasks that have a PR (may need auto-merge after CI fix)
@@ -169,12 +189,14 @@ export function startPrWatcherWorker() {
             const parsed = parsePrUrl(task.prUrl);
             if (!parsed) continue;
             const { prNumber } = parsed;
+            const prLabel = parsed.platform === "gitlab" ? "MR" : "PR";
 
-            // Get platform instance for this repo
-            const { platform, ri } = await getGitPlatformForRepo(task.repoUrl, {
+            // Get platform instance for this repo (cached per poll cycle)
+            const platformResult = await getCachedPlatform(task.repoUrl, {
               userId: task.createdBy ?? undefined,
-            }).catch(() => ({ platform: null, ri: null }));
-            if (!platform || !ri) continue;
+            });
+            if (!platformResult) continue;
+            const { platform, ri } = platformResult;
 
             // Fetch PR data
             const prData = await platform.getPullRequest(ri, prNumber).catch(() => null);
@@ -350,7 +372,7 @@ export function startPrWatcherWorker() {
                     task.id,
                     TaskState.FAILED,
                     "pr_closed",
-                    "PR was closed without merging",
+                    `${prLabel} was closed without merging`,
                   );
                   continue;
 
@@ -365,7 +387,7 @@ export function startPrWatcherWorker() {
                       task.id,
                       TaskState.COMPLETED,
                       "auto_merged",
-                      `PR #${prNumber} auto-merged`,
+                      `${prLabel} ${parsed.platform === "gitlab" ? "!" : "#"}${prNumber} auto-merged`,
                     );
                     logger.info({ taskId: task.id, prNumber }, "PR auto-merged");
                     continue;
@@ -389,7 +411,7 @@ export function startPrWatcherWorker() {
                     .where(eq(tasks.id, task.id));
                   await resumeAgent(
                     "merge_conflicts",
-                    `Your PR has merge conflicts with the base branch. Please:\n1. Run \`git fetch origin && git rebase origin/main\`\n2. Resolve any conflicts\n3. Run the tests to make sure everything still works\n4. Force-push: \`git push --force-with-lease\``,
+                    `Your ${prLabel} has merge conflicts with the base branch. Please:\n1. Run \`git fetch origin && git rebase origin/main\`\n2. Resolve any conflicts\n3. Run the tests to make sure everything still works\n4. Force-push: \`git push --force-with-lease\``,
                     "conflicts",
                     { freshSession: true },
                   );
@@ -399,7 +421,7 @@ export function startPrWatcherWorker() {
                 case "resume_ci_failure":
                   await resumeAgent(
                     "ci_failing",
-                    `CI checks are failing on your PR. The following checks failed: ${failedChecks}\n\nPlease investigate the failures, fix the issues, and push the fixes.`,
+                    `CI checks are failing on your ${prLabel}. The following checks failed: ${failedChecks}\n\nPlease investigate the failures, fix the issues, and push the fixes.`,
                     "ci-fix",
                   );
                   logger.info(
@@ -411,7 +433,7 @@ export function startPrWatcherWorker() {
                 case "resume_review":
                   await resumeAgent(
                     "review_changes_requested",
-                    `A reviewer requested changes on the PR. Please address the following feedback:\n\n${reviewComments}`,
+                    `A reviewer requested changes on the ${prLabel}. Please address the following feedback:\n\n${reviewComments}`,
                     "review",
                   );
                   logger.info({ taskId: task.id }, "Auto-resuming agent with review feedback");
@@ -472,10 +494,9 @@ export function startPrWatcherWorker() {
 
               // Infer repo URL from PR URL for platform resolution
               const sprRepoUrl = `https://${sprParsed.host}/${sprParsed.owner}/${sprParsed.repo}`;
-              const { platform: sprPlatform, ri: sprRi } = await getGitPlatformForRepo(sprRepoUrl, {
-                server: true,
-              }).catch(() => ({ platform: null, ri: null }));
-              if (!sprPlatform || !sprRi) continue;
+              const sprResult = await getCachedPlatform(sprRepoUrl, { server: true });
+              if (!sprResult) continue;
+              const { platform: sprPlatform, ri: sprRi } = sprResult;
 
               const sprData = await sprPlatform
                 .getPullRequest(sprRi, sprParsed.prNumber)
@@ -522,11 +543,9 @@ export function startPrWatcherWorker() {
             if (!draftParsed) continue;
 
             const draftRepoUrl = `https://${draftParsed.host}/${draftParsed.owner}/${draftParsed.repo}`;
-            const { platform: draftPlatform, ri: draftRi } = await getGitPlatformForRepo(
-              draftRepoUrl,
-              { server: true },
-            ).catch(() => ({ platform: null, ri: null }));
-            if (!draftPlatform || !draftRi) continue;
+            const draftResult = await getCachedPlatform(draftRepoUrl, { server: true });
+            if (!draftResult) continue;
+            const { platform: draftPlatform, ri: draftRi } = draftResult;
 
             const prData = await draftPlatform
               .getPullRequest(draftRi, draft.prNumber)

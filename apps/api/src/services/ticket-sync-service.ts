@@ -24,10 +24,14 @@ export async function syncAllTickets(): Promise<number> {
       for (const ticket of tickets) {
         // Construct repo URL: use the ticket's repo field, or fall back to provider config
         // For GitHub tickets, ticket.repo is "owner/repo"; for others, use provider config
+        const gitlabHost =
+          (providerConfig.config as any).host ??
+          (providerConfig.config as any).gitlabHost ??
+          "gitlab.com";
         const repoUrl = ticket.repo
           ? normalizeRepoUrl(
               ticket.source === TicketSourceEnum.GITLAB
-                ? `https://gitlab.com/${ticket.repo}`
+                ? `https://${gitlabHost}/${ticket.repo}`
                 : `https://github.com/${ticket.repo}`,
             )
           : (providerConfig.config as any).repoUrl;

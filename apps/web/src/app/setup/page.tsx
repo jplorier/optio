@@ -50,7 +50,8 @@ export default function SetupPage() {
   const [runtimeHealthy, setRuntimeHealthy] = useState<boolean | null>(null);
 
   // Step 2: Git provider
-  const [gitProvider, setGitProvider] = useState<"github" | "gitlab">("github");
+  const [githubEnabled, setGithubEnabled] = useState(true);
+  const [gitlabEnabled, setGitlabEnabled] = useState(false);
   const [githubToken, setGithubToken] = useState("");
   const [githubUser, setGithubUser] = useState<{ login: string; name: string } | null>(null);
   const [githubValidated, setGithubValidated] = useState(false);
@@ -134,18 +135,21 @@ export default function SetupPage() {
   // Fetch suggested repos when reaching the repos step
   useEffect(() => {
     if (currentStep?.id === "repos" && suggestedRepos.length === 0) {
-      const fetchRepos =
-        gitProvider === "github" && githubToken
-          ? api.listUserRepos(githubToken)
-          : gitProvider === "gitlab" && gitlabToken
-            ? api.listGitlabRepos(gitlabToken, gitlabHost || undefined)
-            : null;
-      if (fetchRepos) {
-        setSuggestedLoading(true);
-        fetchRepos
-          .then((res) => setSuggestedRepos(res.repos.slice(0, 8)))
+      setSuggestedLoading(true);
+      const fetches: Promise<{ repos: any[] }>[] = [];
+      if (githubEnabled && githubToken) fetches.push(api.listUserRepos(githubToken));
+      if (gitlabEnabled && gitlabToken)
+        fetches.push(api.listGitlabRepos(gitlabToken, gitlabHost || undefined));
+      if (fetches.length > 0) {
+        Promise.all(fetches)
+          .then((results) => {
+            const all = results.flatMap((r) => r.repos);
+            setSuggestedRepos(all.slice(0, 8));
+          })
           .catch(() => {})
           .finally(() => setSuggestedLoading(false));
+      } else {
+        setSuggestedLoading(false);
       }
     }
   }, [step]);
@@ -330,9 +334,10 @@ export default function SetupPage() {
   const saveGitStep = async () => {
     setLoading(true);
     try {
-      if (gitProvider === "github") {
+      if (githubEnabled && githubToken.trim() && githubValidated) {
         await api.createSecret({ name: "GITHUB_TOKEN", value: githubToken });
-      } else {
+      }
+      if (gitlabEnabled && gitlabToken.trim() && gitlabValidated) {
         await api.createSecret({ name: "GITLAB_TOKEN", value: gitlabToken });
         if (gitlabHost && gitlabHost !== "gitlab.com") {
           await api.createSecret({ name: "GITLAB_HOST", value: gitlabHost });
@@ -340,7 +345,7 @@ export default function SetupPage() {
       }
       goNext();
     } catch (err) {
-      toast.error(`Failed to save ${gitProvider === "github" ? "GitHub" : "GitLab"} token`);
+      toast.error("Failed to save git provider tokens");
     }
     setLoading(false);
   };
@@ -542,13 +547,13 @@ export default function SetupPage() {
                 pull/merge requests. Choose your provider and add a token.
               </p>
 
-              {/* Provider selector */}
+              {/* Provider selector (both can be enabled) */}
               <div className="flex gap-2">
                 <button
-                  onClick={() => setGitProvider("github")}
+                  onClick={() => setGithubEnabled((v) => !v)}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-md text-sm border transition-colors",
-                    gitProvider === "github"
+                    githubEnabled
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border text-text-muted hover:bg-bg-hover",
                   )}
@@ -557,10 +562,10 @@ export default function SetupPage() {
                   GitHub
                 </button>
                 <button
-                  onClick={() => setGitProvider("gitlab")}
+                  onClick={() => setGitlabEnabled((v) => !v)}
                   className={cn(
                     "flex items-center gap-2 px-4 py-2 rounded-md text-sm border transition-colors",
-                    gitProvider === "gitlab"
+                    gitlabEnabled
                       ? "border-primary bg-primary/10 text-primary"
                       : "border-border text-text-muted hover:bg-bg-hover",
                   )}
@@ -573,7 +578,7 @@ export default function SetupPage() {
               </div>
 
               {/* GitHub form */}
-              {gitProvider === "github" && (
+              {githubEnabled && (
                 <>
                   <a
                     href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Optio+Agent"
@@ -627,7 +632,7 @@ export default function SetupPage() {
               )}
 
               {/* GitLab form */}
-              {gitProvider === "gitlab" && (
+              {gitlabEnabled && (
                 <>
                   <a
                     href={`https://${gitlabHost || "gitlab.com"}/-/user_settings/personal_access_tokens?name=Optio+Agent&scopes=api,read_user,read_repository,write_repository`}
@@ -705,28 +710,31 @@ export default function SetupPage() {
                   <ArrowLeft className="w-4 h-4" /> Back
                 </button>
                 <div className="flex gap-2">
-                  {gitProvider === "github" && !githubValidated && (
+                  {githubEnabled && !githubValidated && (
                     <button
                       onClick={() => validateGithub()}
                       disabled={loading || !githubToken.trim()}
                       className="flex items-center gap-2 px-4 py-2 rounded-md bg-bg-hover text-text text-sm hover:bg-border disabled:opacity-50"
                     >
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate"}
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate GitHub"}
                     </button>
                   )}
-                  {gitProvider === "gitlab" && !gitlabValidated && (
+                  {gitlabEnabled && !gitlabValidated && (
                     <button
                       onClick={() => validateGitlab()}
                       disabled={loading || !gitlabToken.trim()}
                       className="flex items-center gap-2 px-4 py-2 rounded-md bg-bg-hover text-text text-sm hover:bg-border disabled:opacity-50"
                     >
-                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate"}
+                      {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : "Validate GitLab"}
                     </button>
                   )}
                   <button
                     onClick={saveGitStep}
                     disabled={
-                      (gitProvider === "github" ? !githubValidated : !gitlabValidated) || loading
+                      loading ||
+                      (!githubEnabled && !gitlabEnabled) ||
+                      (githubEnabled && !githubValidated) ||
+                      (gitlabEnabled && !gitlabValidated)
                     }
                     className="flex items-center gap-2 px-5 py-2 rounded-md bg-primary text-white text-sm hover:bg-primary-hover disabled:opacity-50"
                   >

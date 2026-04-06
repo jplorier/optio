@@ -15,9 +15,9 @@ export async function issueRoutes(app: FastifyInstance) {
     let repoList;
     if (query.repoId) {
       const [repo] = await db.select().from(repos).where(eq(repos.id, query.repoId));
-      if (!repo) return reply.status(404).send({ error: "Repo not found" });
+      if (!repo) return reply.send({ issues: [] });
       if (wsId && repo.workspaceId !== wsId) {
-        return reply.status(404).send({ error: "Repo not found" });
+        return reply.send({ issues: [] });
       }
       repoList = [repo];
     } else if (wsId) {
@@ -26,13 +26,17 @@ export async function issueRoutes(app: FastifyInstance) {
       repoList = await db.select().from(repos);
     }
 
-    // Get existing tasks for cross-reference
+    // Get existing tasks for cross-reference (select only needed columns)
+    const taskSelect = {
+      ticketSource: tasks.ticketSource,
+      ticketExternalId: tasks.ticketExternalId,
+      repoUrl: tasks.repoUrl,
+      id: tasks.id,
+      state: tasks.state,
+    };
     const existingTasks = wsId
-      ? await db
-          .select()
-          .from(tasks)
-          .where(and(eq(tasks.workspaceId, wsId)))
-      : await db.select().from(tasks);
+      ? await db.select(taskSelect).from(tasks).where(eq(tasks.workspaceId, wsId))
+      : await db.select(taskSelect).from(tasks);
 
     const taskMap = new Map(
       existingTasks

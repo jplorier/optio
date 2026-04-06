@@ -58,10 +58,13 @@ export async function getGitToken(
  */
 export async function getGitPlatformForRepo(
   repoUrl: string,
-  context: GitTokenContext,
+  context: GitTokenContext & { platformHint?: GitPlatformType },
 ): Promise<{ platform: GitPlatform; ri: RepoIdentifier }> {
   const ri = parseRepoUrl(repoUrl);
   if (!ri) throw new Error(`Cannot parse repo URL: ${repoUrl}`);
+
+  // Allow callers with a repo record to skip URL-based platform detection
+  if (context.platformHint) ri.platform = context.platformHint;
 
   const token = await getGitToken(ri.platform, context);
   const platform = createGitPlatform(ri.platform, token);

@@ -218,25 +218,51 @@ export class GitLabPlatform implements GitPlatform {
 
     // 3. Post inline comments as discussions
     if (review.comments?.length) {
+      // Fetch MR diff_refs (required by GitLab for positioned discussions)
+      let diffRefs: { base_sha: string; start_sha: string; head_sha: string } | null = null;
+      try {
+        const mrData = await this.fetchJson<{
+          diff_refs?: { base_sha: string; start_sha: string; head_sha: string };
+        }>(this.url(ri, `/merge_requests/${prNumber}`), { headers: this.headers() });
+        diffRefs = mrData.diff_refs ?? null;
+      } catch {
+        // Continue without diff_refs — comments will be posted as plain notes below
+      }
+
       for (const comment of review.comments) {
         try {
-          const position: Record<string, unknown> = {
-            position_type: "text",
-            new_path: comment.path,
-            old_path: comment.path,
-          };
-          if (comment.line) {
-            position.new_line = comment.line;
-          }
+          if (diffRefs) {
+            const position: Record<string, unknown> = {
+              position_type: "text",
+              new_path: comment.path,
+              old_path: comment.path,
+              base_sha: diffRefs.base_sha,
+              start_sha: diffRefs.start_sha,
+              head_sha: diffRefs.head_sha,
+            };
+            if (comment.line) {
+              position.new_line = comment.line;
+            }
 
-          await this.fetchJson(this.url(ri, `/merge_requests/${prNumber}/discussions`), {
-            method: "POST",
-            headers: this.headers(true),
-            body: JSON.stringify({
-              body: comment.body,
-              position,
-            }),
-          });
+            await this.fetchJson(this.url(ri, `/merge_requests/${prNumber}/discussions`), {
+              method: "POST",
+              headers: this.headers(true),
+              body: JSON.stringify({
+                body: comment.body,
+                position,
+              }),
+            });
+          } else {
+            // Fallback: post as a plain note with file/line context in the body
+            const locationPrefix = comment.line
+              ? `**${comment.path}:${comment.line}**\n\n`
+              : `**${comment.path}**\n\n`;
+            await this.fetchJson(this.url(ri, `/merge_requests/${prNumber}/notes`), {
+              method: "POST",
+              headers: this.headers(true),
+              body: JSON.stringify({ body: `${locationPrefix}${comment.body}` }),
+            });
+          }
         } catch {
           // Individual comment failures are non-critical
         }

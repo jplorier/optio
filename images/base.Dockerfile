@@ -18,8 +18,9 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && rm -rf /var/lib/apt/lists/*
 
 # GitLab CLI
+ARG GLAB_VERSION=1.91.0
 RUN ARCH=$(dpkg --print-architecture) \
-    && curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v1.91.0/downloads/glab_1.91.0_linux_${ARCH}.deb" -o /tmp/glab.deb \
+    && curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${ARCH}.deb" -o /tmp/glab.deb \
     && dpkg -i /tmp/glab.deb \
     && rm /tmp/glab.deb
 
