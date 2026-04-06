@@ -50,22 +50,38 @@ import * as taskService from "./task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
 import { syncAllTickets } from "./ticket-sync-service.js";
 
+/**
+ * Mock db.select() to handle two sequential query patterns:
+ * 1. db.select().from(ticketProviders).where(...) — returns providers
+ * 2. db.select({...}).from(repos) — returns configured repos (no .where())
+ */
+function mockDbSelect(providers: any[], configuredRepos: any[] = []) {
+  let callCount = 0;
+  (db.select as any) = vi.fn().mockImplementation(() => {
+    callCount++;
+    if (callCount === 1) {
+      return {
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue(providers),
+        }),
+      };
+    }
+    // Subsequent calls: repos query (awaited directly, no .where())
+    return {
+      from: vi.fn().mockResolvedValue(configuredRepos),
+    };
+  });
+}
+
 describe("ticket-sync-service", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it("syncs new tickets and creates tasks", async () => {
-    // Provider config from DB
-    (db.select as any) = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi
-          .fn()
-          .mockResolvedValue([
-            { source: "github", config: { repoUrl: "https://github.com/o/r" }, enabled: true },
-          ]),
-      }),
-    });
+    mockDbSelect([
+      { source: "github", config: { repoUrl: "https://github.com/o/r" }, enabled: true },
+    ]);
 
     const mockProvider = {
       fetchActionableTickets: vi.fn().mockResolvedValue([
@@ -110,15 +126,9 @@ describe("ticket-sync-service", () => {
   });
 
   it("skips tickets that already have tasks", async () => {
-    (db.select as any) = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi
-          .fn()
-          .mockResolvedValue([
-            { source: "github", config: { repoUrl: "https://github.com/o/r" }, enabled: true },
-          ]),
-      }),
-    });
+    mockDbSelect([
+      { source: "github", config: { repoUrl: "https://github.com/o/r" }, enabled: true },
+    ]);
 
     vi.mocked(getTicketProvider).mockReturnValue({
       fetchActionableTickets: vi.fn().mockResolvedValue([
@@ -146,15 +156,9 @@ describe("ticket-sync-service", () => {
   });
 
   it("uses codex agent type when ticket has codex label", async () => {
-    (db.select as any) = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi
-          .fn()
-          .mockResolvedValue([
-            { source: "github", config: { repoUrl: "https://github.com/o/r" }, enabled: true },
-          ]),
-      }),
-    });
+    mockDbSelect([
+      { source: "github", config: { repoUrl: "https://github.com/o/r" }, enabled: true },
+    ]);
 
     vi.mocked(getTicketProvider).mockReturnValue({
       fetchActionableTickets: vi.fn().mockResolvedValue([
@@ -183,21 +187,16 @@ describe("ticket-sync-service", () => {
   });
 
   it("uses ticket repo URL when available", async () => {
-    const fromResult = {
-      where: vi.fn().mockResolvedValue([
+    mockDbSelect(
+      [
         {
           source: "github",
           config: { repoUrl: "https://github.com/fallback/repo" },
           enabled: true,
         },
-      ]),
-      // Also thenable for db.select({...}).from(repos) (no .where())
-      then: (res: any, rej?: any) =>
-        Promise.resolve([{ repoUrl: "https://github.com/owner/specific-repo" }]).then(res, rej),
-    };
-    (db.select as any) = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue(fromResult),
-    });
+      ],
+      [{ repoUrl: "https://github.com/owner/specific-repo" }],
+    );
 
     vi.mocked(getTicketProvider).mockReturnValue({
       fetchActionableTickets: vi.fn().mockResolvedValue([
@@ -228,11 +227,7 @@ describe("ticket-sync-service", () => {
   });
 
   it("skips tickets without repo URL", async () => {
-    (db.select as any) = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ source: "github", config: {}, enabled: true }]),
-      }),
-    });
+    mockDbSelect([{ source: "github", config: {}, enabled: true }]);
 
     vi.mocked(getTicketProvider).mockReturnValue({
       fetchActionableTickets: vi.fn().mockResolvedValue([
@@ -257,11 +252,7 @@ describe("ticket-sync-service", () => {
   });
 
   it("handles provider errors gracefully", async () => {
-    (db.select as any) = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ source: "github", config: {}, enabled: true }]),
-      }),
-    });
+    mockDbSelect([{ source: "github", config: {}, enabled: true }]);
 
     vi.mocked(getTicketProvider).mockReturnValue({
       fetchActionableTickets: vi.fn().mockRejectedValue(new Error("API error")),
@@ -272,15 +263,9 @@ describe("ticket-sync-service", () => {
   });
 
   it("continues syncing when comment fails", async () => {
-    (db.select as any) = vi.fn().mockReturnValue({
-      from: vi.fn().mockReturnValue({
-        where: vi
-          .fn()
-          .mockResolvedValue([
-            { source: "github", config: { repoUrl: "https://github.com/o/r" }, enabled: true },
-          ]),
-      }),
-    });
+    mockDbSelect([
+      { source: "github", config: { repoUrl: "https://github.com/o/r" }, enabled: true },
+    ]);
 
     vi.mocked(getTicketProvider).mockReturnValue({
       fetchActionableTickets: vi.fn().mockResolvedValue([

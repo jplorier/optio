@@ -21,6 +21,9 @@ export async function syncAllTickets(): Promise<number> {
       const provider = getTicketProvider(providerConfig.source as TicketSource);
       const tickets = await provider.fetchActionableTickets(providerConfig.config);
 
+      // Fetch configured repos once for path-suffix matching (avoids N+1 queries)
+      const configuredRepos = await db.select({ repoUrl: repos.repoUrl }).from(repos);
+
       for (const ticket of tickets) {
         // Construct repo URL: use the ticket's repo field, or fall back to provider config
         // ticket.repo can be "owner/repo", a partial path, or a full URL
@@ -31,7 +34,6 @@ export async function syncAllTickets(): Promise<number> {
             repoUrl = normalizeRepoUrl(repo);
           } else {
             // Try to match against configured repos by path suffix (handles subgroups, orgs)
-            const configuredRepos = await db.select({ repoUrl: repos.repoUrl }).from(repos);
             const match = configuredRepos.find((r) =>
               r.repoUrl.toLowerCase().endsWith(`/${repo.toLowerCase()}`),
             );

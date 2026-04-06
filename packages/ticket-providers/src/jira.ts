@@ -128,6 +128,8 @@ export class JiraTicketProvider implements TicketProvider {
           url: `${jiraConfig.baseUrl}/browse/${issue.key}`,
           labels: fields.labels ?? [],
           assignee: fields.assignee?.displayName,
+          // Extract target repo from a "repo:<owner/repo>" Jira label (e.g. "repo:acme/backend").
+          // Accepts full URLs, "owner/repo" paths, or bare repo names for suffix matching.
           repo: (fields.labels ?? []).find((l: string) => l.startsWith("repo:"))?.slice(5),
           attachments: attachments.length > 0 ? attachments : undefined,
           metadata: {
