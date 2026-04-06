@@ -72,7 +72,7 @@ Implements task {{TASK_ID}}
 ## How to test
 <Describe how a reviewer can verify the changes>
 OPTIO_PR_EOF
-)"{{/if}}
+)"{{/if}}{{#if DRAFT_PR}} --draft{{/if}}
    \`\`\`
 {{/if}}
 
@@ -80,6 +80,9 @@ OPTIO_PR_EOF
     The orchestration system handles CI monitoring and code review automatically.
 {{#if AUTO_MERGE}}
     If CI passes and review is approved, the PR will be merged automatically.
+{{/if}}
+{{#if DRAFT_PR}}
+    This PR is opened as a draft. A human will review and mark it ready for merge.
 {{/if}}
 
 ## Important

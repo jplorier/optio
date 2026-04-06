@@ -254,6 +254,7 @@ export function startTaskWorker() {
           TASK_TITLE: task.title,
           REPO_NAME: repoName,
           AUTO_MERGE: String(promptConfig.autoMerge),
+          DRAFT_PR: String(promptConfig.cautiousMode),
           ISSUE_NUMBER: task.ticketExternalId ?? "",
           GIT_PLATFORM_GITLAB: isGitLab ? "true" : "",
         });
@@ -334,8 +335,10 @@ export function startTaskWorker() {
         }
 
         // Resolve secrets (workspace → repo-scoped → global fallback)
+        // Always include GITHUB_TOKEN so repo pods can clone private repos
+        const secretNames = [...new Set([...agentConfig.requiredSecrets, "GITHUB_TOKEN"])];
         const resolvedSecrets = await resolveSecretsForTask(
-          agentConfig.requiredSecrets,
+          secretNames,
           task.repoUrl,
           taskWorkspaceId,
         );

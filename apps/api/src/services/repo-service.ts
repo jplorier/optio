@@ -17,6 +17,7 @@ export interface RepoRecord {
   setupCommands: string | null;
   customDockerfile: string | null;
   autoMerge: boolean;
+  cautiousMode: boolean;
   defaultAgentType: string;
   promptTemplateOverride: string | null;
   claudeModel: string | null;
