@@ -531,7 +531,7 @@ export async function submitReviewToGitHub(draftId: string, userId?: string) {
 
   logger.info({ draftId, prNumber: draft.prNumber, event }, "Review submitted to GitHub");
 
-  return { draft: updated, githubReviewUrl: reviewData.html_url };
+  return { draft: updated, reviewUrl: reviewData.html_url };
 }
 
 // ── Re-review ───────────────────────────────────────────────────────────────
