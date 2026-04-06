@@ -40,7 +40,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Runtime config for client-side JS (WebSocket URL derivation) */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `window.__OPTIO_CONFIG=${JSON.stringify({ publicApiUrl })}`,
+            __html: `window.__OPTIO_CONFIG=${JSON.stringify({ publicApiUrl }).replace(/</g, "\\u003c")}`,
           }}
         />
         {/* Inline script to prevent flash of wrong theme */}

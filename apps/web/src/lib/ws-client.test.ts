@@ -233,9 +233,7 @@ describe("getWsBaseUrl", () => {
       writable: true,
       configurable: true,
     });
-    (globalThis as any).__OPTIO_CONFIG = { publicApiUrl: "http://localhost:30400" };
     expect(getWsBaseUrl()).toBe("ws://localhost:30400");
-    delete (globalThis as any).__OPTIO_CONFIG;
   });
 
   it("returns ws:// + host for http: pages", () => {
