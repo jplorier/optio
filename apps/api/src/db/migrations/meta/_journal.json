@@ -302,6 +302,13 @@
       "when": 1776614400000,
       "tag": "0041_encryption_alg_version",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1776700800000,
+      "tag": "0042_opencode_repo_columns",
+      "breakpoints": true
     }
   ]
 }

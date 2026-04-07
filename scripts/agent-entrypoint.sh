@@ -85,6 +85,17 @@ case "${OPTIO_AGENT_TYPE}" in
     fi
     copilot ${COPILOT_FLAGS} -p "${OPTIO_PROMPT}"
     ;;
+  opencode)
+    echo "[optio] Running OpenCode (experimental)..."
+    OPENCODE_FLAGS="run --format json"
+    if [ -n "${OPTIO_OPENCODE_MODEL:-}" ]; then
+      OPENCODE_FLAGS="${OPENCODE_FLAGS} --model ${OPTIO_OPENCODE_MODEL}"
+    fi
+    if [ -n "${OPTIO_OPENCODE_AGENT:-}" ]; then
+      OPENCODE_FLAGS="${OPENCODE_FLAGS} --agent ${OPTIO_OPENCODE_AGENT}"
+    fi
+    opencode ${OPENCODE_FLAGS} "${OPTIO_PROMPT}"
+    ;;
   *)
     echo "[optio] Unknown agent type: ${OPTIO_AGENT_TYPE}"
     exit 1

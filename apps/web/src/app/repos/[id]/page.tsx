@@ -849,6 +849,7 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
           <option value="claude-code">Claude Code</option>
           <option value="codex">OpenAI Codex</option>
           <option value="copilot">GitHub Copilot</option>
+          <option value="opencode">OpenCode (Experimental)</option>
         </select>
       </section>
 

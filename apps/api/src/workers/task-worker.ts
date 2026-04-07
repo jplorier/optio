@@ -17,6 +17,7 @@ import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { parseCodexEvent } from "../services/codex-event-parser.js";
 import { parseCopilotEvent } from "../services/copilot-event-parser.js";
+import { parseOpenCodeEvent } from "../services/opencode-event-parser.js";
 import { checkExistingPr } from "../services/pr-detection-service.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
@@ -293,6 +294,8 @@ export function startTaskWorker() {
           claudeEffort: repoConfig?.claudeEffort ?? undefined,
           copilotModel: repoConfig?.copilotModel ?? undefined,
           copilotEffort: repoConfig?.copilotEffort ?? undefined,
+          opencodeModel: repoConfig?.opencodeModel ?? undefined,
+          opencodeAgent: repoConfig?.opencodeAgent ?? undefined,
         });
 
         // ── MCP servers & custom skills injection ────────────────────
@@ -570,7 +573,9 @@ export function startTaskWorker() {
                 ? parseCodexEvent(line, taskId)
                 : task.agentType === "copilot"
                   ? parseCopilotEvent(line, taskId)
-                  : parseClaudeEvent(line, taskId);
+                  : task.agentType === "opencode"
+                    ? parseOpenCodeEvent(line, taskId)
+                    : parseClaudeEvent(line, taskId);
             if (parsed.sessionId && !sessionId) {
               sessionId = parsed.sessionId;
               await taskService.updateTaskSession(taskId, sessionId);
@@ -636,7 +641,9 @@ export function startTaskWorker() {
               ? parseCodexEvent(lineBuf, taskId)
               : task.agentType === "copilot"
                 ? parseCopilotEvent(lineBuf, taskId)
-                : parseClaudeEvent(lineBuf, taskId);
+                : task.agentType === "opencode"
+                  ? parseOpenCodeEvent(lineBuf, taskId)
+                  : parseClaudeEvent(lineBuf, taskId);
           for (const entry of parsed.entries) {
             await taskService.appendTaskLog(
               taskId,
@@ -1154,6 +1161,21 @@ export function buildAgentCommand(
         `  -p "$OPTIO_PROMPT"`,
       ];
     }
+    case "opencode": {
+      const modelFlag = env.OPTIO_OPENCODE_MODEL
+        ? ` --model ${JSON.stringify(env.OPTIO_OPENCODE_MODEL)}`
+        : "";
+      const agentFlag = env.OPTIO_OPENCODE_AGENT
+        ? ` --agent ${JSON.stringify(env.OPTIO_OPENCODE_AGENT)}`
+        : "";
+      const resumeFlag = opts?.resumeSessionId
+        ? ` --session ${JSON.stringify(opts.resumeSessionId)}`
+        : "";
+      return [
+        `echo "[optio] Running OpenCode (experimental)..."`,
+        `opencode run --format json${modelFlag}${agentFlag}${resumeFlag} "$OPTIO_PROMPT"`,
+      ];
+    }
     default:
       return [`echo "Unknown agent type: ${agentType}" && exit 1`];
   }
@@ -1188,6 +1210,21 @@ export function inferExitCode(agentType: string, logs: string): number {
       const hasFatalError =
         logs.includes("fatal:") || logs.includes("Error: authentication_failed");
       return hasResultError || hasErrorEvent || hasAuthError || hasFatalError ? 1 : 0;
+    }
+    case "opencode": {
+      // OpenCode: similar to Codex — look for error events and provider-specific failures
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasApiErrorEnvelope = /"error"\s*:\s*\{\s*"message"/.test(logs);
+      const hasAuthError =
+        /ANTHROPIC_API_KEY|OPENAI_API_KEY|GROQ_API_KEY|invalid.*api.?key|unauthorized|authentication.*failed/i.test(
+          logs,
+        );
+      const hasModelError = /model_not_found|model.*not found|does not exist.*model/i.test(logs);
+      const hasFatalError =
+        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
+      return hasErrorEvent || hasApiErrorEnvelope || hasAuthError || hasModelError || hasFatalError
+        ? 1
+        : 0;
     }
     case "claude-code":
     default: {

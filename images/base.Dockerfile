@@ -41,6 +41,12 @@ RUN npm install -g @anthropic-ai/claude-code
 # GitHub Copilot CLI
 RUN npm install -g @github/copilot
 
+# OpenCode CLI (experimental — pinned version for stable JSON output)
+ARG OPENCODE_VERSION=latest
+RUN curl -fsSL https://opencode.ai/install | bash \
+  && mv /root/.opencode/bin/opencode /usr/local/bin/ \
+  && rm -rf /root/.opencode
+
 # Python 3 (minimal — needed for setup file injection)
 RUN apt-get update && apt-get install -y python3 \
     && rm -rf /var/lib/apt/lists/*

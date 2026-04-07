@@ -88,6 +88,10 @@ export async function setupRoutes(app: FastifyInstance) {
       // Check for Copilot token
       const hasCopilotToken = secretNames.includes("COPILOT_GITHUB_TOKEN");
 
+      // Check OpenCode status (experimental)
+      const opencodeEnabled = process.env.OPTIO_OPENCODE_ENABLED === "true";
+      const opencodeConfigured = opencodeEnabled && (hasAnthropicKey || hasOpenAIKey);
+
       const hasAnyAgentKey =
         hasAnthropicKey ||
         hasOpenAIKey ||
@@ -112,6 +116,11 @@ export async function setupRoutes(app: FastifyInstance) {
           openaiKey: { done: hasOpenAIKey, label: "OpenAI API key" },
           codexAppServer: { done: hasCodexAppServer, label: "Codex app-server" },
           copilotToken: { done: hasCopilotToken, label: "GitHub Copilot token" },
+          opencodeEnabled: { done: opencodeEnabled, label: "OpenCode enabled (experimental)" },
+          opencodeConfigured: {
+            done: opencodeConfigured,
+            label: "OpenCode configured (experimental)",
+          },
           anyAgentKey: { done: hasAnyAgentKey, label: "At least one agent API key" },
         },
       });

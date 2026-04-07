@@ -26,6 +26,9 @@ export interface RepoRecord {
   claudeEffort: string | null;
   copilotModel: string | null;
   copilotEffort: string | null;
+  opencodeModel: string | null;
+  opencodeAgent: string | null;
+  opencodeProvider: string | null;
   maxTurnsCoding: number | null;
   maxTurnsReview: number | null;
   autoResume: boolean;
