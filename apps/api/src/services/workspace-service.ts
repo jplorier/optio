@@ -53,12 +53,19 @@ export async function getWorkspaceBySlug(slug: string): Promise<Workspace | null
 
 export async function updateWorkspace(
   id: string,
-  data: { name?: string; slug?: string; description?: string | null },
+  data: {
+    name?: string;
+    slug?: string;
+    description?: string | null;
+    allowDockerInDocker?: boolean;
+  },
 ): Promise<Workspace | null> {
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (data.name !== undefined) updates.name = data.name;
   if (data.slug !== undefined) updates.slug = data.slug.toLowerCase().replace(/[^a-z0-9-]/g, "-");
   if (data.description !== undefined) updates.description = data.description;
+  if (data.allowDockerInDocker !== undefined)
+    updates.allowDockerInDocker = data.allowDockerInDocker;
 
   const [ws] = await db.update(workspaces).set(updates).where(eq(workspaces.id, id)).returning();
   return (ws as Workspace) ?? null;

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { eq, and, lt, sql, asc } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { repoPods, tasks, interactiveSessions } from "../db/schema.js";
+import { repoPods, tasks, interactiveSessions, workspaces } from "../db/schema.js";
 import { getRuntime } from "./container-service.js";
 import type { ContainerHandle, ContainerSpec, ExecSession, RepoImageConfig } from "@optio/shared";
 import {
@@ -60,6 +60,7 @@ export async function getOrCreateRepoPod(
     memoryLimit?: string | null;
     dockerInDocker?: boolean;
     secretProxy?: boolean;
+    workspaceId?: string | null;
   },
 ): Promise<RepoPod> {
   const repoUrl = normalizeRepoUrl(rawRepoUrl);
@@ -164,6 +165,7 @@ export async function getOrCreateRepoPod(
       },
       opts?.dockerInDocker,
       opts?.secretProxy,
+      opts?.workspaceId,
     );
   } catch (err: any) {
     if (err?.message?.includes("unique") || err?.code === "23505") {
@@ -197,7 +199,25 @@ async function createRepoPod(
   },
   dockerInDocker?: boolean,
   secretProxy?: boolean,
+  workspaceId?: string | null,
 ): Promise<RepoPod> {
+  // Admission check: Docker-in-Docker requires explicit workspace admin opt-in
+  if (dockerInDocker) {
+    if (!workspaceId) {
+      throw new Error("Docker-in-Docker requires a workspace with allowDockerInDocker enabled");
+    }
+    const [ws] = await db
+      .select({ allowDockerInDocker: workspaces.allowDockerInDocker })
+      .from(workspaces)
+      .where(eq(workspaces.id, workspaceId));
+    if (!ws?.allowDockerInDocker) {
+      throw new Error(
+        "Docker-in-Docker requires workspace admin opt-in. " +
+          "Enable allowDockerInDocker in workspace settings.",
+      );
+    }
+  }
+
   const [record] = await db
     .insert(repoPods)
     .values({ repoUrl, repoBranch, state: "provisioning", instanceIndex })
@@ -281,11 +301,13 @@ spec:
         "optio.secret-proxy": secretProxy ? "true" : "false",
         "managed-by": "optio",
       },
-      // Docker-in-Docker: user namespace isolation + capabilities + tmpfs for daemon storage
+      // Docker-in-Docker (rootless): user namespace isolation + minimal capabilities + tmpfs
+      // Uses rootless Docker (runc + fuse-overlayfs) so SYS_ADMIN is NOT required.
+      // SYS_CHROOT is the only extra capability needed for rootless container runtimes.
       ...(dockerInDocker
         ? {
             hostUsers: false,
-            capabilities: ["SYS_ADMIN", "NET_ADMIN"],
+            capabilities: ["SYS_CHROOT"],
             tmpfsMounts: [{ mountPath: "/var/lib/docker", sizeLimit: "10Gi" }],
           }
         : {}),

@@ -43,6 +43,10 @@ vi.mock("../db/schema.js", () => ({
     state: "state",
     podId: "podId",
   },
+  workspaces: {
+    id: "id",
+    allowDockerInDocker: "allowDockerInDocker",
+  },
 }));
 
 const mockRuntimeCreate = vi.fn();
@@ -85,6 +89,7 @@ vi.mock("../logger.js", () => ({
 import { db } from "../db/client.js";
 import {
   resolveImage,
+  getOrCreateRepoPod,
   releaseRepoPodTask,
   cleanupIdleRepoPods,
   listRepoPods,
@@ -403,5 +408,187 @@ describe("deleteNetworkPolicy", () => {
   it("does not throw when deletion fails", async () => {
     // deleteNetworkPolicy has a try/catch that swallows errors
     await expect(deleteNetworkPolicy("nonexistent-pod")).resolves.toBeUndefined();
+  });
+});
+
+// ── Docker-in-Docker admission check ──────────────────────────────
+
+describe("getOrCreateRepoPod — DinD admission check", () => {
+  /**
+   * Helper: set up the db mock chain for getOrCreateRepoPod.
+   * The function chains: select().from().where().orderBy() which needs special handling
+   * because mockResolvedValueOnce on where() consumes the chain before orderBy() is called.
+   */
+  function mockGetOrCreateFlow(opts: {
+    existingPods?: any[];
+    podCount?: number;
+    workspaceLookup?: any[];
+    insertedPod?: any;
+  }) {
+    const dbMock = db as any;
+
+    // The main challenge: select().from(repoPods).where().orderBy() must be awaitable
+    // after the full chain. We use a thenable + orderBy combo.
+    const orderByResult = opts.existingPods ?? [];
+    const chainableWithOrderBy = {
+      orderBy: vi.fn().mockResolvedValue(orderByResult),
+    };
+
+    // Track call count to know which where() call we're on:
+    // 1st where: existing pods (needs .orderBy)
+    // 2nd where: pod count (terminal, returns [{count}])
+    // 3rd where: workspace lookup (terminal, returns workspace row)
+    // 4th+ where: update calls (terminal)
+    let whereCallCount = 0;
+    dbMock.where.mockImplementation(() => {
+      whereCallCount++;
+      if (whereCallCount === 1) {
+        // existing pods query → needs .orderBy()
+        return chainableWithOrderBy;
+      }
+      if (whereCallCount === 2) {
+        // pod count query
+        return Promise.resolve([{ count: opts.podCount ?? 0 }]);
+      }
+      if (whereCallCount === 3 && opts.workspaceLookup !== undefined) {
+        // workspace lookup
+        return Promise.resolve(opts.workspaceLookup);
+      }
+      // Remaining calls: update queries (e.g. state transitions)
+      return Promise.resolve([]);
+    });
+
+    if (opts.insertedPod) {
+      dbMock.returning.mockResolvedValueOnce([opts.insertedPod]);
+    }
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Reset where to default behavior
+    (db as any).where.mockReset().mockReturnThis();
+  });
+
+  it("rejects DinD when no workspaceId is provided", async () => {
+    mockGetOrCreateFlow({
+      existingPods: [],
+      podCount: 0,
+      insertedPod: {
+        id: "pod-1",
+        repoUrl: "https://github.com/org/repo",
+        repoBranch: "main",
+        state: "provisioning",
+        instanceIndex: 0,
+      },
+    });
+
+    await expect(
+      getOrCreateRepoPod("https://github.com/org/repo", "main", {}, undefined, {
+        dockerInDocker: true,
+      }),
+    ).rejects.toThrow("Docker-in-Docker requires a workspace with allowDockerInDocker enabled");
+  });
+
+  it("rejects DinD when workspace has allowDockerInDocker=false", async () => {
+    mockGetOrCreateFlow({
+      existingPods: [],
+      podCount: 0,
+      workspaceLookup: [{ allowDockerInDocker: false }],
+      insertedPod: {
+        id: "pod-1",
+        repoUrl: "https://github.com/org/repo",
+        repoBranch: "main",
+        state: "provisioning",
+        instanceIndex: 0,
+      },
+    });
+
+    await expect(
+      getOrCreateRepoPod("https://github.com/org/repo", "main", {}, undefined, {
+        dockerInDocker: true,
+        workspaceId: "ws-1",
+      }),
+    ).rejects.toThrow("Docker-in-Docker requires workspace admin opt-in");
+  });
+
+  it("rejects DinD when workspace is not found", async () => {
+    mockGetOrCreateFlow({
+      existingPods: [],
+      podCount: 0,
+      workspaceLookup: [],
+      insertedPod: {
+        id: "pod-1",
+        repoUrl: "https://github.com/org/repo",
+        repoBranch: "main",
+        state: "provisioning",
+        instanceIndex: 0,
+      },
+    });
+
+    await expect(
+      getOrCreateRepoPod("https://github.com/org/repo", "main", {}, undefined, {
+        dockerInDocker: true,
+        workspaceId: "nonexistent-ws",
+      }),
+    ).rejects.toThrow("Docker-in-Docker requires workspace admin opt-in");
+  });
+
+  it("allows DinD when workspace has allowDockerInDocker=true", async () => {
+    mockGetOrCreateFlow({
+      existingPods: [],
+      podCount: 0,
+      workspaceLookup: [{ allowDockerInDocker: true }],
+      insertedPod: {
+        id: "pod-1",
+        repoUrl: "https://github.com/org/repo",
+        repoBranch: "main",
+        state: "provisioning",
+        instanceIndex: 0,
+      },
+    });
+
+    mockRuntimeCreate.mockResolvedValueOnce({ id: "k8s-id", name: "optio-repo-abc" });
+
+    const pod = await getOrCreateRepoPod("https://github.com/org/repo", "main", {}, undefined, {
+      dockerInDocker: true,
+      workspaceId: "ws-1",
+    });
+
+    expect(pod.state).toBe("ready");
+    expect(mockRuntimeCreate).toHaveBeenCalled();
+
+    // Verify the ContainerSpec passed to create uses SYS_CHROOT, not SYS_ADMIN
+    const spec = mockRuntimeCreate.mock.calls[0][0];
+    expect(spec.capabilities).toEqual(["SYS_CHROOT"]);
+    expect(spec.capabilities).not.toContain("SYS_ADMIN");
+    expect(spec.capabilities).not.toContain("NET_ADMIN");
+    expect(spec.hostUsers).toBe(false);
+    expect(spec.tmpfsMounts).toEqual([{ mountPath: "/var/lib/docker", sizeLimit: "10Gi" }]);
+  });
+
+  it("does not add DinD capabilities when dockerInDocker is false", async () => {
+    mockGetOrCreateFlow({
+      existingPods: [],
+      podCount: 0,
+      insertedPod: {
+        id: "pod-1",
+        repoUrl: "https://github.com/org/repo",
+        repoBranch: "main",
+        state: "provisioning",
+        instanceIndex: 0,
+      },
+    });
+
+    mockRuntimeCreate.mockResolvedValueOnce({ id: "k8s-id", name: "optio-repo-abc" });
+
+    const pod = await getOrCreateRepoPod("https://github.com/org/repo", "main", {}, undefined, {
+      dockerInDocker: false,
+    });
+
+    expect(pod.state).toBe("ready");
+    const spec = mockRuntimeCreate.mock.calls[0][0];
+    expect(spec.capabilities).toBeUndefined();
+    expect(spec.hostUsers).toBeUndefined();
+    expect(spec.tmpfsMounts).toBeUndefined();
   });
 });

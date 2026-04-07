@@ -569,8 +569,9 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
             <span className="text-sm">Enable Docker-in-Docker</span>
             <p className="text-[10px] text-text-muted/60 mt-0.5">
               Allow agents to run <code>docker build</code> and <code>docker run</code> inside pods.
-              Uses K8s user namespace isolation (<code>hostUsers: false</code>) with SYS_ADMIN and
-              NET_ADMIN capabilities scoped to the user namespace &mdash; no privileged mode needed.
+              Uses rootless Docker with K8s user namespace isolation (<code>hostUsers: false</code>)
+              and minimal capabilities (SYS_CHROOT only) &mdash; no privileged mode needed. Requires
+              workspace admin opt-in via <code>allowDockerInDocker</code>.
             </p>
           </div>
         </label>

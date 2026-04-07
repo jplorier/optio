@@ -470,6 +470,7 @@ export function startTaskWorker() {
             memoryLimit: repoConfig?.memoryLimit,
             dockerInDocker: repoConfig?.dockerInDocker ?? false,
             secretProxy: repoConfig?.secretProxy ?? false,
+            workspaceId: taskWorkspaceId,
           },
         );
         repoPodId = pod.id;

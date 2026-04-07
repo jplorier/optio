@@ -39,6 +39,7 @@ export const workspaces = pgTable("workspaces", {
   slug: text("slug").notNull().unique(),
   description: text("description"),
   createdBy: uuid("created_by"),
+  allowDockerInDocker: boolean("allow_docker_in_docker").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -21,6 +21,7 @@ const updateWorkspaceSchema = z.object({
     .regex(/^[a-z0-9-]+$/)
     .optional(),
   description: z.string().max(500).nullable().optional(),
+  allowDockerInDocker: z.boolean().optional(),
 });
 
 const addMemberSchema = z.object({
