@@ -1,9 +1,9 @@
-import crypto from "node:crypto";
 import { eq, desc } from "drizzle-orm";
 import { assertSsrfSafe } from "../utils/ssrf.js";
 import { db } from "../db/client.js";
 import { webhooks, webhookDeliveries } from "../db/schema.js";
 import { encrypt, decrypt } from "./secret-service.js";
+import { HmacSha256Signer } from "./crypto/signer.js";
 import { logger } from "../logger.js";
 
 export type WebhookEvent =
@@ -134,8 +134,10 @@ export async function getWebhookDeliveries(webhookId: string, opts?: { limit?: n
 /**
  * Sign a payload using HMAC-SHA256 with the webhook's secret.
  */
-export function signPayload(payload: string, secret: string): string {
-  return crypto.createHmac("sha256", secret).update(payload).digest("hex");
+export async function signPayload(payload: string, secret: string): Promise<string> {
+  const signer = new HmacSha256Signer(secret);
+  const sig = await signer.sign(Buffer.from(payload));
+  return sig.toString("hex");
 }
 
 /**
@@ -247,7 +249,7 @@ export async function deliverWebhook(
   };
 
   if (webhook.secret) {
-    headers["X-Optio-Signature"] = signPayload(payloadStr, webhook.secret);
+    headers["X-Optio-Signature"] = await signPayload(payloadStr, webhook.secret);
   }
 
   let statusCode: number | undefined;

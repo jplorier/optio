@@ -1,7 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
-import { createHmac, timingSafeEqual } from "node:crypto";
 import { Readable } from "node:stream";
 import { db } from "../db/client.js";
 import { ticketProviders } from "../db/schema.js";
@@ -9,6 +8,7 @@ import { TaskState } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
 import { syncAllTickets } from "../services/ticket-sync-service.js";
 import { storeSecret, deleteSecret } from "../services/secret-service.js";
+import { HmacSha256Verifier } from "../services/crypto/signer.js";
 import { logger } from "../logger.js";
 
 const createProviderSchema = z.object({
@@ -32,11 +32,21 @@ const WEBHOOK_MAX_AGE_MINUTES = 5;
 /**
  * Verify the HMAC-SHA256 signature sent by GitHub in the X-Hub-Signature-256
  * header against the raw request body and the configured secret.
+ *
+ * Uses HmacSha256Verifier to centralize constant-time comparison.
  */
-export function verifyGitHubSignature(rawBody: Buffer, signature: string, secret: string): boolean {
-  const expected = "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
-  if (expected.length !== signature.length) return false;
-  return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
+export async function verifyGitHubSignature(
+  rawBody: Buffer,
+  signature: string,
+  secret: string,
+): Promise<boolean> {
+  // GitHub sends "sha256=<hex>" — strip the prefix and decode the hex digest
+  const prefix = "sha256=";
+  if (!signature.startsWith(prefix)) return false;
+  const sigBytes = Buffer.from(signature.slice(prefix.length), "hex");
+
+  const verifier = new HmacSha256Verifier(secret);
+  return verifier.verify(rawBody, sigBytes);
 }
 
 /**
@@ -145,7 +155,7 @@ export async function ticketRoutes(app: FastifyInstance) {
       }
 
       const rawBody = (req as any).rawBody as Buffer;
-      if (!verifyGitHubSignature(rawBody, signature, webhookSecret)) {
+      if (!(await verifyGitHubSignature(rawBody, signature, webhookSecret))) {
         logger.warn("Webhook signature verification failed");
         return reply.status(401).send({ error: "Invalid signature" });
       }

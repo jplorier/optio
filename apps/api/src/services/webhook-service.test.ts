@@ -89,31 +89,31 @@ function makeDbRowWithSecret(secret: string, overrides: Record<string, unknown> 
 }
 
 describe("signPayload", () => {
-  it("produces a valid HMAC-SHA256 hex signature", () => {
+  it("produces a valid HMAC-SHA256 hex signature", async () => {
     const payload = JSON.stringify({ event: "task.completed", data: { taskId: "123" } });
     const secret = "test-secret-key";
-    const signature = signPayload(payload, secret);
+    const signature = await signPayload(payload, secret);
 
     const expected = crypto.createHmac("sha256", secret).update(payload).digest("hex");
     expect(signature).toBe(expected);
   });
 
-  it("produces different signatures for different secrets", () => {
+  it("produces different signatures for different secrets", async () => {
     const payload = JSON.stringify({ event: "task.completed" });
-    const sig1 = signPayload(payload, "secret-1");
-    const sig2 = signPayload(payload, "secret-2");
+    const sig1 = await signPayload(payload, "secret-1");
+    const sig2 = await signPayload(payload, "secret-2");
     expect(sig1).not.toBe(sig2);
   });
 
-  it("produces different signatures for different payloads", () => {
+  it("produces different signatures for different payloads", async () => {
     const secret = "same-secret";
-    const sig1 = signPayload(JSON.stringify({ event: "task.completed" }), secret);
-    const sig2 = signPayload(JSON.stringify({ event: "task.failed" }), secret);
+    const sig1 = await signPayload(JSON.stringify({ event: "task.completed" }), secret);
+    const sig2 = await signPayload(JSON.stringify({ event: "task.failed" }), secret);
     expect(sig1).not.toBe(sig2);
   });
 
-  it("returns a 64-character hex string", () => {
-    const signature = signPayload("test", "secret");
+  it("returns a 64-character hex string", async () => {
+    const signature = await signPayload("test", "secret");
     expect(signature).toMatch(/^[0-9a-f]{64}$/);
   });
 });
