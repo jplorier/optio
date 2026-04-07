@@ -91,8 +91,10 @@ export class WsClient {
  *
  * Priority:
  * 1. NEXT_PUBLIC_WS_URL env var (local dev override via .env.local)
- * 2. Derived from the current page URL (production — zero config)
- * 3. SSR fallback
+ * 2. PUBLIC_API_URL injected at runtime via window.__OPTIO_CONFIG
+ *    (set by the server component in layout.tsx for NodePort / split-origin setups)
+ * 3. Derived from the current page URL (production ingress — zero config)
+ * 4. SSR fallback
  */
 export function getWsBaseUrl(): string {
   if (process.env.NEXT_PUBLIC_WS_URL) {
@@ -100,6 +102,13 @@ export function getWsBaseUrl(): string {
   }
   if (typeof window === "undefined") {
     return "ws://localhost:4000";
+  }
+  // Use the runtime-injected PUBLIC_API_URL when web and API are on different origins
+  const config = (window as any).__OPTIO_CONFIG as { publicApiUrl?: string } | undefined;
+  if (config?.publicApiUrl) {
+    const url = new URL(config.publicApiUrl);
+    const protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    return `${protocol}//${url.host}`;
   }
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   return `${protocol}//${window.location.host}`;
