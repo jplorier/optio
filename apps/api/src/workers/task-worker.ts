@@ -328,8 +328,13 @@ export function startTaskWorker() {
         }
 
         // Resolve secrets (workspace → repo-scoped → global fallback)
-        // Always include GITHUB_TOKEN so repo pods can clone private repos
-        const secretNames = [...new Set([...agentConfig.requiredSecrets, "GITHUB_TOKEN"])];
+        // Only require GITHUB_TOKEN when GitHub App auth is not configured
+        const secretNames = [
+          ...new Set([
+            ...agentConfig.requiredSecrets,
+            ...(!isGitHubAppConfigured() ? ["GITHUB_TOKEN"] : []),
+          ]),
+        ];
         const resolvedSecrets = await resolveSecretsForTask(
           secretNames,
           task.repoUrl,
