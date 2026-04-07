@@ -320,11 +320,15 @@ export function generateSecretInitScript(secrets: SecretProxySecrets): string {
     lines.push(`chmod 600 ${SECRET_MOUNT_PATH}/anthropic-api-key`);
   }
 
-  // Generate a self-signed CA certificate for TLS interception
+  // Generate a self-signed CA certificate for TLS interception.
+  // Ed25519 is smaller/faster than RSA-2048 and sufficient for ephemeral intra-pod TLS.
+  // 30-day validity is plenty — pods rarely live longer than 24h.
+  // Override via OPTIO_ENVOY_CA_ALG for future PQ migration (e.g. "mldsa44").
+  const keyAlg = process.env.OPTIO_ENVOY_CA_ALG ?? "ed25519";
   lines.push(`mkdir -p /etc/envoy/ca`);
   lines.push(
-    `openssl req -x509 -newkey rsa:2048 -keyout ${CA_KEY_PATH} -out ${CA_CERT_PATH} ` +
-      `-days 365 -nodes -subj "/CN=Optio Envoy Proxy CA" 2>/dev/null`,
+    `openssl req -x509 -newkey ${keyAlg} -keyout ${CA_KEY_PATH} -out ${CA_CERT_PATH} ` +
+      `-days 30 -nodes -subj "/CN=Optio Envoy Proxy CA" 2>/dev/null`,
   );
 
   lines.push(`echo "[optio] Secret proxy init complete"`);
