@@ -10,9 +10,15 @@ echo "[optio] Auth mode: ${OPTIO_AUTH_MODE:-api-key}"
 git config --global user.name "Optio Agent"
 git config --global user.email "optio-agent@noreply.github.com"
 
-# Authenticate GitHub CLI
-echo "${GITHUB_TOKEN}" | gh auth login --with-token
-echo "[optio] GitHub CLI authenticated"
+# Authenticate CLI tools
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  echo "${GITHUB_TOKEN}" | gh auth login --with-token
+  echo "[optio] GitHub CLI authenticated"
+fi
+if [ -n "${GITLAB_TOKEN:-}" ] && command -v glab >/dev/null 2>&1; then
+  glab auth login --hostname "${GITLAB_HOST:-gitlab.com}" --token "${GITLAB_TOKEN}"
+  echo "[optio] GitLab CLI authenticated"
+fi
 
 # Clone repo
 cd /workspace

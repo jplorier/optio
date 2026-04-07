@@ -279,6 +279,13 @@
       "idx": 39,
       "version": "7",
       "when": 1776355200000,
+      "tag": "0039_add_git_platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1776441600000,
       "tag": "0039_cautious_mode",
       "breakpoints": true
     }

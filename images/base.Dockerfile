@@ -17,6 +17,13 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get update && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
+# GitLab CLI
+ARG GLAB_VERSION=1.91.0
+RUN ARCH=$(dpkg --print-architecture) \
+    && curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/glab_${GLAB_VERSION}_linux_${ARCH}.deb" -o /tmp/glab.deb \
+    && dpkg -i /tmp/glab.deb \
+    && rm /tmp/glab.deb
+
 # Node.js 22 (needed for Claude Code)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs \
@@ -41,10 +48,11 @@ COPY scripts/agent-entrypoint.sh /opt/optio/entrypoint.sh
 COPY scripts/repo-init.sh /opt/optio/repo-init.sh
 RUN chmod +x /opt/optio/entrypoint.sh /opt/optio/repo-init.sh
 
-# Optio credential helpers for dynamic GitHub token refresh
+# Optio credential helpers for dynamic token refresh (GitHub + GitLab)
 COPY scripts/optio-git-credential /usr/local/bin/optio-git-credential
 COPY scripts/optio-gh-wrapper /usr/local/bin/optio-gh-wrapper
-RUN chmod +x /usr/local/bin/optio-git-credential /usr/local/bin/optio-gh-wrapper
+COPY scripts/optio-glab-wrapper /usr/local/bin/optio-glab-wrapper
+RUN chmod +x /usr/local/bin/optio-git-credential /usr/local/bin/optio-gh-wrapper /usr/local/bin/optio-glab-wrapper
 
 # Non-root user
 RUN useradd -m -s /bin/bash agent \
