@@ -10,6 +10,7 @@ import {
 } from "@optio/shared";
 import { requireRole } from "../plugins/auth.js";
 import { getGitHubToken } from "../services/github-token-service.js";
+import { isSsrfSafeUrl } from "../utils/ssrf.js";
 
 const createRepoSchema = z.object({
   repoUrl: z.string().min(1),
@@ -46,7 +47,12 @@ const updateRepoSchema = z.object({
   testCommand: z.string().optional(),
   reviewModel: z.string().optional(),
   maxAutoResumes: z.number().int().min(1).max(100).nullable().optional(),
-  slackWebhookUrl: z.string().nullable().optional(),
+  slackWebhookUrl: z
+    .string()
+    .url()
+    .refine(isSsrfSafeUrl, "Slack webhook URL must not target private/internal addresses")
+    .nullable()
+    .optional(),
   slackChannel: z.string().nullable().optional(),
   slackNotifyOn: z
     .array(z.enum(["completed", "failed", "needs_attention", "pr_opened"]))
