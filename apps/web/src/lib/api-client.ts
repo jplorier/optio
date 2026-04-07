@@ -188,6 +188,9 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  deleteTicketProvider: (id: string) =>
+    request<void>(`/api/tickets/providers/${id}`, { method: "DELETE" }),
+
   // Prompt templates
   getEffectiveTemplate: (repoUrl?: string) => {
     const qs = repoUrl ? `?repoUrl=${encodeURIComponent(repoUrl)}` : "";
@@ -991,7 +994,7 @@ export const api = {
     }),
 
   submitReviewDraft: (taskId: string) =>
-    request<{ draft: any; githubReviewUrl?: string }>(`/api/tasks/${taskId}/review-draft/submit`, {
+    request<{ draft: any; reviewUrl?: string }>(`/api/tasks/${taskId}/review-draft/submit`, {
       method: "POST",
     }),
 

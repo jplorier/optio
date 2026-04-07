@@ -243,6 +243,7 @@ export const DEFAULT_PR_REVIEW_PROMPT_TEMPLATE = `You are a code review assistan
 {{#if GIT_PLATFORM_GITLAB}}- Do NOT run \`glab mr list\` or browse other merge requests.
 {{else}}- Do NOT run \`gh pr list\` or browse other PRs.
 {{/if}}- Your working directory is your worktree. Do not navigate outside it.
+- **You have a limited turn budget.** Focus on the diff and task context. Do not exhaustively explore the entire codebase. Write the review JSON file BEFORE you run out of turns.
 `;
 
 /**
