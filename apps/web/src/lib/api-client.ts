@@ -188,6 +188,9 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  deleteTicketProvider: (id: string) =>
+    request<void>(`/api/tickets/providers/${id}`, { method: "DELETE" }),
+
   // Prompt templates
   getEffectiveTemplate: (repoUrl?: string) => {
     const qs = repoUrl ? `?repoUrl=${encodeURIComponent(repoUrl)}` : "";
