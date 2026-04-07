@@ -4,6 +4,7 @@ import {
   text,
   timestamp,
   integer,
+  smallint,
   jsonb,
   pgEnum,
   boolean,
@@ -183,6 +184,7 @@ export const secrets = pgTable(
     encryptedValue: bytea("encrypted_value").notNull(),
     iv: bytea("iv").notNull(),
     authTag: bytea("auth_tag").notNull(),
+    alg: smallint("alg").notNull().default(1), // 1 = AES_256_GCM_V1
     workspaceId: uuid("workspace_id"), // nullable for backward compat
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -232,6 +234,7 @@ export const repos = pgTable(
     encryptedSlackWebhookUrl: bytea("encrypted_slack_webhook_url"), // AES-256-GCM encrypted Slack webhook URL
     slackWebhookUrlIv: bytea("slack_webhook_url_iv"),
     slackWebhookUrlAuthTag: bytea("slack_webhook_url_auth_tag"),
+    slackWebhookUrlAlg: smallint("slack_webhook_url_alg").notNull().default(1), // 1 = AES_256_GCM_V1
     slackChannel: text("slack_channel"), // override channel (optional)
     slackNotifyOn: jsonb("slack_notify_on").$type<string[]>(), // e.g. ["completed","failed","pr_opened","needs_attention"]
     slackEnabled: boolean("slack_enabled").notNull().default(false),
@@ -329,6 +332,7 @@ export const webhooks = pgTable(
     encryptedSecret: bytea("encrypted_secret"), // AES-256-GCM encrypted signing secret
     secretIv: bytea("secret_iv"),
     secretAuthTag: bytea("secret_auth_tag"),
+    secretAlg: smallint("secret_alg").notNull().default(1), // 1 = AES_256_GCM_V1
     description: text("description"),
     active: boolean("active").notNull().default(true),
     createdBy: uuid("created_by"),
