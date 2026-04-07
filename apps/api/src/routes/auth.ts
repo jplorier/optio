@@ -62,6 +62,16 @@ async function deleteAuthCode(code: string): Promise<void> {
   await redis.del(`${AUTH_CODE_PREFIX}${code}`);
 }
 
+// Stricter rate limit for auth endpoints (10 req/min vs 100 req/min global)
+const AUTH_RATE_LIMIT = {
+  config: {
+    rateLimit: {
+      max: 10,
+      timeWindow: "1 minute",
+    },
+  },
+};
+
 export async function authRoutes(app: FastifyInstance) {
   // ─── Existing Claude auth endpoints ───
 
@@ -144,25 +154,29 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   /** Initiate OAuth flow — redirects to provider. */
-  app.get<{ Params: { provider: string } }>("/api/auth/:provider/login", async (req, reply) => {
-    const providerName = req.params.provider;
-    const provider = getOAuthProvider(providerName);
-    if (!provider) {
-      return reply.status(404).send({ error: `Unknown provider: ${providerName}` });
-    }
+  app.get<{ Params: { provider: string } }>(
+    "/api/auth/:provider/login",
+    AUTH_RATE_LIMIT,
+    async (req, reply) => {
+      const providerName = req.params.provider;
+      const provider = getOAuthProvider(providerName);
+      if (!provider) {
+        return reply.status(404).send({ error: `Unknown provider: ${providerName}` });
+      }
 
-    const state = randomBytes(16).toString("hex");
-    await addOAuthState(state, providerName);
+      const state = randomBytes(16).toString("hex");
+      await addOAuthState(state, providerName);
 
-    const url = provider.authorizeUrl(state);
-    reply.redirect(url);
-  });
+      const url = provider.authorizeUrl(state);
+      reply.redirect(url);
+    },
+  );
 
   /** OAuth callback — exchange code, create session, redirect to web. */
   app.get<{
     Params: { provider: string };
     Querystring: { code?: string; state?: string; error?: string };
-  }>("/api/auth/:provider/callback", async (req, reply) => {
+  }>("/api/auth/:provider/callback", AUTH_RATE_LIMIT, async (req, reply) => {
     const { provider: providerName } = req.params;
     const { code, state, error } = req.query;
 
@@ -214,7 +228,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   /** Exchange a short-lived auth code for the session token. */
-  app.post("/api/auth/exchange-code", async (req, reply) => {
+  app.post("/api/auth/exchange-code", AUTH_RATE_LIMIT, async (req, reply) => {
     const { code } = (req.body ?? {}) as { code?: string };
     if (!code) {
       return reply.status(400).send({ error: "Missing code" });
@@ -288,7 +302,7 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   /** Logout — revoke session and clear cookie. */
-  app.post("/api/auth/logout", async (req, reply) => {
+  app.post("/api/auth/logout", AUTH_RATE_LIMIT, async (req, reply) => {
     // Resolve token: Bearer header (BFF proxy) → session cookie (direct)
     const authHeader = req.headers.authorization;
     let token: string | undefined;
