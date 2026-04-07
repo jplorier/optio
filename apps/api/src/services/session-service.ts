@@ -1,10 +1,11 @@
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes, createHash, timingSafeEqual } from "node:crypto";
 import { db } from "../db/client.js";
 import { users, sessions } from "../db/schema.js";
-import { eq, and, gt, lt } from "drizzle-orm";
+import { eq, and, lt } from "drizzle-orm";
 import type { OAuthUser } from "./oauth/provider.js";
 
-const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+const SESSION_MAX_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days absolute max
+const SESSION_SLIDING_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7 days sliding window
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
@@ -65,7 +66,7 @@ export async function createSession(
   // Create session token
   const token = randomBytes(32).toString("hex");
   const tokenHash = hashToken(token);
-  const expiresAt = new Date(Date.now() + SESSION_TTL_MS);
+  const expiresAt = new Date(Date.now() + SESSION_SLIDING_WINDOW_MS);
 
   await db.insert(sessions).values({
     userId: user.id,
@@ -90,10 +91,14 @@ export async function createSession(
 /** Validate a session token and return the user if valid. */
 export async function validateSession(token: string): Promise<SessionUser | null> {
   const tokenHash = hashToken(token);
+  const now = new Date();
 
   const rows = await db
     .select({
       sessionId: sessions.id,
+      tokenHash: sessions.tokenHash,
+      sessionCreatedAt: sessions.createdAt,
+      expiresAt: sessions.expiresAt,
       userId: users.id,
       provider: users.provider,
       email: users.email,
@@ -103,12 +108,27 @@ export async function validateSession(token: string): Promise<SessionUser | null
     })
     .from(sessions)
     .innerJoin(users, eq(sessions.userId, users.id))
-    .where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())))
+    .where(eq(sessions.tokenHash, tokenHash))
     .limit(1);
 
   if (rows.length === 0) return null;
 
   const row = rows[0];
+
+  // Constant-time comparison of token hash (defense-in-depth)
+  if (!timingSafeEqual(Buffer.from(row.tokenHash), Buffer.from(tokenHash))) return null;
+
+  // Check expiry in application code
+  if (row.expiresAt <= now) return null;
+
+  // Sliding-window: extend session expiry on successful validation
+  const slidingExpiry = new Date(now.getTime() + SESSION_SLIDING_WINDOW_MS);
+  const maxExpiry = new Date(row.sessionCreatedAt.getTime() + SESSION_MAX_TTL_MS);
+  const newExpiry = slidingExpiry < maxExpiry ? slidingExpiry : maxExpiry;
+  if (newExpiry > now) {
+    await db.update(sessions).set({ expiresAt: newExpiry }).where(eq(sessions.id, row.sessionId));
+  }
+
   return {
     id: row.userId,
     provider: row.provider,

@@ -1,6 +1,7 @@
 import { eq, and } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { workspaces, workspaceMembers, users } from "../db/schema.js";
+import { revokeAllUserSessions } from "./session-service.js";
 import type {
   Workspace,
   WorkspaceMemberWithUser,
@@ -136,7 +137,7 @@ export async function addMember(
     });
 }
 
-/** Update a member's role. */
+/** Update a member's role. Revokes sessions to force re-authentication with updated privileges. */
 export async function updateMemberRole(
   workspaceId: string,
   userId: string,
@@ -146,13 +147,15 @@ export async function updateMemberRole(
     .update(workspaceMembers)
     .set({ role })
     .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)));
+  await revokeAllUserSessions(userId);
 }
 
-/** Remove a user from a workspace. */
+/** Remove a user from a workspace. Revokes sessions to prevent access with stale membership. */
 export async function removeMember(workspaceId: string, userId: string): Promise<void> {
   await db
     .delete(workspaceMembers)
     .where(and(eq(workspaceMembers.workspaceId, workspaceId), eq(workspaceMembers.userId, userId)));
+  await revokeAllUserSessions(userId);
 }
 
 /**
