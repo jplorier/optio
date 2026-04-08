@@ -100,12 +100,14 @@ const mockCleanupIdle = vi.fn().mockResolvedValue(0);
 const mockUpdateWorktree = vi.fn().mockResolvedValue(undefined);
 const mockReconcile = vi.fn().mockResolvedValue(0);
 const mockDeleteNetPolicy = vi.fn().mockResolvedValue(undefined);
+const mockKillOrphanedAgent = vi.fn().mockResolvedValue(false);
 
 vi.mock("../services/repo-pool-service.js", () => ({
   cleanupIdleRepoPods: (...args: unknown[]) => mockCleanupIdle(...args),
   updateWorktreeState: (...args: unknown[]) => mockUpdateWorktree(...args),
   reconcileActiveTaskCounts: (...args: unknown[]) => mockReconcile(...args),
   deleteNetworkPolicy: (...args: unknown[]) => mockDeleteNetPolicy(...args),
+  killOrphanedAgentInPod: (...args: unknown[]) => mockKillOrphanedAgent(...args),
 }));
 
 const mockRtStatus = vi.fn();
@@ -241,6 +243,7 @@ beforeEach(() => {
   mockUpdateWorktree.mockReset().mockResolvedValue(undefined);
   mockReconcile.mockReset().mockResolvedValue(0);
   mockDeleteNetPolicy.mockReset().mockResolvedValue(undefined);
+  mockKillOrphanedAgent.mockReset().mockResolvedValue(false);
   mockCleanupExpiredSessions.mockReset().mockResolvedValue(0);
   mockTaskQueueAdd.mockReset().mockResolvedValue(undefined);
   mockPublishEvent.mockReset().mockResolvedValue(undefined);
@@ -780,6 +783,115 @@ describe("repo-cleanup-worker", () => {
       );
       // Should NOT re-queue
       expect(mockTaskQueueAdd).not.toHaveBeenCalled();
+    });
+
+    it("kills orphaned agent in pod before re-queueing stale task", async () => {
+      const staleTask = makeTask({
+        id: "stale-orphan",
+        state: "running",
+        lastPodId: "pod-abc",
+        updatedAt: new Date(Date.now() - 700_000).toISOString(),
+      });
+      selectResults = [
+        [], // repoPods
+        [], // soft stall detection: running tasks
+        [staleTask], // stale tasks
+        [{ count: 0 }], // staleRetryCount = 0 (first stale detection)
+      ];
+
+      mockKillOrphanedAgent.mockResolvedValue(true);
+
+      await processorFn();
+
+      // Should have called killOrphanedAgentInPod with the pod ID and task ID
+      expect(mockKillOrphanedAgent).toHaveBeenCalledWith("pod-abc", "stale-orphan");
+      // Should update worktree state to removed
+      expect(mockUpdateWorktree).toHaveBeenCalledWith("stale-orphan", "removed");
+      // Should still re-queue
+      expect(mockTaskQueueAdd).toHaveBeenCalled();
+    });
+
+    it("escalates to needs_attention when cleanup fails on repeated stale recovery", async () => {
+      const staleTask = makeTask({
+        id: "stale-stuck",
+        state: "running",
+        lastPodId: "pod-xyz",
+        updatedAt: new Date(Date.now() - 700_000).toISOString(),
+      });
+      selectResults = [
+        [], // repoPods
+        [], // soft stall detection: running tasks
+        [staleTask], // stale tasks
+        [{ count: 1 }], // staleRetryCount = 1 (already retried once)
+      ];
+
+      // Simulate cleanup failure
+      mockKillOrphanedAgent.mockRejectedValue(new Error("Pod not reachable"));
+
+      await processorFn();
+
+      // Should mark worktree as dirty
+      expect(mockUpdateWorktree).toHaveBeenCalledWith("stale-stuck", "dirty");
+      // Should transition to needs_attention (not re-queue)
+      expect(mockTransitionTask).toHaveBeenCalledWith(
+        "stale-stuck",
+        TaskState.NEEDS_ATTENTION,
+        "stale_recovery_failed",
+        expect.stringContaining("Manual intervention required"),
+      );
+      // Should NOT re-queue
+      expect(mockTaskQueueAdd).not.toHaveBeenCalled();
+    });
+
+    it("re-queues on first stale even if cleanup fails", async () => {
+      const staleTask = makeTask({
+        id: "stale-first",
+        state: "running",
+        lastPodId: "pod-first",
+        updatedAt: new Date(Date.now() - 700_000).toISOString(),
+      });
+      selectResults = [
+        [], // repoPods
+        [], // soft stall detection: running tasks
+        [staleTask], // stale tasks
+        [{ count: 0 }], // staleRetryCount = 0 (first time)
+      ];
+
+      // Cleanup fails but this is the first attempt, so we still re-queue
+      mockKillOrphanedAgent.mockRejectedValue(new Error("Pod not reachable"));
+
+      await processorFn();
+
+      // Should still re-queue (first attempt gets a pass even on cleanup failure)
+      expect(mockTaskQueueAdd).toHaveBeenCalledWith(
+        "process-task",
+        { taskId: "stale-first" },
+        expect.objectContaining({ priority: 100 }),
+      );
+    });
+
+    it("handles stale task with no lastPodId gracefully", async () => {
+      const staleTask = makeTask({
+        id: "stale-no-pod",
+        state: "running",
+        lastPodId: null,
+        updatedAt: new Date(Date.now() - 700_000).toISOString(),
+      });
+      selectResults = [
+        [], // repoPods
+        [], // soft stall detection: running tasks
+        [staleTask], // stale tasks
+        [{ count: 0 }], // staleRetryCount = 0
+      ];
+
+      await processorFn();
+
+      // Should NOT call killOrphanedAgent (no pod to clean up)
+      expect(mockKillOrphanedAgent).not.toHaveBeenCalled();
+      // Should still re-queue
+      expect(mockTaskQueueAdd).toHaveBeenCalled();
+      // Should update worktree state to removed
+      expect(mockUpdateWorktree).toHaveBeenCalledWith("stale-no-pod", "removed");
     });
   });
 

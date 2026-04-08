@@ -676,9 +676,15 @@ export async function execTaskInRepoPod(
     `grep -qxF '.optio/' "$EXCLUDE_FILE" 2>/dev/null || echo '.optio/' >> "$EXCLUDE_FILE"`,
     `grep -qxF '.optio-run-token' "$EXCLUDE_FILE" 2>/dev/null || echo '.optio-run-token' >> "$EXCLUDE_FILE"`,
     `grep -qxF '.optio-cache/' "$EXCLUDE_FILE" 2>/dev/null || echo '.optio-cache/' >> "$EXCLUDE_FILE"`,
-    // EXIT trap: preserve the worktree — cleanup is handled by the cleanup worker
-    // based on task state. Only clean up Claude Code's internal worktrees (-wt suffix).
-    `trap 'cd /workspace/repo 2>/dev/null; git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true; git worktree prune 2>/dev/null || true' EXIT`,
+    // EXIT trap: kill child processes (agent + watchdog) then clean up internal worktrees.
+    // This ensures orphaned agent processes are killed when the exec stream is severed
+    // (e.g. API pod restart closes the SPDY connection but kubelet doesn't send SIGHUP).
+    `_optio_main_pid=$$`,
+    `trap 'kill $(jobs -p) 2>/dev/null; wait 2>/dev/null; cd /workspace/repo 2>/dev/null; git worktree remove --force /workspace/tasks/${taskId}-wt 2>/dev/null || true; git worktree prune 2>/dev/null || true' EXIT`,
+    // Background heartbeat: detect broken stdout pipe (EPIPE) from severed exec stream.
+    // Writes an empty line every 30s (skipped by the NDJSON parser). If stdout is broken
+    // (API pod died), sends SIGTERM to the main script which triggers the EXIT trap.
+    `(trap '' PIPE; while sleep 30; do printf '\\n' 2>/dev/null || { kill -TERM $_optio_main_pid 2>/dev/null; exit; }; done) &`,
     `set +e`,
     ...agentCommand,
     `AGENT_EXIT=$?`,
@@ -937,6 +943,82 @@ export async function deleteEnvoyConfigMap(podName: string): Promise<void> {
   } catch (err) {
     logger.warn({ err, configMapName }, "Failed to delete Envoy ConfigMap");
   }
+}
+
+/**
+ * Best-effort kill of orphaned agent processes inside a repo pod and worktree cleanup.
+ *
+ * Used before stale-task re-queue and during startup reconciliation to prevent
+ * duplicate agents running in the same worktree. Identifies processes by the
+ * OPTIO_TASK_ID env var that the exec script exports.
+ *
+ * Returns true if processes were found and killed, false otherwise.
+ */
+export async function killOrphanedAgentInPod(podId: string, taskId: string): Promise<boolean> {
+  const [pod] = await db.select().from(repoPods).where(eq(repoPods.id, podId));
+  if (!pod || !pod.podName || pod.state !== "ready") return false;
+
+  const rt = getRuntime();
+  const handle: ContainerHandle = { id: pod.podId ?? pod.podName, name: pod.podName };
+
+  try {
+    // Check pod is actually reachable
+    const status = await rt.status(handle);
+    if (status.state !== "running") return false;
+  } catch {
+    return false;
+  }
+
+  let killed = false;
+  try {
+    // Kill any processes whose environment contains OPTIO_TASK_ID=<taskId>.
+    // pgrep -f matches against the full command line; we also grep /proc/*/environ
+    // as a fallback since env vars aren't always visible in cmdline.
+    const killScript = [
+      `pids=$(grep -rl "OPTIO_TASK_ID=${taskId}" /proc/*/environ 2>/dev/null | cut -d/ -f3 | sort -u || true)`,
+      `if [ -n "$pids" ]; then`,
+      `  kill -TERM $pids 2>/dev/null || true`,
+      `  sleep 2`,
+      `  kill -9 $pids 2>/dev/null || true`,
+      `  echo "killed"`,
+      `else`,
+      `  echo "none"`,
+      `fi`,
+    ].join("\n");
+
+    const killSession = await rt.exec(handle, ["bash", "-c", killScript], { tty: false });
+    let output = "";
+    for await (const chunk of killSession.stdout as AsyncIterable<Buffer>) {
+      output += chunk.toString();
+    }
+    killSession.close();
+    killed = output.includes("killed");
+
+    if (killed) {
+      logger.info({ podId, taskId, podName: pod.podName }, "Killed orphaned agent processes");
+    }
+  } catch (err) {
+    logger.warn({ err, podId, taskId }, "Failed to kill orphaned agent processes");
+  }
+
+  // Clean up the worktree regardless of whether processes were found
+  try {
+    const cleanScript = [
+      `cd /workspace/repo`,
+      `git worktree remove --force /workspace/tasks/${taskId} 2>/dev/null || true`,
+      `rm -rf /workspace/tasks/${taskId}`,
+    ].join(" && ");
+
+    const cleanSession = await rt.exec(handle, ["bash", "-c", cleanScript], { tty: false });
+    for await (const _ of cleanSession.stdout as AsyncIterable<Buffer>) {
+      /* drain */
+    }
+    cleanSession.close();
+  } catch (err) {
+    logger.warn({ err, podId, taskId }, "Failed to clean up worktree for orphaned task");
+  }
+
+  return killed;
 }
 
 /**

@@ -95,6 +95,7 @@ import {
   listRepoPods,
   reconcileActiveTaskCounts,
   deleteNetworkPolicy,
+  killOrphanedAgentInPod,
 } from "./repo-pool-service.js";
 
 // ── resolveImage ────────────────────────────────────────────────────
@@ -590,5 +591,112 @@ describe("getOrCreateRepoPod — DinD admission check", () => {
     expect(spec.capabilities).toBeUndefined();
     expect(spec.hostUsers).toBeUndefined();
     expect(spec.tmpfsMounts).toBeUndefined();
+  });
+});
+
+// ── killOrphanedAgentInPod ───────────────────────────────────────
+
+describe("killOrphanedAgentInPod", () => {
+  function makeExecSession(output: string) {
+    return {
+      stdout: {
+        [Symbol.asyncIterator]: async function* () {
+          if (output) yield Buffer.from(output);
+        },
+      },
+      close: vi.fn(),
+    };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("returns false when pod is not found", async () => {
+    const dbMock = db as any;
+    dbMock.where.mockResolvedValueOnce([]); // pod lookup returns nothing
+
+    const result = await killOrphanedAgentInPod("nonexistent-pod", "task-1");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when pod has no podName", async () => {
+    const dbMock = db as any;
+    dbMock.where.mockResolvedValueOnce([{ id: "pod-1", podName: null, state: "ready" }]);
+
+    const result = await killOrphanedAgentInPod("pod-1", "task-1");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when pod is not in ready state", async () => {
+    const dbMock = db as any;
+    dbMock.where.mockResolvedValueOnce([
+      { id: "pod-1", podName: "p1", podId: "pid1", state: "error" },
+    ]);
+
+    const result = await killOrphanedAgentInPod("pod-1", "task-1");
+    expect(result).toBe(false);
+  });
+
+  it("returns false when pod is not reachable", async () => {
+    const dbMock = db as any;
+    dbMock.where.mockResolvedValueOnce([
+      { id: "pod-1", podName: "p1", podId: "pid1", state: "ready" },
+    ]);
+    mockRuntimeStatus.mockRejectedValueOnce(new Error("unreachable"));
+
+    const result = await killOrphanedAgentInPod("pod-1", "task-1");
+    expect(result).toBe(false);
+  });
+
+  it("returns true when orphaned processes are found and killed", async () => {
+    const dbMock = db as any;
+    dbMock.where.mockResolvedValueOnce([
+      { id: "pod-1", podName: "p1", podId: "pid1", state: "ready" },
+    ]);
+    mockRuntimeStatus.mockResolvedValueOnce({ state: "running" });
+
+    const killSession = makeExecSession("killed\n");
+    const cleanSession = makeExecSession("");
+    mockRuntimeExec.mockResolvedValueOnce(killSession).mockResolvedValueOnce(cleanSession);
+
+    const result = await killOrphanedAgentInPod("pod-1", "task-1");
+    expect(result).toBe(true);
+    expect(mockRuntimeExec).toHaveBeenCalledTimes(2); // kill + worktree cleanup
+  });
+
+  it("returns false when no orphaned processes are found but still cleans worktree", async () => {
+    const dbMock = db as any;
+    dbMock.where.mockResolvedValueOnce([
+      { id: "pod-1", podName: "p1", podId: "pid1", state: "ready" },
+    ]);
+    mockRuntimeStatus.mockResolvedValueOnce({ state: "running" });
+
+    const killSession = makeExecSession("none\n");
+    const cleanSession = makeExecSession("");
+    mockRuntimeExec.mockResolvedValueOnce(killSession).mockResolvedValueOnce(cleanSession);
+
+    const result = await killOrphanedAgentInPod("pod-1", "task-1");
+    expect(result).toBe(false);
+    // Should still clean up the worktree even if no processes found
+    expect(mockRuntimeExec).toHaveBeenCalledTimes(2);
+  });
+
+  it("handles kill exec failure gracefully and still cleans worktree", async () => {
+    const dbMock = db as any;
+    dbMock.where.mockResolvedValueOnce([
+      { id: "pod-1", podName: "p1", podId: "pid1", state: "ready" },
+    ]);
+    mockRuntimeStatus.mockResolvedValueOnce({ state: "running" });
+
+    // Kill exec throws, but cleanup should still run
+    mockRuntimeExec
+      .mockRejectedValueOnce(new Error("exec failed"))
+      .mockResolvedValueOnce(makeExecSession(""));
+
+    const result = await killOrphanedAgentInPod("pod-1", "task-1");
+    expect(result).toBe(false);
+    // Should still attempt worktree cleanup
+    expect(mockRuntimeExec).toHaveBeenCalledTimes(2);
   });
 });

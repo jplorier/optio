@@ -1077,7 +1077,24 @@ export async function reconcileOrphanedTasks() {
     .where(eq(tasks.state, "running" as any));
 
   // Provisioning/running tasks lost their exec session.
-  // Before failing and re-queuing, check if a PR was already opened —
+  // Before failing and re-queuing, kill any orphaned agent processes
+  // left inside repo pods (the API restart severed the exec stream but
+  // kubelet doesn't send SIGHUP to in-pod processes).
+  for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
+    if ((task as any).lastPodId) {
+      try {
+        await repoPool.killOrphanedAgentInPod((task as any).lastPodId, task.id);
+        await repoPool.updateWorktreeState(task.id, "removed");
+      } catch (err) {
+        logger.warn(
+          { err, taskId: task.id, podId: (task as any).lastPodId },
+          "Failed to kill orphaned agent during startup reconciliation",
+        );
+      }
+    }
+  }
+
+  // Check if a PR was already opened —
   // if so, transition directly to pr_opened to avoid redoing work.
   for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
     const taskWsId = task.workspaceId ?? null;

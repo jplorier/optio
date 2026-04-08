@@ -7,6 +7,7 @@ import {
   updateWorktreeState,
   reconcileActiveTaskCounts,
   deleteNetworkPolicy,
+  killOrphanedAgentInPod,
 } from "../services/repo-pool-service.js";
 import { getRuntime } from "../services/container-service.js";
 import { TaskState, DEFAULT_STALL_THRESHOLD_MS } from "@optio/shared";
@@ -387,6 +388,46 @@ export function startRepoCleanupWorker() {
             );
             continue;
           }
+
+          // ── Kill orphaned agent before re-queue ──────────────────────
+          // The previous agent process may still be alive inside the pod
+          // (orphaned after an API restart). Launching a new agent in the
+          // same worktree would deadlock on git index lock / state files.
+          let cleanupSucceeded = false;
+          if (task.lastPodId) {
+            try {
+              await killOrphanedAgentInPod(task.lastPodId, task.id);
+              cleanupSucceeded = true;
+            } catch (err) {
+              logger.warn(
+                { err, taskId: task.id, podId: task.lastPodId },
+                "Failed to kill orphaned agent in pod",
+              );
+            }
+          } else {
+            cleanupSucceeded = true; // No pod to clean up
+          }
+
+          // If this is a repeated stale recovery (retried before but went
+          // stale again) AND cleanup failed, escalate to needs_attention
+          // rather than re-queueing — prevents infinite retry loops.
+          if (!cleanupSucceeded && Number(staleRetryCount) >= 1) {
+            logger.warn(
+              { taskId: task.id, staleRetryCount },
+              "Stale recovery cleanup failed on repeated attempt — escalating to needs_attention",
+            );
+            await updateWorktreeState(task.id, "dirty");
+            await taskService.transitionTask(
+              task.id,
+              TaskState.NEEDS_ATTENTION,
+              "stale_recovery_failed",
+              "Stale task recovery failed — orphaned processes could not be killed. Manual intervention required.",
+            );
+            continue;
+          }
+
+          // Mark worktree as removed (cleanup ran above) so the new agent creates a fresh one
+          await updateWorktreeState(task.id, "removed");
 
           await taskService.transitionTask(
             task.id,
