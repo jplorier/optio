@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { and, gt, ilike, or, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { taskLogs } from "../db/schema.js";
 
@@ -36,15 +36,12 @@ export async function hasRecentClaudeAuthFailure(
   windowMs: number = RECENT_AUTH_FAILURE_WINDOW_MS,
 ): Promise<boolean> {
   const cutoff = new Date(Date.now() - windowMs);
-  const orClauses = AUTH_FAILURE_PATTERNS.map(
-    (p) => sql`LOWER(${taskLogs.content}) LIKE ${`%${p}%`}`,
-  );
-  const orExpr = sql.join(orClauses, sql` OR `);
+  const patternClauses = AUTH_FAILURE_PATTERNS.map((p) => ilike(taskLogs.content, `%${p}%`));
 
   const rows = await db
     .select({ exists: sql<number>`1` })
     .from(taskLogs)
-    .where(sql`${taskLogs.timestamp} > ${cutoff} AND (${orExpr})`)
+    .where(and(gt(taskLogs.timestamp, cutoff), or(...patternClauses)))
     .limit(1);
 
   return rows.length > 0;
