@@ -451,7 +451,9 @@ pnpm turbo test                       # Run tests (Vitest)
 cd apps/web && npx next build         # Verify production build
 
 # Database (migrations auto-run on API startup, but manual generation needed)
-cd apps/api && npx drizzle-kit generate  # Generate migration after schema change
+cd apps/api && npx drizzle-kit generate  # Generate migration after schema change (uses unix-timestamp prefixes)
+cd apps/api && npx tsx src/db/migrate.ts  # Apply migrations to DATABASE_URL (standalone runner for CI/testing)
+bash scripts/check-migration-prefixes.sh  # Check for duplicate numeric prefixes
 
 # Agent images
 ./images/build.sh                     # Build all image presets (base, node, python, go, rust, full)
@@ -470,7 +472,7 @@ helm uninstall optio -n optio
 - **Conventional commits**: enforced by commitlint via husky commit-msg hook (e.g., `feat:`, `fix:`, `refactor:`)
 - **Pre-commit hooks**: lint-staged (eslint + prettier on staged files), then `pnpm format:check` and `pnpm turbo typecheck` — mirrors CI
 - **Tailwind CSS v4**: `@import "tailwindcss"` + `@theme` block in CSS, no `tailwind.config` file
-- **Drizzle ORM**: schema in `apps/api/src/db/schema.ts`, run `drizzle-kit generate` after changes
+- **Drizzle ORM**: schema in `apps/api/src/db/schema.ts`, run `drizzle-kit generate` after changes. **New migrations use unix-timestamp prefixes** (`migrations.prefix: "unix"` in `drizzle.config.ts`) to prevent collisions from concurrent branches. Existing `00xx_*` files are frozen — never rename them. A CI job applies all migrations against a fresh Postgres to catch drift. `scripts/check-migration-prefixes.sh` blocks new duplicate numeric prefixes (historical ones are allowlisted)
 - **Zod**: API request validation in route handlers
 - **Zustand**: use `useStore.getState()` in callbacks/effects, not hook selectors (avoids infinite re-renders)
 - **WebSocket events**: published to Redis pub/sub channels, relayed to browser clients
@@ -590,7 +592,8 @@ Six BullMQ workers run as part of the API server:
 
 - Migrations auto-run on API server startup (via `drizzle-orm/postgres-js/migrator`)
 - To manually generate a new migration: `cd apps/api && npx drizzle-kit generate`
-- Note: there are some duplicate-numbered migration files from concurrent agent branches. The journal (`meta/_journal.json`) is authoritative — un-journaled files are handled by prerequisite guards in later migrations.
+- Historical duplicate-numbered migration files are allowlisted. A repair migration ensures no columns are missing. New migrations use unix-timestamp prefixes (`migrations.prefix: "unix"` in `drizzle.config.ts`) to prevent future collisions.
+- CI runs `scripts/check-migration-prefixes.sh` and applies migrations to a fresh Postgres to catch drift. Use `tsx src/db/migrate.ts` to test migrations locally.
 
 ## Production Deployment Checklist
 
@@ -623,6 +626,6 @@ Six BullMQ workers run as part of the API server:
 - `setup-local.sh` installs `metrics-server` automatically; production clusters should install it separately
 - Workspace RBAC roles (admin/member/viewer) are in the schema but not fully enforced in all routes
 - All four ticket providers are implemented (GitHub Issues, Linear, Jira, and Notion)
-- Some duplicate-numbered migration files exist from concurrent agent branches — the drizzle journal (`meta/_journal.json`) is authoritative
+- Historical duplicate-numbered migration files (prefixes 0016, 0018, 0019, 0026, 0039, 0042) are allowlisted in `scripts/check-migration-prefixes.sh`. A repair migration (`1775613995_repair_duplicate_migrations.sql`) idempotently ensures all objects from these duplicates exist. New migrations use unix-timestamp prefixes to prevent future collisions
 - OAuth tokens from `claude setup-token` have limited scopes and may not support usage tracking (Keychain-extracted tokens have full scopes)
 - The API container runs via `tsx` (TypeScript execution) rather than compiled JS, since workspace packages export `./src/index.ts` not `./dist/index.js`
