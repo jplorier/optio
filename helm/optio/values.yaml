@@ -393,6 +393,17 @@ resourceQuota:
     persistentvolumeclaims: "30"
 
 # ──────────────────────────────────────────────────────────────────────────────
+# RBAC
+# ──────────────────────────────────────────────────────────────────────────────
+rbac:
+  clusterRole:
+    # Set to false for namespace-only deployments where cluster-wide
+    # permissions are not available (e.g. shared multitenant clusters).
+    # When disabled, the cluster overview page will not show node
+    # utilization, but all other functionality works normally.
+    create: true
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Service account
 # ──────────────────────────────────────────────────────────────────────────────
 serviceAccount:

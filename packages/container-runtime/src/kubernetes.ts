@@ -482,6 +482,13 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
       this.namespaceEnsured = true;
       return;
     } catch (err: unknown) {
+      // 403 Forbidden means we lack cluster-level namespace read permission
+      // (no ClusterRole). Since the pod is already running in this namespace,
+      // it must exist — skip namespace creation and cache the result.
+      if (this.isForbiddenError(err)) {
+        this.namespaceEnsured = true;
+        return;
+      }
       if (!this.isNotFoundError(err)) {
         throw err;
       }
@@ -615,6 +622,23 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
         typeof err.response === "object" &&
         "httpStatusCode" in err.response &&
         (err.response as { httpStatusCode: number }).httpStatusCode === 404
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isForbiddenError(err: unknown): boolean {
+    if (err && typeof err === "object") {
+      if ("statusCode" in err && (err as { statusCode: number }).statusCode === 403) return true;
+      if ("code" in err && (err as { code: number }).code === 403) return true;
+      if (
+        "response" in err &&
+        err.response &&
+        typeof err.response === "object" &&
+        "httpStatusCode" in err.response &&
+        (err.response as { httpStatusCode: number }).httpStatusCode === 403
       ) {
         return true;
       }

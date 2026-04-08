@@ -105,14 +105,25 @@ export async function clusterRoutes(app: FastifyInstance) {
     try {
       const api = getK8sApi();
 
+      // listNode requires ClusterRole — gracefully return empty when unavailable
+      // (e.g. namespace-only RBAC with no cluster-wide permissions)
+      const listNodeSafe = async () => {
+        try {
+          return await api.listNode({ limit: 50 });
+        } catch {
+          return { items: [] };
+        }
+      };
+
       const [nodeList, podList, serviceList, eventList] = await Promise.all([
-        api.listNode({ limit: 50 }),
+        listNodeSafe(),
         api.listNamespacedPod({ namespace: NAMESPACE }),
         api.listNamespacedService({ namespace: NAMESPACE }),
         api.listNamespacedEvent({ namespace: NAMESPACE, limit: 30 }),
       ]);
 
-      // Fetch metrics (gracefully fail if metrics-server not installed)
+      // Fetch metrics (gracefully fail if metrics-server not installed or
+      // ClusterRole unavailable for node metrics)
       const [nodeMetricsItems, podMetricsItems] = await Promise.all([
         fetchNodeMetrics(),
         fetchPodMetrics(NAMESPACE),
