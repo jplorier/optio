@@ -12,6 +12,8 @@ import { publishEvent } from "./event-bus.js";
 import { logger } from "../logger.js";
 import { enqueueWebhookEvent } from "../workers/webhook-worker.js";
 import type { WebhookEvent } from "./webhook-service.js";
+import { recordStateTransition } from "../telemetry/metrics.js";
+import { emitStateTransitionLog } from "../telemetry/logs.js";
 
 /**
  * Thrown when a state transition fails because another worker changed the
@@ -272,6 +274,11 @@ export async function transitionTask(
   });
 
   const updatedTask = updated[0];
+
+  // Emit OTel state transition metric and log
+  recordStateTransition(currentState, toState, trigger);
+  emitStateTransitionLog(id, currentState, toState, trigger);
+
   await publishEvent({
     type: "task:state_changed",
     taskId: id,

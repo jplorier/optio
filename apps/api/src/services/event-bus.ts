@@ -1,6 +1,7 @@
 import { Redis } from "ioredis";
 import type { WsEvent } from "@optio/shared";
 import { redisConnectionUrl, redisTlsOptions } from "./redis-config.js";
+import { getCurrentTraceId } from "../telemetry/spans.js";
 
 let publisher: Redis | null = null;
 
@@ -14,11 +15,16 @@ function getPublisher(): Redis {
 export async function publishEvent(event: WsEvent): Promise<void> {
   const redis = getPublisher();
   const channel = `optio:events`;
-  await redis.publish(channel, JSON.stringify(event));
+
+  // Attach current trace ID for correlation in observability backends
+  const traceId = getCurrentTraceId();
+  const enrichedEvent = traceId ? { ...event, traceId } : event;
+
+  await redis.publish(channel, JSON.stringify(enrichedEvent));
 
   // Also publish to task-specific channel for targeted subscriptions
   if ("taskId" in event) {
-    await redis.publish(`optio:task:${event.taskId}`, JSON.stringify(event));
+    await redis.publish(`optio:task:${event.taskId}`, JSON.stringify(enrichedEvent));
   }
 }
 

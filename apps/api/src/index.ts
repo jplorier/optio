@@ -1,42 +1,6 @@
 import "dotenv/config";
-import { Queue } from "bullmq";
-import { buildServer } from "./server.js";
-import { startTaskWorker, reconcileOrphanedTasks } from "./workers/task-worker.js";
-import { startTicketSyncWorker } from "./workers/ticket-sync-worker.js";
-import { startRepoCleanupWorker } from "./workers/repo-cleanup-worker.js";
-import { startPrWatcherWorker } from "./workers/pr-watcher-worker.js";
-import { startWebhookWorker } from "./workers/webhook-worker.js";
-import { startScheduleWorker } from "./workers/schedule-worker.js";
-import { getBullMQConnectionOptions } from "./services/redis-config.js";
+import { initTelemetry, shutdownTelemetry } from "./telemetry.js";
 import { logger } from "./logger.js";
-import { logTlsStackInfo, initTlsObservability } from "./services/tls-observability.js";
-
-const redisConnection = getBullMQConnectionOptions();
-
-/**
- * Remove all stale repeatable jobs from a queue before re-registering.
- * Prevents duplicate/orphaned repeat jobs after server restarts.
- */
-async function cleanRepeatJobs(queueName: string) {
-  const queue = new Queue(queueName, { connection: redisConnection });
-  try {
-    const repeatableJobs = await queue.getRepeatableJobs();
-    for (const job of repeatableJobs) {
-      await queue.removeRepeatableByKey(job.key);
-    }
-    if (repeatableJobs.length > 0) {
-      logger.info(
-        { queue: queueName, removed: repeatableJobs.length },
-        "Cleaned stale repeat jobs",
-      );
-    }
-  } finally {
-    await queue.close();
-  }
-}
-
-const PORT = parseInt(process.env.API_PORT ?? "4000", 10);
-const HOST = process.env.API_HOST ?? "0.0.0.0";
 
 // Prevent Redis connection errors from crashing the process
 process.on("uncaughtException", (err) => {
@@ -53,6 +17,9 @@ process.on("unhandledRejection", (reason, promise) => {
   // Let it propagate to uncaughtException handler for clean shutdown
   throw reason;
 });
+
+const PORT = parseInt(process.env.API_PORT ?? "4000", 10);
+const HOST = process.env.API_HOST ?? "0.0.0.0";
 
 async function checkMetricsServer() {
   try {
@@ -80,6 +47,46 @@ async function checkMetricsServer() {
 }
 
 async function main() {
+  // Initialize OpenTelemetry BEFORE any other imports — auto-instrumentation
+  // patches module prototypes which only works before instrumented modules load.
+  await initTelemetry();
+
+  // Dynamic imports after telemetry init to ensure auto-instrumentation patches apply
+  const { Queue } = await import("bullmq");
+  const { buildServer } = await import("./server.js");
+  const { startTaskWorker, reconcileOrphanedTasks } = await import("./workers/task-worker.js");
+  const { startTicketSyncWorker } = await import("./workers/ticket-sync-worker.js");
+  const { startRepoCleanupWorker } = await import("./workers/repo-cleanup-worker.js");
+  const { startPrWatcherWorker } = await import("./workers/pr-watcher-worker.js");
+  const { startWebhookWorker } = await import("./workers/webhook-worker.js");
+  const { startScheduleWorker } = await import("./workers/schedule-worker.js");
+  const { getBullMQConnectionOptions } = await import("./services/redis-config.js");
+  const { logTlsStackInfo, initTlsObservability } = await import("./services/tls-observability.js");
+
+  const redisConnection = getBullMQConnectionOptions();
+
+  /**
+   * Remove all stale repeatable jobs from a queue before re-registering.
+   * Prevents duplicate/orphaned repeat jobs after server restarts.
+   */
+  async function cleanRepeatJobs(queueName: string) {
+    const queue = new Queue(queueName, { connection: redisConnection });
+    try {
+      const repeatableJobs = await queue.getRepeatableJobs();
+      for (const job of repeatableJobs) {
+        await queue.removeRepeatableByKey(job.key);
+      }
+      if (repeatableJobs.length > 0) {
+        logger.info(
+          { queue: queueName, removed: repeatableJobs.length },
+          "Cleaned stale repeat jobs",
+        );
+      }
+    } finally {
+      await queue.close();
+    }
+  }
+
   // Validate encryption key before anything else — fail fast on weak/missing keys
   const { validateEncryptionKey } = await import("./services/secret-service.js");
   validateEncryptionKey();
@@ -155,6 +162,8 @@ async function main() {
     await webhookWorker.close();
     await scheduleWorker.close();
     await app.close();
+    // Flush pending OTel spans/metrics with 5s timeout
+    await shutdownTelemetry();
     process.exit(0);
   };
 

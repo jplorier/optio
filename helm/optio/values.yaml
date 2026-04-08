@@ -374,6 +374,25 @@ notifications:
     subject: ""  # e.g. mailto:ops@example.com
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Observability (OpenTelemetry)
+# Set otel.enabled=true and configure OTEL_EXPORTER_OTLP_ENDPOINT to ship
+# traces, metrics, and (optionally) logs to any OTLP backend (Datadog,
+# Honeycomb, Grafana Cloud, etc.).
+# ──────────────────────────────────────────────────────────────────────────────
+observability:
+  otel:
+    enabled: false
+    endpoint: ""             # e.g. https://api.honeycomb.io:443 or http://otel-collector:4318
+    protocol: "http/protobuf"
+    headers: ""              # Comma-separated key=value, e.g. "x-honeycomb-team=abc123"
+    serviceName: "optio-api"
+    resourceAttributes: ""   # Extra attrs, e.g. "team=platform,region=us-east-1"
+    samplingRatio: "1.0"
+    metricsIntervalMs: "60000"
+    logsEnabled: false
+    debug: false
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Namespace
 # ──────────────────────────────────────────────────────────────────────────────
 namespace: optio
