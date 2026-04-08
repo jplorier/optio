@@ -558,6 +558,18 @@ export function startTaskWorker() {
           resetWorktree: shouldResetWorktree,
         });
 
+        // Claude runs with `--input-format stream-json`, which means the initial
+        // user message must come in over stdin — the -p/--print positional arg is
+        // ignored in that mode. The pipe buffer holds this line until bash finishes
+        // its setup and execs claude, so it's safe to write immediately.
+        if (task.agentType === "claude-code") {
+          try {
+            execSession.stdin.write(buildInitialClaudeStreamMessage(allEnv.OPTIO_PROMPT ?? ""));
+          } catch (err) {
+            log.warn({ err }, "Failed to write initial prompt to claude stdin");
+          }
+        }
+
         // Stream stdout with structured parsing
         let allLogs = "";
         let sessionId: string | undefined;
@@ -1185,6 +1197,26 @@ export async function reconcileOrphanedTasks() {
   }
 }
 
+/**
+ * Build the initial user message NDJSON line that gets written to claude's stdin
+ * when running with `--input-format stream-json`. In that mode the positional
+ * `-p <prompt>` arg is ignored — the first user message must arrive via stdin.
+ *
+ * The trailing newline is required: stream-json is NDJSON (one JSON object per
+ * line) and claude won't process a message until it sees the line terminator.
+ */
+export function buildInitialClaudeStreamMessage(prompt: string): string {
+  return (
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: prompt }],
+      },
+    }) + "\n"
+  );
+}
+
 export function buildAgentCommand(
   agentType: string,
   env: Record<string, string>,
@@ -1234,7 +1266,11 @@ export function buildAgentCommand(
       return [
         ...authSetup,
         `echo "[optio] Running Claude Code${opts?.isReview ? " (review)" : ""}..."`,
-        `claude -p "$OPTIO_PROMPT" \\`,
+        // --input-format stream-json makes claude read user messages from stdin.
+        // In this mode the -p positional arg is ignored, so we intentionally use
+        // the boolean --print flag and deliver the initial prompt to stdin from
+        // the task worker (see writeInitialClaudeMessage).
+        `claude --print \\`,
         `  --dangerously-skip-permissions \\`,
         `  --input-format stream-json \\`,
         `  --output-format stream-json \\`,

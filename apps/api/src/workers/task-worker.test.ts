@@ -1,17 +1,35 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { buildAgentCommand, inferExitCode } from "./task-worker.js";
+import {
+  buildAgentCommand,
+  buildInitialClaudeStreamMessage,
+  inferExitCode,
+} from "./task-worker.js";
 
 describe("buildAgentCommand", () => {
   describe("claude-code agent", () => {
-    it("produces a basic claude command with prompt from env", () => {
+    it("produces a basic claude command that runs in --print mode", () => {
       const env = { OPTIO_PROMPT: "Fix the bug" };
       const cmds = buildAgentCommand("claude-code", env);
 
-      expect(cmds.some((c) => c.includes("claude -p"))).toBe(true);
+      expect(cmds.some((c) => c.includes("claude --print"))).toBe(true);
       expect(cmds.some((c) => c.includes("--dangerously-skip-permissions"))).toBe(true);
       expect(cmds.some((c) => c.includes("--output-format stream-json"))).toBe(true);
       expect(cmds.some((c) => c.includes("--verbose"))).toBe(true);
       expect(cmds.some((c) => c.includes("--max-turns 250"))).toBe(true);
+    });
+
+    // Regression test for the stream-json stdin bug: with --input-format
+    // stream-json, claude ignores the -p positional arg, so the prompt must
+    // arrive via stdin. The command itself must not embed the prompt — if it
+    // does, it's either useless (ignored) or a hint that someone re-introduced
+    // the broken invocation.
+    it("does not embed the prompt in the claude command (delivered via stdin)", () => {
+      const env = { OPTIO_PROMPT: "DO NOT EMBED THIS TEXT" };
+      const cmds = buildAgentCommand("claude-code", env);
+      const joined = cmds.join("\n");
+      expect(joined).not.toContain("DO NOT EMBED THIS TEXT");
+      expect(joined).not.toContain("$OPTIO_PROMPT");
+      expect(joined).not.toMatch(/claude\s+-p\b/);
     });
 
     it("uses default coding max turns (250)", () => {
@@ -224,6 +242,38 @@ describe("buildAgentCommand", () => {
       expect(cmds.some((c) => c.includes("Unknown agent type"))).toBe(true);
       expect(cmds.some((c) => c.includes("exit 1"))).toBe(true);
     });
+  });
+});
+
+describe("buildInitialClaudeStreamMessage", () => {
+  it("wraps the prompt as a stream-json user message with a trailing newline", () => {
+    const line = buildInitialClaudeStreamMessage("Fix the bug");
+    expect(line.endsWith("\n")).toBe(true);
+
+    const parsed = JSON.parse(line);
+    expect(parsed).toEqual({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "Fix the bug" }],
+      },
+    });
+  });
+
+  it("preserves newlines and quotes inside the prompt via JSON encoding", () => {
+    const prompt = 'line one\nline "two"\nline\tthree';
+    const line = buildInitialClaudeStreamMessage(prompt);
+    // Exactly one NDJSON line — no embedded literal newlines in the JSON body
+    expect(line.split("\n").filter((s) => s.length > 0)).toHaveLength(1);
+
+    const parsed = JSON.parse(line);
+    expect(parsed.message.content[0].text).toBe(prompt);
+  });
+
+  it("handles an empty prompt without throwing", () => {
+    const line = buildInitialClaudeStreamMessage("");
+    const parsed = JSON.parse(line);
+    expect(parsed.message.content[0].text).toBe("");
   });
 });
 
