@@ -414,6 +414,7 @@ export const api = {
     request<{
       usage: {
         available: boolean;
+        hasRecentAuthFailure?: boolean;
         fiveHour?: { utilization: number | null; resetsAt: string | null };
         sevenDay?: { utilization: number | null; resetsAt: string | null };
         sevenDaySonnet?: { utilization: number | null; resetsAt: string | null };

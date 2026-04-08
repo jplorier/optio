@@ -59,11 +59,21 @@ function UsageMeter({
 export function UsagePanel({ usage }: { usage: UsageData | null }) {
   if (!usage) return null;
 
-  if (!usage.available) {
-    const isAuthError = usage.error?.includes("401") || usage.error?.includes("expired");
-    if (!isAuthError) return null;
+  // Show the refresh banner when:
+  //   (a) usage itself signals an auth error (401/expired), OR
+  //   (b) the API detected a recent task auth failure in task logs.
+  // Case (b) catches the split-endpoint scenario where /organizations/usage
+  // returns 429 but /v1/messages returns 401 — the usage panel alone can't
+  // tell that tasks are actively failing.
+  const usageAuthError =
+    !usage.available && (usage.error?.includes("401") || usage.error?.includes("expired"));
+  if (usageAuthError || usage.hasRecentAuthFailure) {
     return <TokenRefreshBanner />;
   }
+
+  // Usage endpoint hit a non-auth issue (e.g. 429, network) and there's no
+  // evidence of token failure — just hide the panel.
+  if (!usage.available) return null;
 
   return (
     <div className="rounded-xl border border-border/50 bg-bg-card p-4">

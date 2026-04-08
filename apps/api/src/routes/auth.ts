@@ -5,6 +5,7 @@ import {
   getClaudeUsage,
   invalidateCredentialsCache,
 } from "../services/auth-service.js";
+import { hasRecentClaudeAuthFailure } from "../services/auth-failure-detector.js";
 import { getOAuthProvider, getEnabledProviders, isAuthDisabled } from "../services/oauth/index.js";
 import {
   createSession,
@@ -127,8 +128,11 @@ export async function authRoutes(app: FastifyInstance) {
   });
 
   app.get("/api/auth/usage", async (_req, reply) => {
-    const usage = await getClaudeUsage();
-    reply.send({ usage });
+    const [usage, hasRecentAuthFailure] = await Promise.all([
+      getClaudeUsage(),
+      hasRecentClaudeAuthFailure().catch(() => false),
+    ]);
+    reply.send({ usage: { ...usage, hasRecentAuthFailure } });
   });
 
   app.post("/api/auth/refresh", async (_req, reply) => {
