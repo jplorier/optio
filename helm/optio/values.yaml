@@ -156,6 +156,7 @@ postgresql:
       memory: 512Mi
   storage:
     size: 5Gi
+    storageClass: ""  # Empty = cluster default. Set to e.g. "gp2" or "gp3" for EBS.
   auth:
     database: optio
     username: optio

@@ -19,6 +19,9 @@ metadata:
     {{- include "optio.labels" . | nindent 4 }}
 spec:
   accessModes: [ReadWriteOnce]
+  {{- if .Values.postgresql.storage.storageClass }}
+  storageClassName: {{ .Values.postgresql.storage.storageClass }}
+  {{- end }}
   resources:
     requests:
       storage: {{ .Values.postgresql.storage.size }}
@@ -69,6 +72,7 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
+              subPath: pgdata
           resources:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}
       volumes:
