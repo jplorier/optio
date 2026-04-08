@@ -93,6 +93,13 @@ export async function taskRoutes(app: FastifyInstance) {
     reply.send({ tasks: enriched, limit, offset });
   });
 
+  // Aggregated pipeline stats (server-side counts — no pagination limits)
+  app.get("/api/tasks/stats", async (req, reply) => {
+    const workspaceId = req.user?.workspaceId ?? null;
+    const stats = await taskService.getTaskStats(workspaceId);
+    reply.send({ stats });
+  });
+
   // Search tasks with advanced filtering and cursor-based pagination
   app.get("/api/tasks/search", async (req, reply) => {
     const parsed = searchQuerySchema.safeParse(req.query);

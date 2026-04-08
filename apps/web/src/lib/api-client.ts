@@ -42,6 +42,20 @@ export const api = {
     return request<{ tasks: any[] }>(`/api/tasks${query ? `?${query}` : ""}`);
   },
 
+  getTaskStats: () =>
+    request<{
+      stats: {
+        total: number;
+        queued: number;
+        running: number;
+        ci: number;
+        review: number;
+        needsAttention: number;
+        failed: number;
+        completed: number;
+      };
+    }>("/api/tasks/stats"),
+
   searchTasks: (params?: {
     q?: string;
     state?: string;

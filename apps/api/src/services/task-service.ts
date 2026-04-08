@@ -693,6 +693,82 @@ export async function getRepoConfig(repoUrl: string) {
   return repo ?? null;
 }
 
+/**
+ * Compute aggregated pipeline stats server-side via a single grouped COUNT query.
+ * Returns the same shape as the frontend TaskStats interface so the dashboard
+ * can consume it directly.
+ */
+export async function getTaskStats(workspaceId?: string | null) {
+  const conditions = [];
+  if (workspaceId) {
+    conditions.push(eq(tasks.workspaceId, workspaceId));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Single query: count tasks grouped by state, and for pr_opened tasks
+  // also count CI vs review sub-buckets
+  const rows = await db
+    .select({
+      state: tasks.state,
+      prChecksStatus: tasks.prChecksStatus,
+      prReviewStatus: tasks.prReviewStatus,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(tasks)
+    .where(whereClause)
+    .groupBy(tasks.state, tasks.prChecksStatus, tasks.prReviewStatus);
+
+  let total = 0;
+  let queued = 0;
+  let running = 0;
+  let ci = 0;
+  let review = 0;
+  let needsAttention = 0;
+  let failed = 0;
+  let completed = 0;
+
+  for (const row of rows) {
+    const count = row.count;
+    total += count;
+
+    switch (row.state) {
+      case "pending":
+      case "queued":
+      case "provisioning":
+        queued += count;
+        break;
+      case "running":
+        running += count;
+        break;
+      case "needs_attention":
+        needsAttention += count;
+        break;
+      case "failed":
+        failed += count;
+        break;
+      case "completed":
+        completed += count;
+        break;
+      case "pr_opened": {
+        // Mirror the client-side logic: if review status is meaningful
+        // (not "none"/"pending"), it's a review; otherwise CI.
+        const reviewStatus = row.prReviewStatus;
+        const isReview = reviewStatus != null && !["none", "pending"].includes(reviewStatus);
+        if (isReview) {
+          review += count;
+        } else {
+          ci += count;
+        }
+        break;
+      }
+      // waiting_on_deps, cancelled — counted in total only
+    }
+  }
+
+  return { total, queued, running, ci, review, needsAttention, failed, completed };
+}
+
 /** Fetch the most recent state-change events across all tasks. */
 export async function getRecentEvents(opts?: { limit?: number }) {
   return db
