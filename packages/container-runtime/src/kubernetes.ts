@@ -376,6 +376,13 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
       write(chunk, _encoding, callback) {
         stdinStream.write(chunk, callback);
       },
+      // Propagate `.end()` to the underlying k8s exec stdin stream so that
+      // callers can signal EOF to the in-container process (e.g. claude with
+      // --input-format stream-json exits cleanly only after stdin closes).
+      final(callback) {
+        stdinStream.end();
+        callback();
+      },
     });
 
     return {

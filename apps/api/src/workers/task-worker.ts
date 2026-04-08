@@ -671,6 +671,18 @@ export function startTaskWorker() {
               await taskService.updateTaskSession(taskId, sessionId);
               log.info({ sessionId }, "Session ID captured");
             }
+            // Terminal event (e.g. claude's `result` event) means the agent has
+            // finished the turn. With --input-format stream-json claude keeps
+            // stdin open waiting for another user message; closing stdin here
+            // lets it exit cleanly so the task can transition to pr_opened /
+            // completed / failed.
+            if (parsed.isTerminal) {
+              try {
+                execSession.stdin.end();
+              } catch (err) {
+                log.warn({ err }, "Failed to close agent stdin on terminal event");
+              }
+            }
             for (const entry of parsed.entries) {
               await taskService.appendTaskLog(
                 taskId,
