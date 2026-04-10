@@ -93,14 +93,19 @@ async function main() {
   const { validateEncryptionKey } = await import("./services/secret-service.js");
   validateEncryptionKey();
 
-  // Run database migrations before anything else
-  const { migrate } = await import("drizzle-orm/postgres-js/migrator");
+  // Run database migrations before anything else.
+  // Uses a custom runner instead of Drizzle's built-in migrate() because
+  // Drizzle uses a watermark (highest created_at) which silently skips
+  // migrations with lower timestamps — broken when switching from sequential
+  // to unix-timestamp prefixes. Our runner checks by hash and uses an
+  // advisory lock for multi-replica safety.
   const { db } = await import("./db/client.js");
+  const { migrateSafe } = await import("./db/migrate-safe.js");
   const { dirname, join } = await import("node:path");
   const { fileURLToPath } = await import("node:url");
   const migrationsPath = join(dirname(fileURLToPath(import.meta.url)), "db", "migrations");
-  await migrate(db, { migrationsFolder: migrationsPath });
-  logger.info("Database migrations applied");
+  const applied = await migrateSafe(db, migrationsPath);
+  logger.info({ applied }, "Database migrations applied");
 
   const app = await buildServer();
 
