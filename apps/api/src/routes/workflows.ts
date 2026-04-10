@@ -36,6 +36,7 @@ const updateWorkflowSchema = z.object({
 });
 
 const idParamsSchema = z.object({ id: z.string() });
+const limitQuerySchema = z.object({ limit: z.string().optional() });
 
 const runWorkflowBodySchema = z
   .object({
@@ -79,6 +80,10 @@ export async function workflowRoutes(app: FastifyInstance) {
     const { id } = idParamsSchema.parse(req.params);
     const workflow = await workflowService.getWorkflowWithStats(id);
     if (!workflow) return reply.status(404).send({ error: "Workflow not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && workflow.workspaceId && workflow.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Workflow not found" });
+    }
     reply.send({ workflow });
   });
 
@@ -130,15 +135,15 @@ export async function workflowRoutes(app: FastifyInstance) {
   // List runs for a workflow
   app.get("/api/workflows/:id/runs", async (req, reply) => {
     const { id } = idParamsSchema.parse(req.params);
-    const runs = await workflowService.listWorkflowRuns(id);
+    const workflow = await workflowService.getWorkflow(id);
+    if (!workflow) return reply.status(404).send({ error: "Workflow not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && workflow.workspaceId && workflow.workspaceId !== wsId) {
+      return reply.status(404).send({ error: "Workflow not found" });
+    }
+    const { limit } = limitQuerySchema.parse(req.query);
+    const runs = await workflowService.listWorkflowRuns(id, limit ? parseInt(limit, 10) : 50);
     reply.send({ runs });
-  });
-
-  // List triggers for a workflow
-  app.get("/api/workflows/:id/triggers", async (req, reply) => {
-    const { id } = idParamsSchema.parse(req.params);
-    const triggers = await workflowService.listWorkflowTriggers(id);
-    reply.send({ triggers });
   });
 
   // Get a single workflow run
