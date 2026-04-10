@@ -11,6 +11,7 @@ import * as taskService from "../services/task-service.js";
 import { updateSessionPr } from "../services/interactive-session-service.js";
 import { taskQueue } from "./task-worker.js";
 import { logger } from "../logger.js";
+import { recordAuthEvent } from "../services/auth-failure-detector.js";
 
 import { getBullMQConnectionOptions } from "../services/redis-config.js";
 
@@ -466,8 +467,11 @@ export function startPrWatcherWorker() {
                 "Failed to execute PR action — prChecksStatus left unchanged for retry",
               );
             }
-          } catch (err) {
+          } catch (err: any) {
             logger.warn({ err, taskId: task.id }, "Failed to check PR status");
+            if (err?.status === 401 || err?.message?.includes("Bad credentials")) {
+              recordAuthEvent("github", err.message ?? "GitHub 401").catch(() => {});
+            }
           }
         }
       } // end if (openPrTasks.length > 0)
