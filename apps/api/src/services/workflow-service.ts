@@ -101,6 +101,47 @@ export async function deleteWorkflow(id: string): Promise<boolean> {
   return deleted.length > 0;
 }
 
+export async function cloneWorkflow(
+  id: string,
+  opts?: { workspaceId?: string; createdBy?: string },
+) {
+  const source = await getWorkflow(id);
+  if (!source) return null;
+
+  const cloned = await createWorkflow({
+    name: `${source.name} (copy)`,
+    description: source.description ?? undefined,
+    promptTemplate: source.promptTemplate,
+    agentRuntime: source.agentRuntime ?? undefined,
+    model: source.model ?? undefined,
+    maxTurns: source.maxTurns ?? undefined,
+    budgetUsd: source.budgetUsd ?? undefined,
+    maxConcurrent: source.maxConcurrent ?? undefined,
+    maxRetries: source.maxRetries ?? undefined,
+    warmPoolSize: source.warmPoolSize ?? undefined,
+    enabled: false, // clones start disabled
+    environmentSpec: (source.environmentSpec as Record<string, unknown>) ?? undefined,
+    paramsSchema: (source.paramsSchema as Record<string, unknown>) ?? undefined,
+    workspaceId: opts?.workspaceId ?? source.workspaceId ?? undefined,
+    createdBy: opts?.createdBy,
+  });
+
+  // Clone triggers (except webhook — paths must be unique)
+  const sourceTriggers = await listWorkflowTriggers(id);
+  for (const trigger of sourceTriggers) {
+    if (trigger.type === "webhook") continue; // skip — webhook paths must be globally unique
+    await createWorkflowTrigger({
+      workflowId: cloned.id,
+      type: trigger.type,
+      config: (trigger.config as Record<string, unknown>) ?? undefined,
+      paramMapping: (trigger.paramMapping as Record<string, unknown>) ?? undefined,
+      enabled: trigger.enabled,
+    });
+  }
+
+  return cloned;
+}
+
 // ── Enriched list/get with aggregate run stats ───────────────────────────────
 
 export async function listWorkflowsWithStats(workspaceId?: string) {
@@ -385,7 +426,7 @@ export async function listWorkflowTriggers(workflowId: string) {
 }
 
 /**
- * Look up an enabled webhook trigger by its `config.webhookPath` value.
+ * Look up an enabled webhook trigger by its `config.path` value.
  * Returns null if no matching trigger exists.
  */
 export async function getWebhookTriggerByPath(webhookPath: string) {
@@ -396,7 +437,7 @@ export async function getWebhookTriggerByPath(webhookPath: string) {
 
   const trigger = allWebhookTriggers.find((t) => {
     const config = t.config as Record<string, unknown> | null;
-    return config?.webhookPath === webhookPath;
+    return config?.path === webhookPath;
   });
 
   return trigger ?? null;

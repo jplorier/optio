@@ -1,56 +1,96 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { api } from "@/lib/api-client";
+import { createWorkflowRunLogClient, type WsClient } from "@/lib/ws-client";
+import { getWsTokenProvider } from "@/lib/ws-auth";
 import type { LogEntry } from "@/hooks/use-logs";
 
 const HISTORICAL_LIMIT = 10000;
-const POLL_INTERVAL = 3000;
 
 /**
- * Hook to fetch and poll workflow run logs.
+ * Hook to fetch historical + stream live workflow run logs via WebSocket.
  * Returns the same shape as useLogs so it can be used with LogViewer.
  */
 export function useWorkflowRunLogs(runId: string, isActive: boolean) {
   const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [connected, setConnected] = useState(false);
   const [capped, setCapped] = useState(false);
-  const lastCountRef = useRef(0);
+  const clientRef = useRef<WsClient | null>(null);
 
-  const fetchLogs = useCallback(async () => {
-    try {
-      const res = await api.getWorkflowRunLogs(runId, { limit: HISTORICAL_LIMIT });
-      const entries: LogEntry[] = res.logs.map((l: any) => ({
-        content: l.content,
-        stream: l.stream,
-        timestamp: l.timestamp,
-        logType: l.logType ?? undefined,
-        metadata: l.metadata ?? undefined,
-      }));
-      lastCountRef.current = entries.length;
-      if (entries.length >= HISTORICAL_LIMIT) setCapped(true);
-      setLogs(entries);
-    } catch {
-      // Keep existing logs on error
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!runId) return;
+
+    // Buffer live events until historical logs are merged into state.
+    const pendingLive: LogEntry[] = [];
+    let merged = false;
+
+    const client = createWorkflowRunLogClient(runId, getWsTokenProvider());
+    clientRef.current = client;
+
+    client.on("workflow_run:log", (event) => {
+      const entry: LogEntry = {
+        content: event.content,
+        stream: event.stream,
+        timestamp: event.timestamp,
+        logType: event.logType,
+        metadata: event.metadata,
+      };
+      if (!merged) {
+        pendingLive.push(entry);
+      } else {
+        setLogs((prev) => {
+          // Dedup: skip if the last entry has identical content and type
+          const last = prev[prev.length - 1];
+          if (
+            last &&
+            last.content === entry.content &&
+            last.logType === entry.logType &&
+            last.timestamp === entry.timestamp
+          ) {
+            return prev;
+          }
+          return [...prev, entry];
+        });
+      }
+    });
+
+    if (isActive) {
+      client.connect();
+      setConnected(true);
     }
-  }, [runId]);
 
-  // Initial fetch
-  useEffect(() => {
-    setLoading(true);
-    fetchLogs();
-  }, [fetchLogs]);
+    api
+      .getWorkflowRunLogs(runId, { limit: HISTORICAL_LIMIT })
+      .then((res) => {
+        const historical = res.logs.map((l: any) => ({
+          content: l.content,
+          stream: l.stream,
+          timestamp: l.timestamp,
+          logType: l.logType ?? undefined,
+          metadata: l.metadata ?? undefined,
+        }));
+        if (historical.length >= HISTORICAL_LIMIT) setCapped(true);
 
-  // Poll while active
-  useEffect(() => {
-    if (!isActive) return;
-    const interval = setInterval(fetchLogs, POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [isActive, fetchLogs]);
+        // Deduplicate: drop any live events already in the historical set
+        const historicalKeys = new Set(historical.map((l: LogEntry) => l.timestamp + l.content));
+        const uniqueLive = pendingLive.filter((l) => !historicalKeys.has(l.timestamp + l.content));
+
+        setLogs([...historical, ...uniqueLive]);
+        merged = true;
+      })
+      .catch(() => {
+        setLogs(pendingLive);
+        merged = true;
+      });
+
+    return () => {
+      client.disconnect();
+      setConnected(false);
+    };
+  }, [runId, isActive]);
 
   const clear = useCallback(() => setLogs([]), []);
 
-  return { logs, connected: isActive, capped, clear, loading };
+  return { logs, connected, capped, clear };
 }

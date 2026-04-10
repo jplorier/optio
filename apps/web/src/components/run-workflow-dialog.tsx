@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { Play, X, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
@@ -21,6 +22,7 @@ export function RunWorkflowDialog({
   onClose,
   onRun,
 }: RunWorkflowDialogProps) {
+  const router = useRouter();
   const [params, setParams] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,10 +32,14 @@ export function RunWorkflowDialog({
     setError(null);
     try {
       const hasParams = Object.keys(params).length > 0;
-      await api.runWorkflow(workflowId, hasParams ? params : null);
+      const res = await api.runWorkflow(workflowId, hasParams ? params : null);
       toast.success("Workflow run started");
       onRun?.();
       onClose();
+      const runId = (res as any).run?.id;
+      if (runId) {
+        router.push(`/workflows/${workflowId}/runs/${runId}`);
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to start workflow run";
       setError(msg);

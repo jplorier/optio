@@ -12,18 +12,11 @@ MIGRATIONS_DIR="${1:-apps/api/src/db/migrations}"
 
 # Historical duplicate prefixes that existed on main before the timestamp-prefix
 # switch. These are grandfathered in — new duplicates are blocked.
-ALLOWLIST=(
-  "0016"
-  "0018"
-  "0019"
-  "0026"
-  "0039"
-  "0042"
-)
+ALLOWLIST="0016 0018 0019 0026 0039 0042"
 
 is_allowed() {
   local prefix="$1"
-  for allowed in "${ALLOWLIST[@]}"; do
+  for allowed in $ALLOWLIST; do
     if [[ "$prefix" == "$allowed" ]]; then
       return 0
     fi
@@ -36,33 +29,32 @@ if [[ ! -d "$MIGRATIONS_DIR" ]]; then
   exit 1
 fi
 
-# Extract numeric prefixes from .sql filenames
-declare -A prefix_counts
-declare -A prefix_files
+# Extract numeric prefixes, sort, count duplicates, and check each
 found_new_duplicates=0
 
+# Get all prefixes, one per line
+prefixes=""
 for f in "$MIGRATIONS_DIR"/*.sql; do
   [[ -e "$f" ]] || continue
   basename=$(basename "$f")
-  # Extract leading digits before the first underscore
   if [[ "$basename" =~ ^([0-9]+)_ ]]; then
-    prefix="${BASH_REMATCH[1]}"
-    prefix_counts[$prefix]=$(( ${prefix_counts[$prefix]:-0} + 1 ))
-    prefix_files[$prefix]="${prefix_files[$prefix]:-}  $basename"$'\n'
+    prefixes="$prefixes${BASH_REMATCH[1]}"$'\n'
   fi
 done
 
-for prefix in "${!prefix_counts[@]}"; do
-  count="${prefix_counts[$prefix]}"
-  if (( count > 1 )); then
-    if is_allowed "$prefix"; then
-      # Historical duplicate — skip
-      continue
-    fi
-    echo "ERROR: Duplicate migration prefix '$prefix' found ($count files):" >&2
-    echo "${prefix_files[$prefix]}" >&2
-    found_new_duplicates=1
+# Find duplicated prefixes using sort + uniq
+duplicated=$(echo "$prefixes" | sort | uniq -d)
+
+for prefix in $duplicated; do
+  if is_allowed "$prefix"; then
+    continue
   fi
+  count=$(echo "$prefixes" | grep -c "^${prefix}$")
+  echo "ERROR: Duplicate migration prefix '$prefix' found ($count files):" >&2
+  for f in "$MIGRATIONS_DIR"/${prefix}_*.sql; do
+    [[ -e "$f" ]] && echo "  $(basename "$f")" >&2
+  done
+  found_new_duplicates=1
 done
 
 if (( found_new_duplicates )); then

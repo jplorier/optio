@@ -26,6 +26,9 @@ import {
   XCircle,
   CircleDot,
   Timer,
+  Pencil,
+  Copy,
+  CopyPlus,
 } from "lucide-react";
 import { RunWorkflowDialog } from "@/components/run-workflow-dialog";
 
@@ -217,7 +220,21 @@ export default function WorkflowDetailPage({ params }: { params: Promise<{ id: s
     }
   };
 
+  const handleDuplicate = async () => {
+    setActionLoading(true);
+    try {
+      const res = await api.cloneWorkflow(id);
+      toast.success("Workflow duplicated");
+      router.push(`/workflows/${res.workflow.id}/edit`);
+    } catch {
+      toast.error("Failed to duplicate workflow");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleDelete = async () => {
+    if (!confirm("Delete this workflow and all its runs? This cannot be undone.")) return;
     setActionLoading(true);
     try {
       await api.deleteWorkflow(id);
@@ -301,6 +318,20 @@ export default function WorkflowDetailPage({ params }: { params: Promise<{ id: s
             title={workflow.enabled ? "Run this workflow" : "Workflow is disabled"}
           >
             <Play className="w-4 h-4" /> Run
+          </button>
+          <Link
+            href={`/workflows/${id}/edit`}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
+          >
+            <Pencil className="w-4 h-4" /> Edit
+          </Link>
+          <button
+            onClick={handleDuplicate}
+            disabled={actionLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
+            title="Duplicate workflow"
+          >
+            <CopyPlus className="w-4 h-4" /> Duplicate
           </button>
           <button
             onClick={() => refresh()}
@@ -407,8 +438,15 @@ export default function WorkflowDetailPage({ params }: { params: Promise<{ id: s
       </div>
 
       {/* Tab content */}
-      {activeTab === "runs" && <RunsTable runs={runs} workflowId={id} />}
-      {activeTab === "triggers" && <TriggersList triggers={triggers} />}
+      {activeTab === "runs" && (
+        <RunsTable
+          runs={runs}
+          workflowId={id}
+          onRunClick={() => workflow.enabled && setShowRunDialog(true)}
+          canRun={workflow.enabled}
+        />
+      )}
+      {activeTab === "triggers" && <TriggersList triggers={triggers} workflowId={id} />}
       {activeTab === "config" && (
         <ConfigPanel workflow={workflow} showPrompt={showPrompt} setShowPrompt={setShowPrompt} />
       )}
@@ -429,139 +467,251 @@ export default function WorkflowDetailPage({ params }: { params: Promise<{ id: s
 
 // ── Runs table ─────────────────────────────────────────────────────────────────
 
-function RunsTable({ runs, workflowId }: { runs: WorkflowRun[]; workflowId: string }) {
+const RUN_FILTERS = [
+  { value: "all", label: "All" },
+  { value: "running", label: "Running" },
+  { value: "completed", label: "Completed" },
+  { value: "failed", label: "Failed" },
+] as const;
+
+type RunFilter = (typeof RUN_FILTERS)[number]["value"];
+
+function RunsTable({
+  runs,
+  workflowId,
+  onRunClick,
+  canRun,
+}: {
+  runs: WorkflowRun[];
+  workflowId: string;
+  onRunClick: () => void;
+  canRun: boolean;
+}) {
   const router = useRouter();
+  const [filter, setFilter] = useState<RunFilter>("all");
+  const filteredRuns =
+    filter === "all"
+      ? runs
+      : runs.filter((r) =>
+          filter === "running" ? r.state === "running" || r.state === "queued" : r.state === filter,
+        );
+
   if (runs.length === 0) {
     return (
       <div className="text-center py-8 text-text-muted border border-dashed border-border rounded-lg">
         <CircleDot className="w-6 h-6 mx-auto mb-2 opacity-50" />
         <p className="text-sm">No runs yet</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border border-border/50 overflow-hidden">
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="border-b border-border/50 bg-bg-card">
-            <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">State</th>
-            <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">Started</th>
-            <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">Duration</th>
-            <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">Model</th>
-            <th className="text-right px-4 py-2 text-xs font-medium text-text-muted">Cost</th>
-            <th className="text-right px-4 py-2 text-xs font-medium text-text-muted">Tokens</th>
-            <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">Error</th>
-          </tr>
-        </thead>
-        <tbody>
-          {runs.map((run) => (
-            <tr
-              key={run.id}
-              className="border-b border-border/30 last:border-0 hover:bg-bg-hover/40 cursor-pointer"
-              onClick={() => router.push(`/workflows/${workflowId}/runs/${run.id}`)}
-            >
-              <td className="px-4 py-2.5">
-                <Link href={`/workflows/${workflowId}/runs/${run.id}`}>
-                  <RunStateBadge state={run.state} />
-                </Link>
-              </td>
-              <td className="px-4 py-2.5 text-text-muted text-xs">
-                {run.startedAt
-                  ? formatRelativeTime(run.startedAt)
-                  : formatRelativeTime(run.createdAt)}
-              </td>
-              <td className="px-4 py-2.5 text-text-muted text-xs">
-                {run.startedAt
-                  ? formatDuration(run.startedAt, run.finishedAt ?? undefined)
-                  : "\u2014"}
-              </td>
-              <td className="px-4 py-2.5 text-text-muted text-xs">{run.modelUsed ?? "\u2014"}</td>
-              <td className="px-4 py-2.5 text-right text-xs">
-                {run.costUsd ? `$${parseFloat(run.costUsd).toFixed(2)}` : "\u2014"}
-              </td>
-              <td className="px-4 py-2.5 text-right text-text-muted text-xs">
-                {run.inputTokens != null && run.outputTokens != null
-                  ? `${(run.inputTokens / 1000).toFixed(1)}k / ${(run.outputTokens / 1000).toFixed(1)}k`
-                  : "\u2014"}
-              </td>
-              <td className="px-4 py-2.5 text-xs">
-                {run.errorMessage ? (
-                  <span
-                    className="text-error truncate max-w-[200px] block"
-                    title={run.errorMessage}
-                  >
-                    {run.errorMessage.length > 60
-                      ? run.errorMessage.slice(0, 60) + "\u2026"
-                      : run.errorMessage}
-                  </span>
-                ) : (
-                  "\u2014"
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-// ── Triggers list ──────────────────────────────────────────────────────────────
-
-function TriggersList({ triggers }: { triggers: WorkflowTrigger[] }) {
-  if (triggers.length === 0) {
-    return (
-      <div className="text-center py-8 text-text-muted border border-dashed border-border rounded-lg">
-        <Zap className="w-6 h-6 mx-auto mb-2 opacity-50" />
-        <p className="text-sm">No triggers configured</p>
-        <p className="text-xs mt-1">
-          Triggers define how this workflow is started (manually, on schedule, or via webhook).
-        </p>
+        <p className="text-xs mt-1 mb-3">Start your first run to see results here.</p>
+        <button
+          onClick={onRunClick}
+          disabled={!canRun}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          <Play className="w-3 h-3" /> Run Now
+        </button>
       </div>
     );
   }
 
   return (
     <div className="space-y-3">
-      {triggers.map((trigger) => (
-        <div
-          key={trigger.id}
-          className="rounded-lg border border-border/50 bg-bg-card p-4 flex items-center justify-between"
-        >
-          <div className="flex items-center gap-3 min-w-0">
-            <div
-              className={cn(
-                "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
-                trigger.enabled ? "bg-primary/10 text-primary" : "bg-bg-hover text-text-muted",
-              )}
-            >
-              <TriggerTypeIcon type={trigger.type} />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-medium capitalize">{trigger.type}</span>
-                <span
-                  className={cn(
-                    "text-[10px] px-1.5 py-0.5 rounded uppercase font-medium",
-                    trigger.enabled ? "text-success bg-success/10" : "text-text-muted bg-bg-hover",
-                  )}
+      <div className="flex gap-1.5">
+        {RUN_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setFilter(f.value)}
+            className={cn(
+              "text-xs px-2.5 py-1 rounded-md font-medium transition-colors",
+              filter === f.value
+                ? "bg-primary/10 text-primary"
+                : "text-text-muted hover:text-text hover:bg-bg-hover",
+            )}
+          >
+            {f.label}
+            {f.value !== "all" && (
+              <span className="ml-1 text-[10px] opacity-70">
+                {f.value === "running"
+                  ? runs.filter((r) => r.state === "running" || r.state === "queued").length
+                  : runs.filter((r) => r.state === f.value).length}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+      {filteredRuns.length === 0 ? (
+        <div className="text-center py-6 text-text-muted border border-dashed border-border rounded-lg">
+          <p className="text-sm">No {filter} runs</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border border-border/50 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border/50 bg-bg-card">
+                <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">State</th>
+                <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">Started</th>
+                <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">
+                  Duration
+                </th>
+                <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">Model</th>
+                <th className="text-right px-4 py-2 text-xs font-medium text-text-muted">Cost</th>
+                <th className="text-right px-4 py-2 text-xs font-medium text-text-muted">Tokens</th>
+                <th className="text-left px-4 py-2 text-xs font-medium text-text-muted">Error</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredRuns.map((run) => (
+                <tr
+                  key={run.id}
+                  className="border-b border-border/30 last:border-0 hover:bg-bg-hover/40 cursor-pointer"
+                  onClick={() => router.push(`/workflows/${workflowId}/runs/${run.id}`)}
                 >
-                  {trigger.enabled ? "Active" : "Disabled"}
-                </span>
+                  <td className="px-4 py-2.5">
+                    <Link href={`/workflows/${workflowId}/runs/${run.id}`}>
+                      <RunStateBadge state={run.state} />
+                    </Link>
+                  </td>
+                  <td className="px-4 py-2.5 text-text-muted text-xs">
+                    {run.startedAt
+                      ? formatRelativeTime(run.startedAt)
+                      : formatRelativeTime(run.createdAt)}
+                  </td>
+                  <td className="px-4 py-2.5 text-text-muted text-xs">
+                    {run.startedAt
+                      ? formatDuration(run.startedAt, run.finishedAt ?? undefined)
+                      : "\u2014"}
+                  </td>
+                  <td className="px-4 py-2.5 text-text-muted text-xs">
+                    {run.modelUsed ?? "\u2014"}
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-xs">
+                    {run.costUsd ? `$${parseFloat(run.costUsd).toFixed(2)}` : "\u2014"}
+                  </td>
+                  <td className="px-4 py-2.5 text-right text-text-muted text-xs">
+                    {run.inputTokens != null && run.outputTokens != null
+                      ? `${(run.inputTokens / 1000).toFixed(1)}k / ${(run.outputTokens / 1000).toFixed(1)}k`
+                      : "\u2014"}
+                  </td>
+                  <td className="px-4 py-2.5 text-xs">
+                    {run.errorMessage ? (
+                      <span
+                        className="text-error truncate max-w-[200px] block"
+                        title={run.errorMessage}
+                      >
+                        {run.errorMessage.length > 60
+                          ? run.errorMessage.slice(0, 60) + "\u2026"
+                          : run.errorMessage}
+                      </span>
+                    ) : (
+                      "\u2014"
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Triggers list ──────────────────────────────────────────────────────────────
+
+function TriggersList({
+  triggers,
+  workflowId,
+}: {
+  triggers: WorkflowTrigger[];
+  workflowId: string;
+}) {
+  if (triggers.length === 0) {
+    return (
+      <div className="text-center py-8 text-text-muted border border-dashed border-border rounded-lg">
+        <Zap className="w-6 h-6 mx-auto mb-2 opacity-50" />
+        <p className="text-sm">No triggers configured</p>
+        <p className="text-xs mt-1 mb-3">
+          Triggers define how this workflow is started (manually, on schedule, or via webhook).
+        </p>
+        <Link
+          href={`/workflows/${workflowId}/edit`}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-bg-hover text-text-muted text-xs font-medium hover:text-text transition-colors"
+        >
+          <Pencil className="w-3 h-3" /> Configure Triggers
+        </Link>
+      </div>
+    );
+  }
+
+  const copyWebhookUrl = (path: string) => {
+    const url = `${window.location.origin}/api/hooks/${path}`;
+    navigator.clipboard.writeText(url);
+    toast.success("Webhook URL copied");
+  };
+
+  return (
+    <div className="space-y-3">
+      {triggers.map((trigger) => {
+        const rawPath =
+          trigger.type === "webhook"
+            ? (trigger.config as Record<string, unknown> | null)?.path
+            : null;
+        const webhookPath = typeof rawPath === "string" ? rawPath : null;
+
+        return (
+          <div
+            key={trigger.id}
+            className="rounded-lg border border-border/50 bg-bg-card p-4 flex items-center justify-between"
+          >
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <div
+                className={cn(
+                  "w-8 h-8 rounded-lg flex items-center justify-center shrink-0",
+                  trigger.enabled ? "bg-primary/10 text-primary" : "bg-bg-hover text-text-muted",
+                )}
+              >
+                <TriggerTypeIcon type={trigger.type} />
               </div>
-              {trigger.config && Object.keys(trigger.config).length > 0 && (
-                <p className="text-xs text-text-muted mt-0.5 font-mono truncate">
-                  {JSON.stringify(trigger.config)}
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium capitalize">{trigger.type}</span>
+                  <span
+                    className={cn(
+                      "text-[10px] px-1.5 py-0.5 rounded uppercase font-medium",
+                      trigger.enabled
+                        ? "text-success bg-success/10"
+                        : "text-text-muted bg-bg-hover",
+                    )}
+                  >
+                    {trigger.enabled ? "Active" : "Disabled"}
+                  </span>
+                </div>
+                {webhookPath && (
+                  <div className="flex items-center gap-1.5 mt-1">
+                    <code className="text-xs text-text-muted bg-bg rounded px-1.5 py-0.5 font-mono truncate">
+                      {window.location.origin}/api/hooks/{webhookPath}
+                    </code>
+                    <button
+                      onClick={() => copyWebhookUrl(webhookPath)}
+                      className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text transition-colors shrink-0"
+                      title="Copy webhook URL"
+                    >
+                      <Copy className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                {!webhookPath && trigger.config && Object.keys(trigger.config).length > 0 && (
+                  <p className="text-xs text-text-muted mt-0.5 font-mono truncate">
+                    {JSON.stringify(trigger.config)}
+                  </p>
+                )}
+                <p className="text-xs text-text-muted mt-0.5">
+                  Created {formatRelativeTime(trigger.createdAt)}
                 </p>
-              )}
-              <p className="text-xs text-text-muted mt-0.5">
-                Created {formatRelativeTime(trigger.createdAt)}
-              </p>
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api-client";
 import { NumberInput } from "@/components/number-input";
+import { ParamsSchemaEditor } from "@/components/params-schema-editor";
 import {
   Loader2,
   Save,
@@ -15,6 +16,7 @@ import {
   Zap,
   Clock,
   Globe,
+  Copy,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -143,6 +145,156 @@ function prettyJson(obj: unknown): string {
   }
 }
 
+// ── Cron description helper ─────────────────────────────────────────────────
+
+const CRON_PRESETS: { label: string; value: string }[] = [
+  { label: "Every hour", value: "0 * * * *" },
+  { label: "Every day at midnight", value: "0 0 * * *" },
+  { label: "Every weekday at 9 AM", value: "0 9 * * 1-5" },
+  { label: "Every Monday at 9 AM", value: "0 9 * * 1" },
+  { label: "Every 6 hours", value: "0 */6 * * *" },
+];
+
+function describeCron(expr: string): string {
+  const parts = expr.trim().split(/\s+/);
+  if (parts.length !== 5) return "";
+  const [min, hour, dom, mon, dow] = parts;
+
+  if (min === "0" && hour === "*" && dom === "*" && mon === "*" && dow === "*")
+    return "Every hour at :00";
+  if (min === "0" && hour === "0" && dom === "*" && mon === "*" && dow === "*")
+    return "Every day at midnight";
+  if (dom === "*" && mon === "*" && dow === "1-5")
+    return `Every weekday at ${hour}:${min.padStart(2, "0")}`;
+  if (dom === "*" && mon === "*" && dow === "*" && hour !== "*")
+    return `Every day at ${hour}:${min.padStart(2, "0")}`;
+  if (dom === "*" && mon === "*" && dow === "1")
+    return `Every Monday at ${hour}:${min.padStart(2, "0")}`;
+  if (hour.startsWith("*/")) return `Every ${hour.slice(2)} hours`;
+  if (min.startsWith("*/")) return `Every ${min.slice(2)} minutes`;
+  return "";
+}
+
+// ── Structured trigger config components ────────────────────────────────────
+
+function ScheduleTriggerConfig({
+  config,
+  onChange,
+}: {
+  config: string;
+  onChange: (config: string) => void;
+}) {
+  const parsed = tryParseJson(config);
+  const cronExpression = (parsed?.cronExpression as string) ?? "";
+  const description = cronExpression ? describeCron(cronExpression) : "";
+
+  const setCron = (value: string) => {
+    onChange(JSON.stringify({ ...parsed, cronExpression: value }));
+  };
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <label className="block text-xs text-text-muted mb-1">Cron Expression</label>
+        <input
+          type="text"
+          value={cronExpression}
+          onChange={(e) => setCron(e.target.value)}
+          placeholder="0 9 * * 1-5"
+          className={`${INPUT_CLASS} font-mono text-xs`}
+        />
+        {description && <p className="text-xs text-primary mt-1">{description}</p>}
+      </div>
+      <div className="flex flex-wrap gap-1.5">
+        {CRON_PRESETS.map((p) => (
+          <button
+            key={p.value}
+            type="button"
+            onClick={() => setCron(p.value)}
+            className={`text-[11px] px-2 py-0.5 rounded-full border transition-colors ${
+              cronExpression === p.value
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-text-muted hover:border-primary/40 hover:text-text"
+            }`}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WebhookTriggerConfig({
+  config,
+  onChange,
+}: {
+  config: string;
+  onChange: (config: string) => void;
+}) {
+  const parsed = tryParseJson(config);
+  const path = (parsed?.path as string) ?? "";
+  const secret = (parsed?.secret as string) ?? "";
+
+  const updateField = (field: string, value: string) => {
+    const updated = { ...parsed, [field]: value || undefined };
+    // Clean out empty/undefined keys
+    if (!updated.path) delete updated.path;
+    if (!updated.secret) delete updated.secret;
+    onChange(Object.keys(updated).length > 0 ? JSON.stringify(updated) : "");
+  };
+
+  const webhookUrl =
+    typeof window !== "undefined" && path ? `${window.location.origin}/api/hooks/${path}` : "";
+
+  return (
+    <div className="space-y-2">
+      <div>
+        <label className="block text-xs text-text-muted mb-1">
+          Webhook Path <span className="text-error">*</span>
+        </label>
+        <input
+          type="text"
+          value={path}
+          onChange={(e) => updateField("path", e.target.value.replace(/[^a-zA-Z0-9_-]/g, ""))}
+          placeholder="my-workflow-hook"
+          className={`${INPUT_CLASS} font-mono text-xs`}
+        />
+      </div>
+      {webhookUrl && (
+        <div className="flex items-center gap-1.5">
+          <code className="text-xs text-text-muted bg-bg rounded px-2 py-1 font-mono truncate flex-1">
+            {webhookUrl}
+          </code>
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(webhookUrl);
+              toast.success("Webhook URL copied");
+            }}
+            className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text transition-colors shrink-0"
+            title="Copy URL"
+          >
+            <Copy className="w-3 h-3" />
+          </button>
+        </div>
+      )}
+      <div>
+        <label className="block text-xs text-text-muted mb-1">
+          Secret (optional, for HMAC verification)
+        </label>
+        <input
+          type="text"
+          value={secret}
+          onChange={(e) => updateField("secret", e.target.value)}
+          placeholder="Optional HMAC secret"
+          className={`${INPUT_CLASS} font-mono text-xs`}
+        />
+      </div>
+    </div>
+  );
+}
+
 // ── Component ───────────────────────────────────────────────────────────────
 
 export function WorkflowForm({
@@ -195,7 +347,6 @@ export function WorkflowForm({
 
   // JSON validation state
   const [envSpecError, setEnvSpecError] = useState<string | null>(null);
-  const [paramsSchemaError, setParamsSchemaError] = useState<string | null>(null);
 
   useEffect(() => {
     if (form.environmentSpec.trim()) {
@@ -210,30 +361,10 @@ export function WorkflowForm({
     }
   }, [form.environmentSpec]);
 
-  useEffect(() => {
-    if (form.paramsSchema.trim()) {
-      try {
-        JSON.parse(form.paramsSchema);
-        setParamsSchemaError(null);
-      } catch (e) {
-        setParamsSchemaError("Invalid JSON");
-      }
-    } else {
-      setParamsSchemaError(null);
-    }
-  }, [form.paramsSchema]);
-
   // Auto-expand environment section if there's data
   useEffect(() => {
     if (form.environmentSpec.trim()) setShowEnvSpec(true);
   }, []);
-
-  const handleAutoParams = useCallback(() => {
-    const existing = tryParseJson(form.paramsSchema);
-    const schema = buildParamsSchemaFromPrompt(form.promptTemplate, existing);
-    setForm((f) => ({ ...f, paramsSchema: prettyJson(schema) }));
-    toast.success(`Detected ${detectedParams.length} parameter(s)`);
-  }, [form.promptTemplate, form.paramsSchema, detectedParams.length]);
 
   const addTrigger = () => {
     setTriggers((t) => [
@@ -275,7 +406,7 @@ export function WorkflowForm({
       toast.error("Prompt template is required");
       return;
     }
-    if (envSpecError || paramsSchemaError) {
+    if (envSpecError) {
       toast.error("Fix JSON errors before saving");
       return;
     }
@@ -332,7 +463,7 @@ export function WorkflowForm({
         }
       }
 
-      router.push("/workflows");
+      router.push(`/workflows/${savedWorkflowId}`);
     } catch (err) {
       toast.error(`Failed to ${mode === "create" ? "create" : "update"} workflow`, {
         description: err instanceof Error ? err.message : undefined,
@@ -571,39 +702,18 @@ export function WorkflowForm({
 
       {/* ── Parameters Schema ───────────────────────────────────────────── */}
       <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-sm font-medium mb-1">Parameters Schema</h2>
-            <p className="text-xs text-text-muted">
-              JSON Schema defining input parameters for this workflow.
-            </p>
-          </div>
-          {detectedParams.length > 0 && (
-            <button
-              type="button"
-              onClick={handleAutoParams}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs font-medium hover:bg-primary/20 transition-colors"
-            >
-              <Zap className="w-3 h-3" />
-              Auto-detect from prompt
-            </button>
-          )}
+        <div>
+          <h2 className="text-sm font-medium mb-1">Parameters</h2>
+          <p className="text-xs text-text-muted">
+            Define input parameters for this workflow. These are filled at runtime.
+          </p>
         </div>
 
-        <div>
-          <textarea
-            rows={6}
-            value={form.paramsSchema}
-            onChange={(e) => setForm((f) => ({ ...f, paramsSchema: e.target.value }))}
-            placeholder={`{\n  "type": "object",\n  "properties": {\n    "REPO_NAME": { "type": "string", "description": "Repository name" }\n  },\n  "required": ["REPO_NAME"]\n}`}
-            className={`${INPUT_CLASS} font-mono text-xs resize-y ${paramsSchemaError ? "border-error" : ""}`}
-          />
-          {paramsSchemaError && (
-            <p className="text-xs text-error mt-1 flex items-center gap-1">
-              <AlertCircle className="w-3 h-3" /> {paramsSchemaError}
-            </p>
-          )}
-        </div>
+        <ParamsSchemaEditor
+          value={form.paramsSchema}
+          onChange={(v) => setForm((f) => ({ ...f, paramsSchema: v }))}
+          detectedParams={detectedParams}
+        />
       </section>
 
       {/* ── Triggers ────────────────────────────────────────────────────── */}
@@ -676,33 +786,17 @@ export function WorkflowForm({
               </div>
 
               {trigger.type === "schedule" && (
-                <div>
-                  <label className="block text-xs text-text-muted mb-1">
-                    Cron Expression (in config JSON)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={trigger.config}
-                    onChange={(e) => updateTrigger(index, { config: e.target.value })}
-                    placeholder={`{"cronExpression": "0 9 * * 1-5"}`}
-                    className={`${INPUT_CLASS} font-mono text-xs`}
-                  />
-                </div>
+                <ScheduleTriggerConfig
+                  config={trigger.config}
+                  onChange={(config) => updateTrigger(index, { config })}
+                />
               )}
 
               {trigger.type === "webhook" && (
-                <div>
-                  <label className="block text-xs text-text-muted mb-1">
-                    Webhook Config (JSON)
-                  </label>
-                  <textarea
-                    rows={2}
-                    value={trigger.config}
-                    onChange={(e) => updateTrigger(index, { config: e.target.value })}
-                    placeholder={`{"secret": "...", "filter": {"event": "push"}}`}
-                    className={`${INPUT_CLASS} font-mono text-xs`}
-                  />
-                </div>
+                <WebhookTriggerConfig
+                  config={trigger.config}
+                  onChange={(config) => updateTrigger(index, { config })}
+                />
               )}
 
               {trigger.type === "manual" && (

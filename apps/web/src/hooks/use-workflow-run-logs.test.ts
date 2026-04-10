@@ -8,12 +8,30 @@ vi.mock("@/lib/api-client", () => ({
   },
 }));
 
+// Mock the WS client — capture the event handler and simulate events
+const mockConnect = vi.fn();
+const mockDisconnect = vi.fn();
+let wsHandler: ((event: any) => void) | null = null;
+vi.mock("@/lib/ws-client", () => ({
+  createWorkflowRunLogClient: () => ({
+    on: (_event: string, handler: (event: any) => void) => {
+      wsHandler = handler;
+    },
+    connect: mockConnect,
+    disconnect: mockDisconnect,
+  }),
+}));
+
+vi.mock("@/lib/ws-auth", () => ({
+  getWsTokenProvider: () => undefined,
+}));
+
 import { useWorkflowRunLogs } from "./use-workflow-run-logs";
 
 describe("useWorkflowRunLogs", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
+    wsHandler = null;
     mockGetWorkflowRunLogs.mockResolvedValue({
       logs: [
         {
@@ -34,82 +52,81 @@ describe("useWorkflowRunLogs", () => {
     });
   });
 
-  it("fetches logs on mount", async () => {
-    vi.useRealTimers();
+  it("fetches historical logs on mount", async () => {
     const { result } = renderHook(() => useWorkflowRunLogs("run-1", false));
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false);
+      expect(result.current.logs).toHaveLength(2);
     });
 
     expect(mockGetWorkflowRunLogs).toHaveBeenCalledWith("run-1", { limit: 10000 });
-    expect(result.current.logs).toHaveLength(2);
     expect(result.current.logs[0].content).toBe("Starting agent");
   });
 
-  it("starts with loading=true", () => {
-    const { result } = renderHook(() => useWorkflowRunLogs("run-1", false));
-    expect(result.current.loading).toBe(true);
-  });
-
-  it("sets connected=true when isActive", async () => {
-    vi.useRealTimers();
+  it("connects WS when isActive", async () => {
     const { result } = renderHook(() => useWorkflowRunLogs("run-1", true));
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false);
+      expect(result.current.connected).toBe(true);
     });
 
-    expect(result.current.connected).toBe(true);
+    expect(mockConnect).toHaveBeenCalled();
   });
 
-  it("sets connected=false when not active", async () => {
-    vi.useRealTimers();
+  it("does not connect WS when not active", async () => {
     const { result } = renderHook(() => useWorkflowRunLogs("run-1", false));
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false);
+      expect(result.current.logs).toHaveLength(2);
     });
 
+    expect(mockConnect).not.toHaveBeenCalled();
     expect(result.current.connected).toBe(false);
   });
 
-  it("polls when active", async () => {
+  it("appends live WS events after historical merge", async () => {
     const { result } = renderHook(() => useWorkflowRunLogs("run-1", true));
 
-    // Initial fetch
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
+    await waitFor(() => {
+      expect(result.current.logs).toHaveLength(2);
     });
 
-    expect(mockGetWorkflowRunLogs).toHaveBeenCalledTimes(1);
-
-    // Advance to trigger poll
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(3000);
+    // Simulate a live WS event
+    act(() => {
+      wsHandler?.({
+        content: "New live event",
+        stream: "stdout",
+        timestamp: "2025-06-01T00:00:02Z",
+        logType: "text",
+      });
     });
 
-    expect(mockGetWorkflowRunLogs).toHaveBeenCalledTimes(2);
+    expect(result.current.logs).toHaveLength(3);
+    expect(result.current.logs[2].content).toBe("New live event");
   });
 
-  it("does not poll when inactive", async () => {
-    vi.useRealTimers();
-    const { result } = renderHook(() => useWorkflowRunLogs("run-1", false));
+  it("deduplicates identical events", async () => {
+    const { result } = renderHook(() => useWorkflowRunLogs("run-1", true));
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false);
+      expect(result.current.logs).toHaveLength(2);
     });
 
-    const callCount = mockGetWorkflowRunLogs.mock.calls.length;
+    // Simulate a duplicate of the last log entry
+    act(() => {
+      wsHandler?.({
+        content: "Running tool",
+        stream: "stdout",
+        timestamp: "2025-06-01T00:00:01Z",
+        logType: "tool_use",
+      });
+    });
 
-    // Wait well beyond the poll interval — no new calls should happen
-    await new Promise((r) => setTimeout(r, 100));
-
-    expect(mockGetWorkflowRunLogs).toHaveBeenCalledTimes(callCount);
+    // Should still be 2 (duplicate was dropped)
+    expect(result.current.logs).toHaveLength(2);
   });
 
   it("clears logs when clear is called", async () => {
-    vi.useRealTimers();
     const { result } = renderHook(() => useWorkflowRunLogs("run-1", false));
 
     await waitFor(() => {
@@ -124,7 +141,6 @@ describe("useWorkflowRunLogs", () => {
   });
 
   it("sets capped when logs reach limit", async () => {
-    vi.useRealTimers();
     const manyLogs = Array.from({ length: 10000 }, (_, i) => ({
       content: `Log ${i}`,
       stream: "stdout",
@@ -142,16 +158,25 @@ describe("useWorkflowRunLogs", () => {
   });
 
   it("handles fetch errors gracefully", async () => {
-    vi.useRealTimers();
     mockGetWorkflowRunLogs.mockRejectedValue(new Error("Network error"));
 
-    const { result } = renderHook(() => useWorkflowRunLogs("run-1", false));
+    const { result } = renderHook(() => useWorkflowRunLogs("run-1", true));
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false);
+      // After error, logs should be empty (just live events, which are also empty)
+      expect(result.current.logs).toHaveLength(0);
+    });
+  });
+
+  it("disconnects WS on unmount", async () => {
+    const { unmount } = renderHook(() => useWorkflowRunLogs("run-1", true));
+
+    await waitFor(() => {
+      expect(mockConnect).toHaveBeenCalled();
     });
 
-    // Should not crash, logs should be empty
-    expect(result.current.logs).toHaveLength(0);
+    unmount();
+
+    expect(mockDisconnect).toHaveBeenCalled();
   });
 });

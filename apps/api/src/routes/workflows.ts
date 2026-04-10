@@ -100,6 +100,17 @@ export async function workflowRoutes(app: FastifyInstance) {
     }
   });
 
+  // Clone a workflow (and its non-webhook triggers)
+  app.post("/api/workflows/:id/clone", async (req, reply) => {
+    const { id } = idParamsSchema.parse(req.params);
+    const cloned = await workflowService.cloneWorkflow(id, {
+      workspaceId: req.user?.workspaceId ?? undefined,
+      createdBy: req.user?.id,
+    });
+    if (!cloned) return reply.status(404).send({ error: "Workflow not found" });
+    reply.status(201).send({ workflow: cloned });
+  });
+
   // Delete a workflow
   app.delete("/api/workflows/:id", async (req, reply) => {
     const { id } = idParamsSchema.parse(req.params);

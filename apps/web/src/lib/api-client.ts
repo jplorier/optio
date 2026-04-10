@@ -1159,6 +1159,9 @@ export const api = {
 
   deleteWorkflow: (id: string) => request<void>(`/api/workflows/${id}`, { method: "DELETE" }),
 
+  cloneWorkflow: (id: string) =>
+    request<{ workflow: any }>(`/api/workflows/${id}/clone`, { method: "POST" }),
+
   runWorkflow: (workflowId: string, params?: Record<string, unknown> | null) =>
     request<{ run: any }>(`/api/workflows/${workflowId}/runs`, {
       method: "POST",
