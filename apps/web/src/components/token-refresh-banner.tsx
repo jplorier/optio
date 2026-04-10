@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Check } from "lucide-react";
+import { AlertTriangle, Check, ExternalLink } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 
@@ -118,6 +118,16 @@ export function GitHubTokenBanner() {
         <span className="text-sm font-medium text-text-heading">GitHub token invalid</span>
         <span className="text-xs text-text-muted">— ticket sync and PR watching are failing</span>
       </div>
+
+      <a
+        href="https://github.com/settings/tokens/new?scopes=repo,read:org&description=Optio+Agent"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-bg-hover text-text text-sm hover:bg-border transition-colors"
+      >
+        <ExternalLink className="w-4 h-4" />
+        Create GitHub Personal Access Token
+      </a>
 
       <div className="flex items-center gap-2">
         <input
