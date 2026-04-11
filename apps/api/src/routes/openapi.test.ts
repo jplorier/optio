@@ -227,6 +227,28 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   { method: "post", path: "/api/schedules/{id}/trigger" },
   { method: "get", path: "/api/schedules/{id}/runs" },
   { method: "post", path: "/api/schedules/validate-cron" },
+
+  // Phase 4 — sessions, PR reviews, issues (17 routes)
+  // sessions.ts (7)
+  { method: "get", path: "/api/sessions" },
+  { method: "get", path: "/api/sessions/active-count" },
+  { method: "get", path: "/api/sessions/{id}" },
+  { method: "post", path: "/api/sessions" },
+  { method: "post", path: "/api/sessions/{id}/end" },
+  { method: "get", path: "/api/sessions/{id}/prs" },
+  { method: "post", path: "/api/sessions/{id}/prs" },
+  // pr-reviews.ts (8)
+  { method: "get", path: "/api/pull-requests" },
+  { method: "post", path: "/api/pull-requests/review" },
+  { method: "get", path: "/api/tasks/{id}/review-draft" },
+  { method: "patch", path: "/api/tasks/{id}/review-draft" },
+  { method: "post", path: "/api/tasks/{id}/review-draft/submit" },
+  { method: "post", path: "/api/tasks/{id}/review-draft/re-review" },
+  { method: "post", path: "/api/pull-requests/merge" },
+  { method: "get", path: "/api/pull-requests/status" },
+  // issues.ts (2)
+  { method: "get", path: "/api/issues" },
+  { method: "post", path: "/api/issues/assign" },
 ];
 
 describe("OpenAPI spec — migrated routes are fully documented", () => {
@@ -258,8 +280,8 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
   }
 
   it("migrated routes count matches the sum of completed phases", () => {
-    // Phase 1 = 14, Phase 2 = 18, Phase 3 = 24
-    expect(MIGRATED_ROUTES).toHaveLength(56);
+    // Phase 1 = 14, Phase 2 = 18, Phase 3 = 24, Phase 4 = 17
+    expect(MIGRATED_ROUTES).toHaveLength(73);
   });
 
   it("components.schemas contains the Task domain types", () => {

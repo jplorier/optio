@@ -25,6 +25,16 @@ import {
   ScheduleRunSchema,
   CronValidationResultSchema,
 } from "./workflow.js";
+import {
+  InteractiveSessionSchema,
+  SessionModelConfigSchema,
+  SessionPrSchema,
+  ReviewDraftSchema,
+  PullRequestSummarySchema,
+  PrStatusSchema,
+  MergeResultSchema,
+  IssueSummarySchema,
+} from "./session.js";
 
 /**
  * Central registry of named schemas surfaced as `components.schemas` in the
@@ -62,4 +72,12 @@ export const namedSchemas = {
   Schedule: ScheduleSchema,
   ScheduleRun: ScheduleRunSchema,
   CronValidationResult: CronValidationResultSchema,
+  InteractiveSession: InteractiveSessionSchema,
+  SessionModelConfig: SessionModelConfigSchema,
+  SessionPr: SessionPrSchema,
+  ReviewDraft: ReviewDraftSchema,
+  PullRequestSummary: PullRequestSummarySchema,
+  PrStatus: PrStatusSchema,
+  MergeResult: MergeResultSchema,
+  IssueSummary: IssueSummarySchema,
 } as const;

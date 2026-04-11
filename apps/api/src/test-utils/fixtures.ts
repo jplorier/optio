@@ -170,6 +170,20 @@ export const mockWorkflowTrigger = {
   updatedAt: new Date("2026-04-11T12:00:00Z"),
 };
 
+export const mockInteractiveSession = {
+  id: "session-1",
+  repoUrl: "https://github.com/org/repo",
+  userId: "user-1",
+  worktreePath: "/repo-worktrees/session-1",
+  branch: "main",
+  state: "active",
+  podId: null,
+  costUsd: null,
+  workspaceId: "ws-1",
+  createdAt: new Date("2026-04-11T12:00:00Z"),
+  endedAt: null,
+};
+
 export const mockSchedule = {
   id: "sch-1",
   name: "Nightly build",
