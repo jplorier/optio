@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import { buildRouteTestApp } from "../test-utils/build-route-test-app.js";
 
 // ─── Mocks ───
 
@@ -23,10 +23,7 @@ import { healthRoutes, _resetHealthCache } from "./health.js";
 // ─── Helpers ───
 
 async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
-  await healthRoutes(app);
-  await app.ready();
-  return app;
+  return buildRouteTestApp(healthRoutes, { user: null });
 }
 
 describe("GET /api/health", () => {

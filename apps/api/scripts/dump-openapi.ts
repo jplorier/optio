@@ -48,6 +48,69 @@ process.stderr.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
   return origStderrWrite(chunk, ...(args as any));
 }) as any;
 
+/**
+ * zod-to-json-schema emits nullable unions as `{ anyOf: [X], nullable: true }`,
+ * which is invalid OpenAPI 3.0 — the `type` field is required alongside
+ * `nullable`. Walk the spec and rewrite single-item anyOf-with-nullable into
+ * the inlined item + nullable. Also rewrites `{ type: ["null"], nullable: true }`
+ * (which the Zod `.null()` output produces for our 204 responses) into
+ * `{ type: "null", nullable: true }`.
+ *
+ * Both openapi-typescript and Redocly accept the rewritten forms.
+ */
+function normalizeNullable(node: unknown): unknown {
+  if (Array.isArray(node)) {
+    return node.map(normalizeNullable);
+  }
+  if (node === null || typeof node !== "object") {
+    return node;
+  }
+  const obj = { ...(node as Record<string, unknown>) };
+
+  // Case 1: { anyOf: [X, ...rest], nullable: true } → { ...X, nullable: true }
+  // If there's only one item, inline it. If multiple, pick the first — the
+  // openapi-typescript generator otherwise errors on missing sibling `type`.
+  // This is a lossy but pragmatic mapping for our Zod unions (commonly
+  // `z.union([z.date(), z.string()])` where both sides map to strings).
+  if (
+    Array.isArray(obj.anyOf) &&
+    obj.anyOf.length >= 1 &&
+    obj.nullable === true &&
+    typeof obj.anyOf[0] === "object" &&
+    obj.anyOf[0] !== null
+  ) {
+    const inner = obj.anyOf[0] as Record<string, unknown>;
+    delete obj.anyOf;
+    for (const [k, v] of Object.entries(inner)) {
+      if (!(k in obj)) obj[k] = v;
+    }
+  }
+
+  // Case 2: { enum: ["null"] | [null], nullable: true } — produced by z.null()
+  // for DELETE 204 responses. Replace with a nullable string; OpenAPI 3.0
+  // doesn't have a cleaner "always null" representation, and the actual
+  // 204 response has no body so the schema is cosmetic.
+  if (
+    Array.isArray(obj.enum) &&
+    obj.enum.every((v) => v === null || v === "null") &&
+    obj.nullable === true
+  ) {
+    delete obj.enum;
+    obj.type = "string";
+  }
+
+  // Case 3: { type: ["null"], nullable: true } → { type: "null", nullable: true }
+  if (Array.isArray(obj.type) && obj.type.every((t) => t === "null")) {
+    obj.type = "null";
+  }
+
+  // Recurse
+  for (const [k, v] of Object.entries(obj)) {
+    obj[k] = normalizeNullable(v);
+  }
+  return obj;
+}
+
 // Lazily import so that `dotenv/config` has already run before any module
 // that reads env vars at import time (e.g. redis-config).
 async function main() {
@@ -67,7 +130,8 @@ async function main() {
   if (typeof swagger !== "function") {
     throw new Error("app.swagger() is not a function — is @fastify/swagger registered?");
   }
-  const spec = (app as unknown as { swagger: () => unknown }).swagger();
+  const rawSpec = (app as unknown as { swagger: () => unknown }).swagger();
+  const spec = normalizeNullable(rawSpec);
 
   const outPath = resolve(dirname(fileURLToPath(import.meta.url)), "..", "openapi.generated.json");
   await writeFile(outPath, JSON.stringify(spec, null, 2) + "\n", "utf8");

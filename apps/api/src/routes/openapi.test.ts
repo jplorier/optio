@@ -392,6 +392,12 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   // github-token.ts (2)
   { method: "get", path: "/api/github-token/status" },
   { method: "post", path: "/api/github-token/rotate" },
+
+  // Phase 9 — stragglers and hardening
+  // health.ts (1)
+  { method: "get", path: "/api/health" },
+  // hooks.ts (1)
+  { method: "post", path: "/api/hooks/{webhookPath}" },
 ];
 
 describe("OpenAPI spec — migrated routes are fully documented", () => {
@@ -426,10 +432,12 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
   }
 
   it("migrated routes count matches the sum of completed phases", () => {
-    // Phases 1–8 totals: 14 + 18 + 24 + 17 + 49 + 18 + 25 + 16 = 181
-    // Phase 8 visible in spec = 13 auth + 1 github-app + 2 github-token = 16
-    // (4 hidden: claude-token, oauth login/callback, internal git-credentials)
-    expect(MIGRATED_ROUTES).toHaveLength(181);
+    // All phases complete: 14 + 18 + 24 + 17 + 49 + 18 + 25 + 16 + 2 = 183
+    // 185 total route+method combos exist; 4 are hidden from the spec
+    // (claude-token text/plain, oauth login/callback redirects, internal
+    // git-credentials HMAC endpoint), leaving 181 visible. The two Phase 9
+    // additions (health, hook) bring the smoke-test total to 183.
+    expect(MIGRATED_ROUTES).toHaveLength(183);
   });
 
   it("components.schemas contains the Task domain types", () => {
@@ -437,5 +445,43 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
     for (const name of ["Task", "EnrichedTask", "TaskEvent", "LogEntry", "TaskStats"]) {
       expect(schemas[name], `components.schemas.${name} missing`).toBeDefined();
     }
+  });
+});
+
+describe("OpenAPI spec — every visible operation is fully documented", () => {
+  // The hardening check — runs across the whole spec, not just a fixed
+  // allowlist. Guards against regressions: a new route added anywhere
+  // in the API must carry summary + operationId + tag or this test fails.
+  it("every visible operation has summary, operationId, and at least one tag", () => {
+    const paths = spec.paths ?? {};
+    const missing: string[] = [];
+    for (const [path, methods] of Object.entries(paths)) {
+      for (const [method, op] of Object.entries(methods)) {
+        if (!op.summary) missing.push(`${method.toUpperCase()} ${path} — missing summary`);
+        if (!op.operationId) missing.push(`${method.toUpperCase()} ${path} — missing operationId`);
+        if (!op.tags || op.tags.length === 0)
+          missing.push(`${method.toUpperCase()} ${path} — missing tags`);
+      }
+    }
+    expect(missing, `routes missing required metadata:\n${missing.join("\n")}`).toEqual([]);
+  });
+
+  it("operationIds are globally unique", () => {
+    const paths = spec.paths ?? {};
+    const seen = new Map<string, string>();
+    const duplicates: string[] = [];
+    for (const [path, methods] of Object.entries(paths)) {
+      for (const [method, op] of Object.entries(methods)) {
+        const id = op.operationId;
+        if (!id) continue;
+        const existing = seen.get(id);
+        if (existing) {
+          duplicates.push(`${id}: ${existing} and ${method.toUpperCase()} ${path}`);
+        } else {
+          seen.set(id, `${method.toUpperCase()} ${path}`);
+        }
+      }
+    }
+    expect(duplicates, `duplicate operationIds:\n${duplicates.join("\n")}`).toEqual([]);
   });
 });

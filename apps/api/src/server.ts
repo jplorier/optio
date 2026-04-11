@@ -156,9 +156,16 @@ export async function buildServer() {
         description:
           "Workflow orchestration API for AI coding agents. Tasks submitted " +
           "here spin up isolated Kubernetes pods running Claude Code, OpenAI " +
-          "Codex, or GitHub Copilot against a configured repository. This " +
-          "document is the contract used by the web UI, the CLI, and any " +
-          "client generated via `openapi-typescript`.",
+          "Codex, or GitHub Copilot against a configured repository.\n\n" +
+          "All routes use Zod schemas via `fastify-type-provider-zod`, so " +
+          "every request body, query string, path parameter, and response " +
+          "body is validated at runtime and reflected in this spec. Every " +
+          "route carries a `summary`, `operationId`, a `tag` that groups it " +
+          "in Swagger UI, and at least one schematized response.\n\n" +
+          "This document is the contract used by the web UI, the CLI, and " +
+          "any client generated via `openapi-typescript`. See " +
+          "`apps/api/openapi.generated.json` in the repo for the latest " +
+          "build-time snapshot.",
         version: process.env.OPTIO_VERSION ?? "dev",
       },
       servers: [{ url: "/", description: "Current host" }],
@@ -285,25 +292,28 @@ export async function buildServer() {
 
   // Global error handler.
   //
-  // Validation errors arrive in two shapes during the incremental migration
-  // to the Zod type provider:
+  // Validation errors arrive as type-provider FastifyErrors (FST_ERR_VALIDATION)
+  // whose `.validation` array contains entries with `.params.issue` (a ZodIssue).
   //
-  //   1. **Type provider** (new): Fastify throws a FST_ERR_VALIDATION error
-  //      whose `.validation` array contains entries with
-  //      `.params.issue` (a ZodIssue). Detect via presence of
-  //      `err.validation[0].params.issue`.
-  //   2. **Legacy hand-thrown** (routes still using `schema.parse(req.body)`
-  //      inside the handler): a raw `ZodError` with `name === "ZodError"`.
-  //      Keep this branch until every route is migrated; it's removed in the
-  //      final phase of the OpenAPI rollout.
+  // The legacy `ZodError` branch (kept during phases 0–8 of the OpenAPI
+  // migration for routes that called `schema.parse(req.body)` inside the
+  // handler) was removed in phase 9. Every route now declares its Zod
+  // schemas on the route definition, and the type provider handles
+  // validation before the handler runs. `server.test.ts`'s "Zod error
+  // sanitization" suite still exercises the legacy path because it
+  // explicitly mounts a test route that throws `ZodError` from the handler
+  // body — a synthetic scenario kept to prove the hand-thrown fallback
+  // still works if user code ever throws one.
   //
-  // Both branches MUST produce the same client-visible `{ error, details }`
-  // envelope — field-names-only in production, full message in development.
+  // The client-visible `{ error, details }` envelope is:
+  //   - dev: `details` is the full JSON of the validation array
+  //   - prod: `details` is `"Invalid fields: a, b.c"` — field paths only,
+  //     never leaks Zod messages like "Expected string"
   // Contract is locked by tests in `server.test.ts`.
   app.setErrorHandler((error: FastifyError | Error, _req, reply) => {
     const isDev = process.env.NODE_ENV !== "production";
 
-    // Branch 1: type-provider validation error
+    // Type-provider validation error (FST_ERR_VALIDATION)
     type FpvIssue = { path: (string | number)[] };
     type FpvValidationEntry = {
       instancePath?: string;
@@ -316,7 +326,7 @@ export async function buildServer() {
       Array.isArray(fpvValidation) && fpvValidation.length > 0 && !!fpvValidation[0]?.params?.issue;
 
     if (isFpvZodValidation) {
-      app.log.error({ err: error }, "Zod schema validation error (type provider)");
+      app.log.error({ err: error }, "Zod schema validation error");
       if (isDev) {
         return reply.status(400).send({
           error: "Validation error",
@@ -332,15 +342,18 @@ export async function buildServer() {
       return reply.status(400).send({ error: "Validation error", details });
     }
 
-    // Branch 1b: response-side serializer mismatch (dev-time safety net)
+    // Response-side serializer mismatch (dev-time safety net)
     if (error instanceof ResponseSerializationError) {
       app.log.error({ err: error }, "Response serialization error");
       return reply.status(500).send({ error: "Internal server error" });
     }
 
-    // Branch 2: legacy hand-thrown ZodError (pre-migration routes)
+    // Fallback for hand-thrown ZodError from user code (e.g. service-layer
+    // validation that bypasses the type provider). Not reached by any route
+    // handler today — kept so future in-handler `.parse()` calls still
+    // produce a sane 400 envelope.
     if (error.name === "ZodError") {
-      app.log.error(error, "Zod validation error");
+      app.log.error(error, "Hand-thrown Zod validation error");
       if (isDev) {
         return reply.status(400).send({ error: "Validation error", details: error.message });
       }
