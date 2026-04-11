@@ -339,6 +339,38 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   { method: "post", path: "/api/notifications/test" },
   // analytics.ts (1)
   { method: "get", path: "/api/analytics/costs" },
+
+  // Phase 7 — setup, secrets, optio, cluster (28 routes)
+  // setup.ts (10)
+  { method: "get", path: "/api/setup/status" },
+  { method: "post", path: "/api/setup/validate/github-token" },
+  { method: "post", path: "/api/setup/validate/gitlab-token" },
+  { method: "post", path: "/api/setup/validate/anthropic-key" },
+  { method: "post", path: "/api/setup/validate/copilot-token" },
+  { method: "post", path: "/api/setup/validate/openai-key" },
+  { method: "post", path: "/api/setup/validate/gemini-key" },
+  { method: "post", path: "/api/setup/repos" },
+  { method: "post", path: "/api/setup/repos/gitlab" },
+  { method: "post", path: "/api/setup/validate/repo" },
+  // secrets.ts (3)
+  { method: "get", path: "/api/secrets" },
+  { method: "post", path: "/api/secrets" },
+  { method: "delete", path: "/api/secrets/{name}" },
+  // optio.ts (3)
+  { method: "get", path: "/api/optio/status" },
+  { method: "get", path: "/api/optio/system-status" },
+  { method: "get", path: "/api/optio/actions" },
+  // optio-settings.ts (2)
+  { method: "get", path: "/api/optio/settings" },
+  { method: "put", path: "/api/optio/settings" },
+  // cluster.ts (7)
+  { method: "get", path: "/api/cluster/overview" },
+  { method: "get", path: "/api/cluster/pods" },
+  { method: "get", path: "/api/cluster/pods/{id}" },
+  { method: "get", path: "/api/cluster/health-events" },
+  { method: "post", path: "/api/cluster/pods/{id}/restart" },
+  { method: "get", path: "/api/cluster/version" },
+  { method: "post", path: "/api/cluster/update" },
 ];
 
 describe("OpenAPI spec — migrated routes are fully documented", () => {
@@ -373,8 +405,8 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
   }
 
   it("migrated routes count matches the sum of completed phases", () => {
-    // Phase 1 = 14, Phase 2 = 18, Phase 3 = 24, Phase 4 = 17, Phase 5 = 49, Phase 6 = 18
-    expect(MIGRATED_ROUTES).toHaveLength(140);
+    // Phases 1–7 totals: 14 + 18 + 24 + 17 + 49 + 18 + 25 = 165
+    expect(MIGRATED_ROUTES).toHaveLength(165);
   });
 
   it("components.schemas contains the Task domain types", () => {
