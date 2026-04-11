@@ -10,6 +10,11 @@ import {
   TaskActivitySubstateSchema,
   WorktreeStateSchema,
   TaskTypeSchema,
+  TaskCommentSchema,
+  TaskMessageSchema,
+  TaskDependencySchema,
+  SubtaskStatusSchema,
+  ActivityItemSchema,
 } from "./task.js";
 
 /**
@@ -36,4 +41,9 @@ export const namedSchemas = {
   TaskActivitySubstate: TaskActivitySubstateSchema,
   WorktreeState: WorktreeStateSchema,
   TaskType: TaskTypeSchema,
+  TaskComment: TaskCommentSchema,
+  TaskMessage: TaskMessageSchema,
+  TaskDependency: TaskDependencySchema,
+  SubtaskStatus: SubtaskStatusSchema,
+  ActivityItem: ActivityItemSchema,
 } as const;

@@ -1,4 +1,6 @@
 import type { FastifyInstance } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
@@ -7,14 +9,43 @@ import * as taskService from "../services/task-service.js";
 import { taskQueue } from "../workers/task-worker.js";
 import { requireRole } from "../plugins/auth.js";
 
-export async function bulkRoutes(app: FastifyInstance) {
-  // Retry all failed tasks — member+
+const RetriedResponseSchema = z
+  .object({
+    retried: z.number().int().describe("Number of tasks actually re-queued"),
+    total: z.number().int().describe("Total number of failed tasks found"),
+  })
+  .describe("Bulk retry result");
+
+const CancelledResponseSchema = z
+  .object({
+    cancelled: z.number().int().describe("Number of tasks actually cancelled"),
+    total: z.number().int().describe("Total number of active (running or queued) tasks found"),
+  })
+  .describe("Bulk cancel result");
+
+export async function bulkRoutes(rawApp: FastifyInstance) {
+  const app = rawApp.withTypeProvider<ZodTypeProvider>();
+
   app.post(
     "/api/tasks/bulk/retry-failed",
-    { preHandler: [requireRole("member")] },
+    {
+      preHandler: [requireRole("member")],
+      schema: {
+        operationId: "bulkRetryFailedTasks",
+        summary: "Retry every failed task in the workspace",
+        description:
+          "Transition every task currently in the `failed` state back to " +
+          "`queued` and re-enqueue it. Tasks that can't transition (e.g. " +
+          "not allowed by the state machine) are skipped. Requires `member` role.",
+        tags: ["Tasks"],
+        response: {
+          200: RetriedResponseSchema,
+        },
+      },
+    },
     async (req, reply) => {
       const workspaceId = req.user?.workspaceId;
-      const conditions = [eq(tasks.state, "failed" as any)];
+      const conditions = [eq(tasks.state, "failed")];
       if (workspaceId) conditions.push(eq(tasks.workspaceId, workspaceId));
       const failedTasks = await db
         .select({ id: tasks.id })
@@ -42,14 +73,26 @@ export async function bulkRoutes(app: FastifyInstance) {
     },
   );
 
-  // Cancel all running/queued tasks — member+
   app.post(
     "/api/tasks/bulk/cancel-active",
-    { preHandler: [requireRole("member")] },
+    {
+      preHandler: [requireRole("member")],
+      schema: {
+        operationId: "bulkCancelActiveTasks",
+        summary: "Cancel every active task in the workspace",
+        description:
+          "Transition every running or queued task to the `cancelled` state. " +
+          "Tasks that can't transition are skipped. Requires `member` role.",
+        tags: ["Tasks"],
+        response: {
+          200: CancelledResponseSchema,
+        },
+      },
+    },
     async (req, reply) => {
       const workspaceId = req.user?.workspaceId;
-      const runningConds = [eq(tasks.state, "running" as any)];
-      const queuedConds = [eq(tasks.state, "queued" as any)];
+      const runningConds = [eq(tasks.state, "running")];
+      const queuedConds = [eq(tasks.state, "queued")];
       if (workspaceId) {
         runningConds.push(eq(tasks.workspaceId, workspaceId));
         queuedConds.push(eq(tasks.workspaceId, workspaceId));

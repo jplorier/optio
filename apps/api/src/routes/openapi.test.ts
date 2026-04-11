@@ -172,6 +172,32 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   { method: "post", path: "/api/tasks/{id}/review" },
   { method: "post", path: "/api/tasks/{id}/run-now" },
   { method: "post", path: "/api/tasks/reorder" },
+
+  // Phase 2 — task ecosystem (19 routes)
+  // subtasks.ts (3)
+  { method: "get", path: "/api/tasks/{id}/subtasks" },
+  { method: "post", path: "/api/tasks/{id}/subtasks" },
+  { method: "get", path: "/api/tasks/{id}/subtasks/status" },
+  // dependencies.ts (4)
+  { method: "get", path: "/api/tasks/{id}/dependencies" },
+  { method: "get", path: "/api/tasks/{id}/dependents" },
+  { method: "post", path: "/api/tasks/{id}/dependencies" },
+  { method: "delete", path: "/api/tasks/{id}/dependencies/{depTaskId}" },
+  // bulk.ts (2)
+  { method: "post", path: "/api/tasks/bulk/retry-failed" },
+  { method: "post", path: "/api/tasks/bulk/cancel-active" },
+  // comments.ts (5)
+  { method: "get", path: "/api/tasks/{id}/comments" },
+  { method: "post", path: "/api/tasks/{id}/comments" },
+  { method: "patch", path: "/api/tasks/{taskId}/comments/{commentId}" },
+  { method: "delete", path: "/api/tasks/{taskId}/comments/{commentId}" },
+  { method: "get", path: "/api/tasks/{id}/activity" },
+  // messages.ts (2)
+  { method: "post", path: "/api/tasks/{id}/message" },
+  { method: "get", path: "/api/tasks/{id}/messages" },
+  // resume.ts (2)
+  { method: "post", path: "/api/tasks/{id}/resume" },
+  { method: "post", path: "/api/tasks/{id}/force-restart" },
 ];
 
 describe("OpenAPI spec — migrated routes are fully documented", () => {
@@ -202,8 +228,9 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
     });
   }
 
-  it("migrated routes produce exactly the 14 expected task entries", () => {
-    expect(MIGRATED_ROUTES).toHaveLength(14);
+  it("migrated routes count matches the sum of completed phases", () => {
+    // Phase 1 = 14, Phase 2 = 18
+    expect(MIGRATED_ROUTES).toHaveLength(32);
   });
 
   it("components.schemas contains the Task domain types", () => {

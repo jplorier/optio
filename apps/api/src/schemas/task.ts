@@ -113,7 +113,7 @@ export const TaskSchema = z
     maxRetries: z.number().int().describe("Maximum retries allowed"),
     priority: z.number().int().describe("Priority — lower numbers run first"),
     parentTaskId: z.string().nullable().describe("Parent task ID when this is a subtask"),
-    taskType: z.string().describe("`coding` | `review`"),
+    taskType: z.string().optional().describe("`coding` | `review` | `step` | `child`"),
     subtaskOrder: z.number().int().nullable().describe("Order within parent's subtasks"),
     blocksParent: z.boolean().describe("Whether this subtask must finish before the parent"),
     worktreeState: z
@@ -240,3 +240,91 @@ export const TaskStatsSchema = z
   })
   .passthrough()
   .describe("Counts of tasks grouped by state");
+
+/** Task comment row (`task_comments` table) enriched with user info. */
+export const TaskCommentSchema = z
+  .object({
+    id: z.string(),
+    taskId: z.string(),
+    userId: z.string().nullable(),
+    content: z.string(),
+    createdAt: z.date(),
+    updatedAt: z.date(),
+    user: z
+      .object({
+        id: z.string(),
+        displayName: z.string(),
+        avatarUrl: z.string().nullable(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough()
+  .describe("Comment on a task, with denormalized user info");
+
+/** Task message row (`task_messages` table). Mid-run user messages. */
+export const TaskMessageSchema = z
+  .object({
+    id: z.string(),
+    taskId: z.string(),
+    userId: z.string().nullable(),
+    content: z.string(),
+    mode: z.string().describe("`soft` | `interrupt`"),
+    workspaceId: z.string().nullable().optional(),
+    createdAt: z.union([z.date(), z.string()]),
+    deliveredAt: z.union([z.date(), z.string()]).nullable(),
+    ackedAt: z.union([z.date(), z.string()]).nullable(),
+    deliveryError: z.string().nullable().optional(),
+    user: z
+      .object({
+        id: z.string(),
+        displayName: z.string(),
+        avatarUrl: z.string().nullable(),
+      })
+      .passthrough()
+      .optional(),
+  })
+  .passthrough()
+  .describe("User message sent mid-run to a running task");
+
+/**
+ * Denormalized dependency row — the shape the dependency service returns
+ * when listing what a task depends on or what depends on a task. Joins
+ * `task_dependencies` to `tasks` and selects a small projection.
+ */
+export const TaskDependencySchema = z
+  .object({
+    id: z.string().describe("Joined task ID"),
+    title: z.string().describe("Joined task title"),
+    state: TaskStateSchema,
+    dependencyId: z.string().describe("ID of the dependency edge row"),
+  })
+  .passthrough()
+  .describe("Dependency/dependent task with the edge row ID");
+
+/** Subtask status envelope returned by `/api/tasks/:id/subtasks/status`. */
+export const SubtaskStatusSchema = z
+  .object({
+    allComplete: z.boolean().describe("True when every blocking subtask has completed"),
+    total: z.number().int().describe("Total number of blocking subtasks"),
+    pending: z.number().int().describe("Blocking subtasks still in `pending` state"),
+    running: z
+      .number()
+      .int()
+      .describe("Blocking subtasks in `running`, `provisioning`, or `queued`"),
+    completed: z.number().int().describe("Blocking subtasks that have completed"),
+    failed: z.number().int().describe("Blocking subtasks that have failed"),
+  })
+  .passthrough()
+  .describe("Aggregated blocking-subtask counts for a parent task");
+
+/** Activity feed item — discriminated union of comments, events, messages. */
+export const ActivityItemSchema = z
+  .object({
+    type: z.string().describe("`comment` | `event` | `message`"),
+    id: z.string(),
+    taskId: z.string(),
+    createdAt: z.union([z.date(), z.string()]),
+  })
+  .passthrough()
+  .describe("Interleaved activity feed item");
