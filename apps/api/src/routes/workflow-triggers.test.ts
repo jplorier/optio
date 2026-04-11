@@ -117,6 +117,21 @@ describe("GET /api/workflows/:id/triggers", () => {
 
     expect(res.statusCode).toBe(404);
   });
+
+  it("allows access to workflow with null workspaceId", async () => {
+    // Workflows created before the workspaces feature (or with auth disabled)
+    // have workspaceId = null and should remain accessible.
+    mockGetWorkflowReturns({ ...mockWorkflow, workspaceId: null });
+    mockListTriggers.mockResolvedValue([mockTriggerData]);
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/api/workflows/wf-1/triggers",
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json().triggers).toHaveLength(1);
+  });
 });
 
 // ─── POST /api/workflows/:id/triggers ───

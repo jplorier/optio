@@ -49,7 +49,9 @@ export async function workflowTriggerRoutes(app: FastifyInstance) {
   app.get("/api/workflows/:id/triggers", async (req, reply) => {
     const { id } = workflowParamsSchema.parse(req.params);
     const workflow = await getWorkflow(id);
-    if (!workflow || workflow.workspaceId !== (req.user?.workspaceId ?? undefined)) {
+    if (!workflow) return reply.status(404).send({ error: "Workflow not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && workflow.workspaceId && workflow.workspaceId !== wsId) {
       return reply.status(404).send({ error: "Workflow not found" });
     }
 
@@ -68,7 +70,9 @@ export async function workflowTriggerRoutes(app: FastifyInstance) {
     const input = parsed.data;
 
     const workflow = await getWorkflow(id);
-    if (!workflow || workflow.workspaceId !== (req.user?.workspaceId ?? undefined)) {
+    if (!workflow) return reply.status(404).send({ error: "Workflow not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && workflow.workspaceId && workflow.workspaceId !== wsId) {
       return reply.status(404).send({ error: "Workflow not found" });
     }
 
@@ -113,7 +117,9 @@ export async function workflowTriggerRoutes(app: FastifyInstance) {
     const input = parsed.data;
 
     const workflow = await getWorkflow(id);
-    if (!workflow || workflow.workspaceId !== (req.user?.workspaceId ?? undefined)) {
+    if (!workflow) return reply.status(404).send({ error: "Workflow not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && workflow.workspaceId && workflow.workspaceId !== wsId) {
       return reply.status(404).send({ error: "Workflow not found" });
     }
 
@@ -148,7 +154,9 @@ export async function workflowTriggerRoutes(app: FastifyInstance) {
     const { id, triggerId } = triggerParamsSchema.parse(req.params);
 
     const workflow = await getWorkflow(id);
-    if (!workflow || workflow.workspaceId !== (req.user?.workspaceId ?? undefined)) {
+    if (!workflow) return reply.status(404).send({ error: "Workflow not found" });
+    const wsId = req.user?.workspaceId;
+    if (wsId && workflow.workspaceId && workflow.workspaceId !== wsId) {
       return reply.status(404).send({ error: "Workflow not found" });
     }
 
