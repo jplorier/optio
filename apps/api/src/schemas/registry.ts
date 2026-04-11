@@ -47,6 +47,13 @@ import {
   TicketProviderSchema,
   SlackConfigSchema,
 } from "./integration.js";
+import {
+  WorkspaceSchema,
+  WorkspaceMemberSchema,
+  NotificationSubscriptionSchema,
+  NotificationPreferencesSchema,
+  CostAnalyticsSchema,
+} from "./workspace.js";
 
 /**
  * Central registry of named schemas surfaced as `components.schemas` in the
@@ -102,4 +109,9 @@ export const namedSchemas = {
   SharedDirectory: SharedDirectorySchema,
   TicketProvider: TicketProviderSchema,
   SlackConfig: SlackConfigSchema,
+  Workspace: WorkspaceSchema,
+  WorkspaceMember: WorkspaceMemberSchema,
+  NotificationSubscription: NotificationSubscriptionSchema,
+  NotificationPreferences: NotificationPreferencesSchema,
+  CostAnalytics: CostAnalyticsSchema,
 } as const;

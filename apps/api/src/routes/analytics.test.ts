@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import { buildRouteTestApp } from "../test-utils/build-route-test-app.js";
 
 // ─── Mocks ───
 
@@ -17,16 +17,7 @@ import { analyticsRoutes } from "./analytics.js";
 // ─── Helpers ───
 
 async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
-  // Decorate request with user (auth middleware adds this)
-  app.decorateRequest("user", undefined as any);
-  app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { workspaceId: "ws-1", workspaceRole: "admin" };
-    done();
-  });
-  await analyticsRoutes(app);
-  await app.ready();
-  return app;
+  return buildRouteTestApp(analyticsRoutes);
 }
 
 describe("GET /api/analytics/costs", () => {

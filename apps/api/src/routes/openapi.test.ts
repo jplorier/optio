@@ -316,6 +316,29 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   // slack.ts (2 — actions webhook is hidden from spec)
   { method: "post", path: "/api/slack/test" },
   { method: "get", path: "/api/slack/status" },
+
+  // Phase 6 — workspaces, notifications, analytics (18 routes)
+  // workspaces.ts (10)
+  { method: "get", path: "/api/workspaces" },
+  { method: "get", path: "/api/workspaces/{id}" },
+  { method: "post", path: "/api/workspaces" },
+  { method: "patch", path: "/api/workspaces/{id}" },
+  { method: "delete", path: "/api/workspaces/{id}" },
+  { method: "post", path: "/api/workspaces/{id}/switch" },
+  { method: "get", path: "/api/workspaces/{id}/members" },
+  { method: "post", path: "/api/workspaces/{id}/members" },
+  { method: "patch", path: "/api/workspaces/{id}/members/{userId}" },
+  { method: "delete", path: "/api/workspaces/{id}/members/{userId}" },
+  // notifications.ts (7)
+  { method: "get", path: "/api/notifications/vapid-public-key" },
+  { method: "post", path: "/api/notifications/subscribe" },
+  { method: "delete", path: "/api/notifications/subscribe" },
+  { method: "get", path: "/api/notifications/subscriptions" },
+  { method: "get", path: "/api/notifications/preferences" },
+  { method: "put", path: "/api/notifications/preferences" },
+  { method: "post", path: "/api/notifications/test" },
+  // analytics.ts (1)
+  { method: "get", path: "/api/analytics/costs" },
 ];
 
 describe("OpenAPI spec — migrated routes are fully documented", () => {
@@ -350,9 +373,8 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
   }
 
   it("migrated routes count matches the sum of completed phases", () => {
-    // Phase 1 = 14, Phase 2 = 18, Phase 3 = 24, Phase 4 = 17, Phase 5 = 49
-    // (49 = 6+7+7+5+5+6+7+4+2; GitHub + Slack inbound webhooks are hidden)
-    expect(MIGRATED_ROUTES).toHaveLength(122);
+    // Phase 1 = 14, Phase 2 = 18, Phase 3 = 24, Phase 4 = 17, Phase 5 = 49, Phase 6 = 18
+    expect(MIGRATED_ROUTES).toHaveLength(140);
   });
 
   it("components.schemas contains the Task domain types", () => {
