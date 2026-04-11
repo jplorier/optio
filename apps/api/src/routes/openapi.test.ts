@@ -371,6 +371,27 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   { method: "post", path: "/api/cluster/pods/{id}/restart" },
   { method: "get", path: "/api/cluster/version" },
   { method: "post", path: "/api/cluster/update" },
+
+  // Phase 8 — auth & GitHub (15 visible routes; 4 hidden)
+  // auth.ts (11 visible of 13 — claude-token is text/plain + hidden, login/callback are 302 + hidden)
+  { method: "get", path: "/api/auth/status" },
+  { method: "get", path: "/api/auth/usage" },
+  { method: "post", path: "/api/auth/refresh" },
+  { method: "get", path: "/api/auth/providers" },
+  { method: "post", path: "/api/auth/exchange-code" },
+  { method: "get", path: "/api/auth/me" },
+  { method: "get", path: "/api/auth/ws-token" },
+  { method: "post", path: "/api/auth/cli/start" },
+  { method: "post", path: "/api/auth/cli/token" },
+  { method: "post", path: "/api/auth/api-keys" },
+  { method: "get", path: "/api/auth/api-keys" },
+  { method: "delete", path: "/api/auth/api-keys/{id}" },
+  { method: "post", path: "/api/auth/logout" },
+  // github-app.ts (1 visible — internal git-credentials is hidden)
+  { method: "get", path: "/api/github-app/status" },
+  // github-token.ts (2)
+  { method: "get", path: "/api/github-token/status" },
+  { method: "post", path: "/api/github-token/rotate" },
 ];
 
 describe("OpenAPI spec — migrated routes are fully documented", () => {
@@ -405,8 +426,10 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
   }
 
   it("migrated routes count matches the sum of completed phases", () => {
-    // Phases 1–7 totals: 14 + 18 + 24 + 17 + 49 + 18 + 25 = 165
-    expect(MIGRATED_ROUTES).toHaveLength(165);
+    // Phases 1–8 totals: 14 + 18 + 24 + 17 + 49 + 18 + 25 + 16 = 181
+    // Phase 8 visible in spec = 13 auth + 1 github-app + 2 github-token = 16
+    // (4 hidden: claude-token, oauth login/callback, internal git-credentials)
+    expect(MIGRATED_ROUTES).toHaveLength(181);
   });
 
   it("components.schemas contains the Task domain types", () => {
