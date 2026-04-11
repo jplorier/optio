@@ -15,7 +15,7 @@ import { workflowRuns } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import * as workflowService from "../services/workflow-service.js";
 import * as workflowPool from "../services/workflow-pool-service.js";
-import { publishEvent } from "../services/event-bus.js";
+import { publishWorkflowRunEvent } from "../services/event-bus.js";
 import { resolveSecretsForTask, retrieveSecretWithFallback } from "../services/secret-service.js";
 import { logger } from "../logger.js";
 import { instrumentWorkerProcessor } from "../telemetry/instrument-worker.js";
@@ -163,7 +163,7 @@ async function transitionRun(
     })
     .where(eq(workflowRuns.id, runId));
 
-  await publishEvent({
+  await publishWorkflowRunEvent({
     type: "workflow_run:state_changed",
     workflowRunId: runId,
     workflowId,
@@ -442,14 +442,12 @@ export function startWorkflowWorker() {
               }
             }
 
-            // Publish log entries as events for live streaming
+            // Persist + publish log entries (historical DB + live WS)
             for (const entry of parsed.entries) {
-              await publishEvent({
-                type: "workflow_run:log",
+              await workflowService.appendWorkflowRunLog({
                 workflowRunId,
                 stream: "stdout",
                 content: entry.content,
-                timestamp: entry.timestamp,
                 logType: entry.type,
                 metadata: entry.metadata,
               });
@@ -461,12 +459,10 @@ export function startWorkflowWorker() {
         if (lineBuf.trim()) {
           const parsed = parseEvent(lineBuf, workflowRunId);
           for (const entry of parsed.entries) {
-            await publishEvent({
-              type: "workflow_run:log",
+            await workflowService.appendWorkflowRunLog({
               workflowRunId,
               stream: "stdout",
               content: entry.content,
-              timestamp: entry.timestamp,
               logType: entry.type,
               metadata: entry.metadata,
             });
