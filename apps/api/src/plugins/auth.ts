@@ -59,7 +59,13 @@ const PUBLIC_ROUTES = new Set([
  * route handler itself (see hmac-auth-service.ts). The Helm ingress also
  * blocks /api/internal/* from public traffic as defense in depth.
  */
-const PUBLIC_PREFIXES = ["/api/webhooks/", "/api/hooks/", "/ws/", "/api/internal/git-credentials"];
+const PUBLIC_PREFIXES = [
+  "/api/webhooks/",
+  "/api/hooks/",
+  "/ws/",
+  "/api/internal/git-credentials",
+  "/docs",
+];
 
 /**
  * Auth routes that are public (OAuth login/callback flows only).

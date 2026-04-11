@@ -5,6 +5,8 @@ import cors from "@fastify/cors";
 import { redisConnectionUrl, redisTlsOptions } from "./services/redis-config.js";
 import formbody from "@fastify/formbody";
 import rateLimit from "@fastify/rate-limit";
+import swagger from "@fastify/swagger";
+import swaggerUi from "@fastify/swagger-ui";
 import websocket from "@fastify/websocket";
 import { healthRoutes } from "./routes/health.js";
 import { taskRoutes } from "./routes/tasks.js";
@@ -99,6 +101,30 @@ export async function buildServer() {
 
   // HTTP metrics plugin (request count, latency by route/method/status)
   await app.register(httpMetricsPlugin);
+
+  // OpenAPI spec generation. Must be registered before routes so it can
+  // collect their definitions. Routes mostly validate with Zod inside
+  // handlers rather than declaring Fastify schemas, so the generated doc
+  // lists paths and methods but does not describe request/response bodies.
+  await app.register(swagger, {
+    openapi: {
+      openapi: "3.0.3",
+      info: {
+        title: "Optio API",
+        description:
+          "Workflow orchestration API for AI coding agents. Most routes validate " +
+          "input with Zod inside handlers, so request/response bodies are not " +
+          "reflected in this spec — see the source for exact shapes.",
+        version: process.env.OPTIO_VERSION ?? "dev",
+      },
+      servers: [{ url: "/", description: "Current host" }],
+    },
+  });
+  await app.register(swaggerUi, {
+    routePrefix: "/docs",
+    uiConfig: { docExpansion: "list", deepLinking: true },
+    staticCSP: true,
+  });
 
   // REST routes
   await app.register(healthRoutes);
