@@ -2,8 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the db client before importing the module under test so the import
 // picks up the mocked chain instead of trying to connect to a real Postgres.
+// Supports both .where().limit() and .where().orderBy().limit() call shapes.
 const limitMock = vi.fn();
-const whereMock = vi.fn(() => ({ limit: limitMock }));
+const orderByMock = vi.fn(() => ({ limit: limitMock }));
+const whereMock = vi.fn(() => ({ limit: limitMock, orderBy: orderByMock }));
 const fromMock = vi.fn(() => ({ where: whereMock }));
 const selectMock = vi.fn(() => ({ from: fromMock }));
 

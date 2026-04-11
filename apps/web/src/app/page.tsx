@@ -30,6 +30,7 @@ export default function OverviewPage() {
     metricsAvailable,
     metricsHistory,
     refresh,
+    refreshUsage,
   } = useDashboardData();
 
   if (loading) {
@@ -133,7 +134,7 @@ export default function OverviewPage() {
         </button>
       )}
 
-      <UsagePanel usage={usage} />
+      <UsagePanel usage={usage} onRefresh={refreshUsage} />
 
       <ClusterSummary
         cluster={cluster}

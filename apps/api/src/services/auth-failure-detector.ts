@@ -1,4 +1,4 @@
-import { and, gt, ilike, or, sql, inArray, eq } from "drizzle-orm";
+import { and, desc, gt, ilike, or, sql, inArray, eq } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { taskLogs, secrets, authEvents } from "../db/schema.js";
 
@@ -40,14 +40,20 @@ export type AuthFailureStatus = {
 /**
  * Get the most recent updatedAt from secrets matching the given names.
  * Returns null if no matching secret exists.
+ *
+ * Multiple rows can match when the same secret name is stored at different
+ * scopes/workspaces (e.g. a global GITHUB_TOKEN plus a workspace-scoped one,
+ * or both CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY). We want the latest
+ * update across all of them so that any fresh save moves the watermark
+ * forward and old failures get excluded from the window.
  */
 async function getSecretWatermark(secretNames: string[]): Promise<Date | null> {
   const rows = await db
     .select({ updatedAt: secrets.updatedAt })
     .from(secrets)
     .where(inArray(secrets.name, secretNames))
+    .orderBy(desc(secrets.updatedAt))
     .limit(1);
-  // If multiple secrets match, use the most recent updatedAt
   if (rows.length === 0) return null;
   return rows[0].updatedAt;
 }

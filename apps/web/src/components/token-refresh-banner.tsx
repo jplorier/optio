@@ -7,7 +7,7 @@ import { toast } from "sonner";
 
 const COPY_COMMAND = `security find-generic-password -s "Claude Code-credentials" -w | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" | pbcopy`;
 
-export function TokenRefreshBanner() {
+export function TokenRefreshBanner({ onSaved }: { onSaved?: () => void | Promise<void> } = {}) {
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -23,6 +23,10 @@ export function TokenRefreshBanner() {
         toast.error(`Token saved but validation failed: ${result.validation.error}`);
       } else {
         toast.success("Token updated — tasks will use it on next run");
+        // Directly trigger a usage refetch so the banner dismisses without
+        // waiting on the WebSocket event or the 5-minute poll. If validation
+        // failed we leave the banner up so the user can try again.
+        await onSaved?.();
       }
       setToken("");
     } catch {
@@ -89,7 +93,7 @@ export function TokenRefreshBanner() {
   );
 }
 
-export function GitHubTokenBanner() {
+export function GitHubTokenBanner({ onSaved }: { onSaved?: () => void | Promise<void> } = {}) {
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -103,6 +107,10 @@ export function GitHubTokenBanner() {
         toast.error(`Token saved but validation failed: ${validation.error}`);
       } else {
         toast.success("GitHub token updated");
+        // Directly trigger a usage refetch so the banner dismisses without
+        // waiting on the WebSocket event or the 5-minute poll. If validation
+        // failed we leave the banner up so the user can try again.
+        await onSaved?.();
       }
       setToken("");
     } catch {
