@@ -144,10 +144,7 @@ describe("tickets route body validation", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    app = Fastify({ logger: false });
-    decorateApp(app);
-    await ticketRoutes(app);
-    await app.ready();
+    app = await buildRouteTestApp(ticketRoutes);
   });
 
   it("rejects POST /api/tickets/providers with missing source", async () => {

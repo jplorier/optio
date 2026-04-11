@@ -35,6 +35,18 @@ import {
   MergeResultSchema,
   IssueSummarySchema,
 } from "./session.js";
+import {
+  RepoSchema,
+  WebhookSchema,
+  WebhookDeliverySchema,
+  McpServerSchema,
+  SkillSchema,
+  PromptTemplateSchema,
+  TaskTemplateSchema,
+  SharedDirectorySchema,
+  TicketProviderSchema,
+  SlackConfigSchema,
+} from "./integration.js";
 
 /**
  * Central registry of named schemas surfaced as `components.schemas` in the
@@ -80,4 +92,14 @@ export const namedSchemas = {
   PrStatus: PrStatusSchema,
   MergeResult: MergeResultSchema,
   IssueSummary: IssueSummarySchema,
+  Repo: RepoSchema,
+  Webhook: WebhookSchema,
+  WebhookDelivery: WebhookDeliverySchema,
+  McpServer: McpServerSchema,
+  Skill: SkillSchema,
+  PromptTemplate: PromptTemplateSchema,
+  TaskTemplate: TaskTemplateSchema,
+  SharedDirectory: SharedDirectorySchema,
+  TicketProvider: TicketProviderSchema,
+  SlackConfig: SlackConfigSchema,
 } as const;

@@ -31,6 +31,13 @@ import { buildServer } from "../server.js";
 // connect at module-load/register time otherwise.
 process.env.OPTIO_SKIP_RATE_LIMIT_REDIS = "1";
 
+type OpenApiResponse = {
+  description?: string;
+  content?: {
+    "application/json"?: { schema?: unknown };
+  };
+};
+
 type OpenApiSpec = {
   openapi: string;
   info: { title: string; version: string; description?: string };
@@ -44,7 +51,7 @@ type OpenApiSpec = {
         summary?: string;
         operationId?: string;
         tags?: string[];
-        responses?: Record<string, { description?: string }>;
+        responses?: Record<string, OpenApiResponse>;
       }
     >
   >;
@@ -249,6 +256,66 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   // issues.ts (2)
   { method: "get", path: "/api/issues" },
   { method: "post", path: "/api/issues/assign" },
+
+  // Phase 5 — repos & integrations (47 routes)
+  // repos.ts (6)
+  { method: "get", path: "/api/repos" },
+  { method: "get", path: "/api/repos/{id}" },
+  { method: "post", path: "/api/repos" },
+  { method: "patch", path: "/api/repos/{id}" },
+  { method: "delete", path: "/api/repos/{id}" },
+  { method: "post", path: "/api/repos/{id}/detect" },
+  // webhooks.ts (7)
+  { method: "get", path: "/api/webhooks" },
+  { method: "get", path: "/api/webhooks/{id}" },
+  { method: "post", path: "/api/webhooks" },
+  { method: "patch", path: "/api/webhooks/{id}" },
+  { method: "delete", path: "/api/webhooks/{id}" },
+  { method: "post", path: "/api/webhooks/{id}/test" },
+  { method: "get", path: "/api/webhooks/{id}/deliveries" },
+  // mcp-servers.ts (7)
+  { method: "get", path: "/api/mcp-servers" },
+  { method: "get", path: "/api/mcp-servers/{id}" },
+  { method: "post", path: "/api/mcp-servers" },
+  { method: "patch", path: "/api/mcp-servers/{id}" },
+  { method: "delete", path: "/api/mcp-servers/{id}" },
+  { method: "get", path: "/api/repos/{id}/mcp-servers" },
+  { method: "post", path: "/api/repos/{id}/mcp-servers" },
+  // skills.ts (5)
+  { method: "get", path: "/api/skills" },
+  { method: "get", path: "/api/skills/{id}" },
+  { method: "post", path: "/api/skills" },
+  { method: "patch", path: "/api/skills/{id}" },
+  { method: "delete", path: "/api/skills/{id}" },
+  // prompt-templates.ts (5)
+  { method: "get", path: "/api/prompt-templates/effective" },
+  { method: "get", path: "/api/prompt-templates/builtin-default" },
+  { method: "get", path: "/api/prompt-templates/review-default" },
+  { method: "get", path: "/api/prompt-templates" },
+  { method: "post", path: "/api/prompt-templates" },
+  // task-templates.ts (6)
+  { method: "get", path: "/api/task-templates" },
+  { method: "get", path: "/api/task-templates/{id}" },
+  { method: "post", path: "/api/task-templates" },
+  { method: "patch", path: "/api/task-templates/{id}" },
+  { method: "delete", path: "/api/task-templates/{id}" },
+  { method: "post", path: "/api/tasks/from-template/{id}" },
+  // shared-directories.ts (7)
+  { method: "get", path: "/api/repos/{id}/shared-directories" },
+  { method: "post", path: "/api/repos/{id}/shared-directories" },
+  { method: "patch", path: "/api/repos/{id}/shared-directories/{dirId}" },
+  { method: "delete", path: "/api/repos/{id}/shared-directories/{dirId}" },
+  { method: "post", path: "/api/repos/{id}/shared-directories/{dirId}/clear" },
+  { method: "post", path: "/api/repos/{id}/shared-directories/{dirId}/usage" },
+  { method: "post", path: "/api/repos/{id}/pods/recycle" },
+  // tickets.ts (4 — GitHub webhook is hidden from spec)
+  { method: "get", path: "/api/tickets/providers" },
+  { method: "post", path: "/api/tickets/sync" },
+  { method: "post", path: "/api/tickets/providers" },
+  { method: "delete", path: "/api/tickets/providers/{id}" },
+  // slack.ts (2 — actions webhook is hidden from spec)
+  { method: "post", path: "/api/slack/test" },
+  { method: "get", path: "/api/slack/status" },
 ];
 
 describe("OpenAPI spec — migrated routes are fully documented", () => {
@@ -263,25 +330,29 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
       );
 
       if (!lenient) {
-        // Must have at least one explicit response schema (not the
-        // "Default Response" fallback). Lenient routes opt out — see
-        // the `lenient` flag in MIGRATED_ROUTES.
+        // Must have at least one response with a schema — either an
+        // explicit non-fallback `description` or a populated
+        // `content.application/json.schema`. Lenient routes opt out —
+        // see the `lenient` flag in MIGRATED_ROUTES.
         expect(op?.responses, `${method.toUpperCase()} ${path} missing responses`).toBeDefined();
         const responses = op?.responses ?? {};
-        const explicit = Object.values(responses).filter(
-          (r) => r.description && r.description !== "Default Response",
-        );
+        const explicit = Object.values(responses).filter((r) => {
+          const hasNonFallbackDescription = r.description && r.description !== "Default Response";
+          const hasSchema = !!r.content?.["application/json"]?.schema;
+          return hasNonFallbackDescription || hasSchema;
+        });
         expect(
           explicit.length,
-          `${method.toUpperCase()} ${path} has only fallback responses`,
+          `${method.toUpperCase()} ${path} has no schematized responses`,
         ).toBeGreaterThan(0);
       }
     });
   }
 
   it("migrated routes count matches the sum of completed phases", () => {
-    // Phase 1 = 14, Phase 2 = 18, Phase 3 = 24, Phase 4 = 17
-    expect(MIGRATED_ROUTES).toHaveLength(73);
+    // Phase 1 = 14, Phase 2 = 18, Phase 3 = 24, Phase 4 = 17, Phase 5 = 49
+    // (49 = 6+7+7+5+5+6+7+4+2; GitHub + Slack inbound webhooks are hidden)
+    expect(MIGRATED_ROUTES).toHaveLength(122);
   });
 
   it("components.schemas contains the Task domain types", () => {

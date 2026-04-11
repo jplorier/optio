@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import { buildRouteTestApp } from "../test-utils/build-route-test-app.js";
 
 // ─── Mocks ───
 
@@ -33,19 +33,12 @@ vi.mock("../workers/task-worker.js", () => ({
 }));
 
 import { taskTemplateRoutes } from "./task-templates.js";
+import { mockTask } from "../test-utils/fixtures.js";
 
 // ─── Helpers ───
 
 async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
-  app.decorateRequest("user", undefined as any);
-  app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { id: "user-1", workspaceId: "ws-1" };
-    done();
-  });
-  await taskTemplateRoutes(app);
-  await app.ready();
-  return app;
+  return buildRouteTestApp(taskTemplateRoutes);
 }
 
 const mockTemplateData = {
@@ -121,14 +114,14 @@ describe("POST /api/task-templates", () => {
     expect(res.statusCode).toBe(201);
   });
 
-  it("rejects missing prompt (Zod throws)", async () => {
+  it("rejects missing prompt (400 from Zod body schema)", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/task-templates",
       payload: { name: "No prompt" },
     });
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(400);
   });
 });
 
@@ -142,7 +135,7 @@ describe("POST /api/tasks/from-template/:id", () => {
 
   it("creates task from template", async () => {
     mockGetTaskTemplate.mockResolvedValue(mockTemplateData);
-    mockCreateTask.mockResolvedValue({ id: "task-1", priority: 100, maxRetries: 1 });
+    mockCreateTask.mockResolvedValue({ ...mockTask });
     mockTransitionTask.mockResolvedValue(undefined);
 
     const res = await app.inject({
