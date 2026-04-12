@@ -21,8 +21,6 @@ import {
   WorkflowRunSchema,
   WorkflowTriggerSchema,
   WorkflowRunLogEntrySchema,
-  ScheduleSchema,
-  ScheduleRunSchema,
   CronValidationResultSchema,
 } from "./workflow.js";
 import {
@@ -42,7 +40,6 @@ import {
   McpServerSchema,
   SkillSchema,
   PromptTemplateSchema,
-  TaskTemplateSchema,
   SharedDirectorySchema,
   TicketProviderSchema,
   SlackConfigSchema,
@@ -88,8 +85,6 @@ export const namedSchemas = {
   WorkflowRun: WorkflowRunSchema,
   WorkflowTrigger: WorkflowTriggerSchema,
   WorkflowRunLogEntry: WorkflowRunLogEntrySchema,
-  Schedule: ScheduleSchema,
-  ScheduleRun: ScheduleRunSchema,
   CronValidationResult: CronValidationResultSchema,
   InteractiveSession: InteractiveSessionSchema,
   SessionModelConfig: SessionModelConfigSchema,
@@ -105,7 +100,6 @@ export const namedSchemas = {
   McpServer: McpServerSchema,
   Skill: SkillSchema,
   PromptTemplate: PromptTemplateSchema,
-  TaskTemplate: TaskTemplateSchema,
   SharedDirectory: SharedDirectorySchema,
   TicketProvider: TicketProviderSchema,
   SlackConfig: SlackConfigSchema,

@@ -14,8 +14,13 @@ export default function IntegrationsPage() {
     <>
       <h1 className="text-3xl font-bold text-text-heading">Integrations</h1>
       <p className="mt-4 text-text-muted leading-relaxed">
-        Optio integrates with external services for task sourcing, notifications, and event
-        delivery. This page covers all supported integrations and how to configure them.
+        Optio integrates with external services for task sourcing, notifications, agent tool access,
+        and event delivery. This page covers task intake integrations and notifications. For giving
+        agents access to external tools at runtime, see{" "}
+        <Link href="/docs/guides/connections" className="text-primary-light hover:underline">
+          Connections
+        </Link>
+        .
       </p>
 
       <h2 className="mt-10 text-2xl font-bold text-text-heading">GitHub Issues</h2>
@@ -459,9 +464,9 @@ export default function IntegrationsPage() {
         query parameter using the same session token as the REST API.
       </p>
 
-      <h2 className="mt-10 text-2xl font-bold text-text-heading">MCP Servers</h2>
+      <h2 className="mt-10 text-2xl font-bold text-text-heading">MCP Servers &amp; Connections</h2>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Optio supports configuring{" "}
+        Optio supports{" "}
         <a
           href="https://modelcontextprotocol.io/"
           className="text-primary-light hover:underline"
@@ -470,11 +475,19 @@ export default function IntegrationsPage() {
         >
           Model Context Protocol (MCP)
         </a>{" "}
-        servers that extend the agent&apos;s capabilities. MCP servers can be configured globally or
-        per repository.
+        servers that extend the agent&apos;s capabilities. The recommended way to manage MCP servers
+        is through{" "}
+        <Link href="/docs/guides/connections" className="text-primary-light hover:underline">
+          Connections
+        </Link>
+        , which provides a catalog of built-in providers (Notion, Slack, Linear, GitHub, PostgreSQL,
+        Sentry), access control per repo and agent type, health checking, and secret management.
+      </p>
+      <p className="mt-3 text-text-muted leading-relaxed">
+        You can also configure MCP servers directly via the API for simpler setups:
       </p>
       <div className="mt-3">
-        <CodeBlock title="API: Add MCP server">{`POST /api/mcp-servers
+        <CodeBlock title="API: Add MCP server directly">{`POST /api/mcp-servers
 {
   "name": "GitHub Tools",
   "command": "npx",
@@ -494,6 +507,16 @@ export default function IntegrationsPage() {
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         {[
           {
+            title: "Connections",
+            href: "/docs/guides/connections",
+            description: "Give agents access to external services via MCP",
+          },
+          {
+            title: "Workflows",
+            href: "/docs/guides/workflows",
+            description: "Reusable agent jobs with triggers",
+          },
+          {
             title: "Creating Tasks",
             href: "/docs/guides/creating-tasks",
             description: "Create tasks from issues and tickets",
@@ -502,16 +525,6 @@ export default function IntegrationsPage() {
             title: "Configuration",
             href: "/docs/configuration",
             description: "Environment variables and settings",
-          },
-          {
-            title: "API Reference",
-            href: "/docs/api-reference",
-            description: "Full REST API documentation",
-          },
-          {
-            title: "Deployment",
-            href: "/docs/deployment",
-            description: "Production deployment guide",
           },
         ].map((item) => (
           <Link

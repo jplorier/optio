@@ -2,8 +2,7 @@ import { z } from "zod";
 
 /**
  * Integration domain schemas — repos, webhooks, skills, MCP servers,
- * prompt templates, task templates, shared directories, ticket providers,
- * Slack.
+ * prompt templates, shared directories, ticket providers, Slack.
  *
  * These types are intentionally loose (`z.record(z.unknown())`) for
  * response bodies so the serializer doesn't reject the many enrichment
@@ -31,8 +30,6 @@ export const McpServerSchema = z.unknown().describe("MCP server registration");
 export const SkillSchema = z.unknown().describe("Skill catalog entry");
 
 export const PromptTemplateSchema = z.unknown().describe("Prompt template row");
-
-export const TaskTemplateSchema = z.unknown().describe("Task template row");
 
 export const SharedDirectorySchema = z
   .unknown()

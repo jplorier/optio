@@ -225,16 +225,6 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   { method: "post", path: "/api/workflows/{id}/triggers" },
   { method: "patch", path: "/api/workflows/{id}/triggers/{triggerId}" },
   { method: "delete", path: "/api/workflows/{id}/triggers/{triggerId}" },
-  // schedules.ts (8)
-  { method: "get", path: "/api/schedules" },
-  { method: "get", path: "/api/schedules/{id}" },
-  { method: "post", path: "/api/schedules" },
-  { method: "patch", path: "/api/schedules/{id}" },
-  { method: "delete", path: "/api/schedules/{id}" },
-  { method: "post", path: "/api/schedules/{id}/trigger" },
-  { method: "get", path: "/api/schedules/{id}/runs" },
-  { method: "post", path: "/api/schedules/validate-cron" },
-
   // Phase 4 — sessions, PR reviews, issues (17 routes)
   // sessions.ts (7)
   { method: "get", path: "/api/sessions" },
@@ -293,13 +283,6 @@ const MIGRATED_ROUTES: MigratedRoute[] = [
   { method: "get", path: "/api/prompt-templates/review-default" },
   { method: "get", path: "/api/prompt-templates" },
   { method: "post", path: "/api/prompt-templates" },
-  // task-templates.ts (6)
-  { method: "get", path: "/api/task-templates" },
-  { method: "get", path: "/api/task-templates/{id}" },
-  { method: "post", path: "/api/task-templates" },
-  { method: "patch", path: "/api/task-templates/{id}" },
-  { method: "delete", path: "/api/task-templates/{id}" },
-  { method: "post", path: "/api/tasks/from-template/{id}" },
   // shared-directories.ts (7)
   { method: "get", path: "/api/repos/{id}/shared-directories" },
   { method: "post", path: "/api/repos/{id}/shared-directories" },
@@ -432,12 +415,9 @@ describe("OpenAPI spec — migrated routes are fully documented", () => {
   }
 
   it("migrated routes count matches the sum of completed phases", () => {
-    // All phases complete: 14 + 18 + 24 + 17 + 49 + 18 + 25 + 16 + 2 = 183
-    // 185 total route+method combos exist; 4 are hidden from the spec
-    // (claude-token text/plain, oauth login/callback redirects, internal
-    // git-credentials HMAC endpoint), leaving 181 visible. The two Phase 9
-    // additions (health, hook) bring the smoke-test total to 183.
-    expect(MIGRATED_ROUTES).toHaveLength(183);
+    // Removed 14 routes (8 schedule + 6 task-template) that were redundant
+    // with agent workflows. 183 - 14 = 169.
+    expect(MIGRATED_ROUTES).toHaveLength(169);
   });
 
   it("components.schemas contains the Task domain types", () => {

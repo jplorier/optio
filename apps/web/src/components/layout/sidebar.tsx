@@ -14,8 +14,6 @@ import {
   Zap,
   DollarSign,
   Terminal,
-  Clock,
-  FileText,
   Bot,
   GitBranch,
   Webhook,
@@ -28,14 +26,12 @@ import { useOptioChatStore } from "@/hooks/use-optio-chat";
 const MAIN_NAV = [
   { href: "/", label: "Overview", icon: LayoutDashboard },
   { href: "/tasks", label: "Tasks", icon: ListTodo },
+  { href: "/workflows", label: "Agent Workflows", icon: GitBranch },
   { href: "/sessions", label: "Sessions", icon: Terminal },
   { href: "/repos", label: "Repos", icon: FolderGit2 },
   { href: "/connections", label: "Connections", icon: Plug },
   { href: "/cluster", label: "Cluster", icon: Server },
   { href: "/costs", label: "Costs", icon: DollarSign },
-  { href: "/workflows", label: "Agent Workflows", icon: GitBranch },
-  { href: "/schedules", label: "Schedules", icon: Clock },
-  { href: "/templates", label: "Templates", icon: FileText },
 ];
 
 const SECONDARY_NAV = [

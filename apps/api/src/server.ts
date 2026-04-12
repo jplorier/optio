@@ -33,11 +33,11 @@ import { subtaskRoutes } from "./routes/subtasks.js";
 import { analyticsRoutes } from "./routes/analytics.js";
 import { webhookRoutes } from "./routes/webhooks.js";
 import { sessionRoutes } from "./routes/sessions.js";
-import { scheduleRoutes } from "./routes/schedules.js";
+
 import { commentRoutes } from "./routes/comments.js";
 import { messageRoutes } from "./routes/messages.js";
 import { slackRoutes } from "./routes/slack.js";
-import { taskTemplateRoutes } from "./routes/task-templates.js";
+
 import { workspaceRoutes } from "./routes/workspaces.js";
 import { dependencyRoutes } from "./routes/dependencies.js";
 import { workflowTriggerRoutes } from "./routes/workflow-triggers.js";
@@ -176,7 +176,7 @@ export async function buildServer() {
           description:
             "Core task lifecycle: create, list, retrieve, retry, cancel, subtasks, dependencies, bulk operations, comments, and messages.",
         },
-        { name: "Workflows", description: "Workflow templates, runs, triggers, and schedules." },
+        { name: "Workflows", description: "Workflow templates, runs, and triggers." },
         {
           name: "Sessions",
           description:
@@ -186,7 +186,7 @@ export async function buildServer() {
         {
           name: "Repos & Integrations",
           description:
-            "Repositories, webhooks, MCP servers, skills, prompt templates, task templates, shared directories, ticket providers, Slack.",
+            "Repositories, webhooks, MCP servers, skills, prompt templates, shared directories, ticket providers, Slack.",
         },
         { name: "Cluster", description: "Pods, pod health, runtime cluster operations." },
         { name: "Workspaces", description: "Workspaces, memberships, notifications." },
@@ -264,11 +264,9 @@ export async function buildServer() {
   await app.register(analyticsRoutes);
   await app.register(webhookRoutes);
   await app.register(sessionRoutes);
-  await app.register(scheduleRoutes);
   await app.register(commentRoutes);
   await app.register(messageRoutes);
   await app.register(slackRoutes);
-  await app.register(taskTemplateRoutes);
   await app.register(workspaceRoutes);
   await app.register(dependencyRoutes);
   await app.register(workflowTriggerRoutes);

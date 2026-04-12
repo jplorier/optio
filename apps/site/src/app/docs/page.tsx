@@ -21,7 +21,7 @@ const sectionDescriptions: Record<string, string> = {
   "Core Concepts":
     "Understand the architecture — pod-per-repo isolation, worktree concurrency, and the task state machine.",
   Guides:
-    "Step-by-step walkthroughs for creating tasks, connecting repos, configuring review agents, building workflows, and integrating with external tools.",
+    "Step-by-step walkthroughs for creating tasks, connecting repos, configuring review agents, building workflows, setting up connections, and integrating with external tools.",
   Reference: "API endpoints, production deployment guide, and contributor documentation.",
 };
 
@@ -30,9 +30,9 @@ export default function DocsIndex() {
     <>
       <h1 className="text-3xl font-bold text-text-heading">Documentation</h1>
       <p className="mt-4 text-text-muted leading-relaxed">
-        Optio is a workflow orchestration system for AI coding agents. It takes tasks from GitHub
-        Issues, Linear, Jira, or Notion, runs agents in isolated Kubernetes pods, and drives them
-        through CI, code review, and merge — automatically.
+        Optio is a workflow orchestration system for AI coding agents. It drives tickets to merged
+        PRs with autonomous feedback loops, runs reusable agent workflows on schedules and webhooks,
+        and connects agents to external services like Notion, Slack, Linear, and PostgreSQL via MCP.
       </p>
       <p className="mt-3 text-text-muted leading-relaxed">
         New here?{" "}

@@ -24,18 +24,19 @@ export default function ArchitecturePage() {
       <ul className="mt-4 list-disc pl-5 space-y-2 text-[14px] text-text-muted">
         <li>
           <strong className="text-text-heading">Web UI (Next.js)</strong> — Dashboard with live log
-          streaming, task management, repo configuration, cost analytics, and cluster monitoring.
-          Communicates with the API via REST and WebSocket.
+          streaming, task management, workflow management, connection catalog, repo configuration,
+          cost analytics, and cluster monitoring. Communicates with the API via REST and WebSocket.
         </li>
         <li>
           <strong className="text-text-heading">API Server (Fastify)</strong> — Orchestration brain.
-          Manages task queue (BullMQ), PR watching, health monitoring, ticket sync, and pod
-          lifecycle. Stores state in PostgreSQL, uses Redis for job queue and pub/sub.
+          Manages task queue, workflow engine, connection service, PR watching, health monitoring,
+          ticket sync, and pod lifecycle. Stores state in PostgreSQL, uses Redis for job queue and
+          pub/sub.
         </li>
         <li>
-          <strong className="text-text-heading">Kubernetes</strong> — Execution environment. Each
-          repository gets its own long-lived pod. Tasks run in isolated git worktrees within those
-          pods.
+          <strong className="text-text-heading">Kubernetes</strong> — Execution environment. Repo
+          pods run tasks in isolated git worktrees. Workflow pods run standalone agent jobs.
+          Connections inject MCP servers into pods at runtime.
         </li>
       </ul>
 
@@ -120,8 +121,18 @@ export default function ArchitecturePage() {
       </p>
       <ul className="mt-3 list-disc pl-5 space-y-2 text-[14px] text-text-muted">
         <li>
-          <strong className="text-text-heading">Task Worker</strong> — Processes the job queue.
-          Handles concurrency limits, pod provisioning, agent execution, and log streaming.
+          <strong className="text-text-heading">Task Worker</strong> — Processes the task job queue.
+          Handles concurrency limits, pod provisioning, connection injection, agent execution, and
+          log streaming.
+        </li>
+        <li>
+          <strong className="text-text-heading">Workflow Worker</strong> — Processes workflow runs.
+          Provisions isolated pods, renders prompt templates with parameters, executes agents, and
+          handles auto-retry with exponential backoff.
+        </li>
+        <li>
+          <strong className="text-text-heading">Workflow Trigger Worker</strong> — Evaluates
+          schedule triggers every 60 seconds and fires due cron-based workflows.
         </li>
         <li>
           <strong className="text-text-heading">PR Watcher</strong> — Polls open PRs every 30
@@ -139,10 +150,6 @@ export default function ArchitecturePage() {
         <li>
           <strong className="text-text-heading">Webhook Worker</strong> — Delivers outgoing webhook
           events.
-        </li>
-        <li>
-          <strong className="text-text-heading">Schedule Worker</strong> — Executes cron-based
-          scheduled tasks.
         </li>
       </ul>
 

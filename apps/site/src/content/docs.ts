@@ -32,6 +32,7 @@ export const docsNav: DocSection[] = [
       { title: "Review Agents", href: "/docs/guides/review-agents" },
       { title: "Integrations", href: "/docs/guides/integrations" },
       { title: "Workflows", href: "/docs/guides/workflows" },
+      { title: "Connections", href: "/docs/guides/connections" },
     ],
   },
   {

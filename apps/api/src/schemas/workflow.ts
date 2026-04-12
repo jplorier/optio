@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 /**
- * Workflow, workflow run, workflow trigger, and schedule domain schemas.
+ * Workflow, workflow run, and workflow trigger domain schemas.
  *
- * These mirror the `workflow_templates`, `workflow_runs`, `workflow_triggers`,
- * and `task_schedules` Drizzle tables. Timestamp columns use `z.date()` so
+ * These mirror the `workflow_templates`, `workflow_runs`, and `workflow_triggers`
+ * Drizzle tables. Timestamp columns use `z.date()` so
  * Drizzle row objects pass the serializer; `zod-to-json-schema` renders them
  * as `{ type: "string", format: "date-time" }` in the spec.
  *
@@ -101,38 +101,6 @@ export const WorkflowRunLogEntrySchema = z
   })
   .passthrough()
   .describe("Log entry emitted during a workflow run");
-
-export const ScheduleSchema = z
-  .object({
-    id: z.string(),
-    name: z.string(),
-    description: z.string().nullable(),
-    cronExpression: z.string().describe("Cron expression in unix format"),
-    enabled: z.boolean(),
-    taskConfig: z
-      .record(z.unknown())
-      .describe("Template task definition to instantiate on trigger"),
-    workspaceId: z.string().nullable(),
-    createdBy: z.string().nullable(),
-    nextRunAt: z.date().nullable(),
-    lastRunAt: z.date().nullable(),
-    createdAt: z.date(),
-    updatedAt: z.date(),
-  })
-  .passthrough()
-  .describe("Scheduled task: cron expression + task template");
-
-export const ScheduleRunSchema = z
-  .object({
-    id: z.string(),
-    scheduleId: z.string(),
-    taskId: z.string().nullable(),
-    status: z.string().describe("`created` | `failed`"),
-    error: z.string().nullable().describe("Error message if status is `failed`"),
-    triggeredAt: z.date(),
-  })
-  .passthrough()
-  .describe("Historical record of a schedule firing");
 
 export const CronValidationResultSchema = z
   .object({
