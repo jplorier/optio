@@ -25,9 +25,9 @@ import {
   Wrench,
   Plug,
   ChevronDown,
+  ChevronRight,
   Eye,
   EyeOff,
-  CheckCircle2,
   Zap,
 } from "lucide-react";
 
@@ -98,16 +98,15 @@ export default function ConnectionsPage() {
 
   // UI
   const [loading, setLoading] = useState(true);
-  const [showSetup, setShowSetup] = useState(false);
+  const [showForm, setShowForm] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<any | null>(null);
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
+  const [showAccessControl, setShowAccessControl] = useState(false);
 
   // Form state
   const [formName, setFormName] = useState("");
   const [formConfig, setFormConfig] = useState<Record<string, string>>({});
-  const [formRepoScope, setFormRepoScope] = useState<"all" | "select">("all");
   const [formSelectedRepos, setFormSelectedRepos] = useState<string[]>([]);
-  const [formAgentScope, setFormAgentScope] = useState<"all" | "select">("all");
   const [formSelectedAgents, setFormSelectedAgents] = useState<string[]>([]);
   const [formPermission, setFormPermission] = useState("read");
   const [submitting, setSubmitting] = useState(false);
@@ -143,19 +142,17 @@ export default function ConnectionsPage() {
   const resetForm = () => {
     setFormName("");
     setFormConfig({});
-    setFormRepoScope("all");
     setFormSelectedRepos([]);
-    setFormAgentScope("all");
     setFormSelectedAgents([]);
     setFormPermission("read");
     setSecretVisible({});
+    setShowAccessControl(false);
   };
 
-  const openSetup = (provider: any) => {
+  const openForm = (provider: any) => {
     setSelectedProvider(provider);
     resetForm();
     setFormName(provider.name ? `My ${provider.name}` : "");
-    // Initialize config fields from schema
     if (provider.configSchema?.properties) {
       const init: Record<string, string> = {};
       for (const key of Object.keys(provider.configSchema.properties)) {
@@ -163,17 +160,16 @@ export default function ConnectionsPage() {
       }
       setFormConfig(init);
     }
-    setShowSetup(true);
+    setShowForm(true);
   };
 
-  const closeSetup = () => {
-    setShowSetup(false);
+  const closeForm = () => {
+    setShowForm(false);
     setSelectedProvider(null);
     resetForm();
   };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCreate = async () => {
     if (!selectedProvider) return;
     if (!formName.trim()) {
       toast.error("Connection name is required");
@@ -185,16 +181,16 @@ export default function ConnectionsPage() {
         providerId: selectedProvider.id,
         name: formName.trim(),
         config: formConfig,
-        repoScope: formRepoScope,
-        repoIds: formRepoScope === "select" ? formSelectedRepos : undefined,
-        agentScope: formAgentScope,
-        agentTypes: formAgentScope === "select" ? formSelectedAgents : undefined,
-        permission: formPermission,
+        assignments: [
+          {
+            repoId: null,
+            agentTypes: formSelectedAgents.length > 0 ? formSelectedAgents : [],
+            permission: formPermission,
+          },
+        ],
       });
-      toast.success("Connection created", {
-        description: `${formName.trim()} is ready to use.`,
-      });
-      closeSetup();
+      toast.success(`${formName.trim()} created`);
+      closeForm();
       loadData();
     } catch (err) {
       toast.error("Failed to create connection", {
@@ -259,76 +255,6 @@ export default function ConnectionsPage() {
     : groupedProviders;
 
   // ---------------------------------------------------------------------------
-  // Render helpers
-  // ---------------------------------------------------------------------------
-
-  const renderScopeInfo = (conn: any) => {
-    const parts: string[] = [];
-    if (conn.repoScope === "all" || !conn.repoIds?.length) {
-      parts.push("All repos");
-    } else {
-      const names = conn.repoIds
-        .map((id: string) => repos.find((r) => r.id === id)?.fullName ?? id)
-        .slice(0, 2);
-      parts.push(
-        names.join(", ") + (conn.repoIds.length > 2 ? ` +${conn.repoIds.length - 2}` : ""),
-      );
-    }
-    if (conn.permission) {
-      const perm = PERMISSION_LEVELS.find((p) => p.value === conn.permission);
-      if (perm) parts.push(perm.label);
-    }
-    return parts.join(" · ");
-  };
-
-  const renderConfigFields = () => {
-    if (!selectedProvider?.configSchema?.properties) return null;
-    const props = selectedProvider.configSchema.properties as Record<string, any>;
-    const required: string[] = selectedProvider.configSchema.required ?? [];
-
-    return Object.entries(props).map(([key, schema]) => {
-      const isSecret = schema.format === "secret";
-      const isRequired = required.includes(key);
-      const fieldId = `config-${key}`;
-      const visible = secretVisible[key] ?? false;
-
-      return (
-        <div key={key}>
-          <label htmlFor={fieldId} className="block text-sm text-text-muted mb-1">
-            {schema.title ?? key}
-            {isRequired && <span className="text-red-400 ml-0.5">*</span>}
-          </label>
-          {schema.description && (
-            <p className="text-xs text-text-muted/70 mb-1.5">{schema.description}</p>
-          )}
-          <div className="relative">
-            <input
-              id={fieldId}
-              type={isSecret && !visible ? "password" : "text"}
-              required={isRequired}
-              value={formConfig[key] ?? ""}
-              onChange={(e) => setFormConfig((prev) => ({ ...prev, [key]: e.target.value }))}
-              placeholder={schema.placeholder ?? ""}
-              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 pr-9"
-              autoComplete={isSecret ? "new-password" : "off"}
-            />
-            {isSecret && (
-              <button
-                type="button"
-                onClick={() => setSecretVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
-                tabIndex={-1}
-              >
-                {visible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            )}
-          </div>
-        </div>
-      );
-    });
-  };
-
-  // ---------------------------------------------------------------------------
   // Loading state
   // ---------------------------------------------------------------------------
 
@@ -344,15 +270,16 @@ export default function ConnectionsPage() {
   }
 
   // ---------------------------------------------------------------------------
-  // Main render
+  // Render
   // ---------------------------------------------------------------------------
+
+  const configProps = selectedProvider?.configSchema?.properties as Record<string, any> | undefined;
+  const configRequired: string[] = selectedProvider?.configSchema?.required ?? [];
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="space-y-6">
-        {/* ----------------------------------------------------------------- */}
-        {/* Header                                                            */}
-        {/* ----------------------------------------------------------------- */}
+        {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-text">Connections</h1>
@@ -360,28 +287,322 @@ export default function ConnectionsPage() {
               Connect external services and tools to your agents
             </p>
           </div>
-          <button
-            onClick={() => {
-              if (providers.length > 0) {
-                openSetup(providers[0]);
-              } else {
-                setShowSetup(true);
-              }
-            }}
-            className="flex items-center gap-2 bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Add Connection
-          </button>
+          {!showForm && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="flex items-center gap-2 bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-medium transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Add Connection
+            </button>
+          )}
         </div>
 
-        {/* ----------------------------------------------------------------- */}
-        {/* Active Connections                                                 */}
-        {/* ----------------------------------------------------------------- */}
+        {/* ── Inline add form ──────────────────────────────────────────── */}
+        {showForm && (
+          <section className="space-y-3 p-3 rounded-lg border border-primary/30 bg-primary/5">
+            {/* Provider selector (compact grid) */}
+            {!selectedProvider && (
+              <>
+                <label className="block text-xs text-text-muted mb-1">Choose a provider</label>
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                  {providers.map((p) => {
+                    const Ic = getProviderIcon(p.icon);
+                    return (
+                      <button
+                        key={p.id}
+                        onClick={() => openForm(p)}
+                        className="flex items-center gap-2 p-2 rounded-lg border border-border bg-bg hover:border-primary/40 hover:bg-bg-hover text-left text-xs transition-colors"
+                      >
+                        <Ic className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
+                        <span className="truncate">{p.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    onClick={closeForm}
+                    className="px-3 py-1.5 rounded-md text-xs text-text-muted hover:bg-bg-hover"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Form fields (shown once provider is picked) */}
+            {selectedProvider && (
+              <>
+                {/* Provider badge + change link */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {(() => {
+                      const Ic = getProviderIcon(selectedProvider.icon);
+                      return <Ic className="w-4 h-4 text-primary" />;
+                    })()}
+                    <span className="text-xs font-medium text-text">{selectedProvider.name}</span>
+                    {selectedProvider.description && (
+                      <span className="text-xs text-text-muted hidden sm:inline">
+                        — {selectedProvider.description}
+                      </span>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedProvider(null);
+                      resetForm();
+                    }}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    Change
+                  </button>
+                </div>
+
+                {/* Name + first config field (2-col grid) */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-text-muted mb-1">
+                      Connection name <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={formName}
+                      onChange={(e) => setFormName(e.target.value)}
+                      placeholder="e.g. Production Notion"
+                      className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                    />
+                  </div>
+                  {/* Render first config field inline if there's exactly 1 or 2 */}
+                  {configProps &&
+                    Object.entries(configProps)
+                      .slice(0, 1)
+                      .map(([key, schema]) => {
+                        const isSecret = schema.format === "secret";
+                        const visible = secretVisible[key] ?? false;
+                        return (
+                          <div key={key}>
+                            <label className="block text-xs text-text-muted mb-1">
+                              {schema.title ?? key}
+                              {configRequired.includes(key) && (
+                                <span className="text-red-400 ml-0.5">*</span>
+                              )}
+                            </label>
+                            <div className="relative">
+                              <input
+                                type={isSecret && !visible ? "password" : "text"}
+                                value={formConfig[key] ?? ""}
+                                onChange={(e) =>
+                                  setFormConfig((prev) => ({ ...prev, [key]: e.target.value }))
+                                }
+                                placeholder={schema.placeholder ?? ""}
+                                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 pr-9"
+                                autoComplete={isSecret ? "new-password" : "off"}
+                              />
+                              {isSecret && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setSecretVisible((prev) => ({ ...prev, [key]: !prev[key] }))
+                                  }
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
+                                  tabIndex={-1}
+                                >
+                                  {visible ? (
+                                    <EyeOff className="w-3.5 h-3.5" />
+                                  ) : (
+                                    <Eye className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                </div>
+
+                {/* Remaining config fields (full width, if more than 1 field) */}
+                {configProps &&
+                  Object.entries(configProps)
+                    .slice(1)
+                    .map(([key, schema]) => {
+                      const isSecret = schema.format === "secret";
+                      const visible = secretVisible[key] ?? false;
+                      return (
+                        <div key={key}>
+                          <label className="block text-xs text-text-muted mb-1">
+                            {schema.title ?? key}
+                            {configRequired.includes(key) && (
+                              <span className="text-red-400 ml-0.5">*</span>
+                            )}
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={isSecret && !visible ? "password" : "text"}
+                              value={formConfig[key] ?? ""}
+                              onChange={(e) =>
+                                setFormConfig((prev) => ({ ...prev, [key]: e.target.value }))
+                              }
+                              placeholder={schema.placeholder ?? ""}
+                              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 pr-9"
+                              autoComplete={isSecret ? "new-password" : "off"}
+                            />
+                            {isSecret && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setSecretVisible((prev) => ({ ...prev, [key]: !prev[key] }))
+                                }
+                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text"
+                                tabIndex={-1}
+                              >
+                                {visible ? (
+                                  <EyeOff className="w-3.5 h-3.5" />
+                                ) : (
+                                  <Eye className="w-3.5 h-3.5" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                {/* Collapsible access control */}
+                <button
+                  type="button"
+                  onClick={() => setShowAccessControl(!showAccessControl)}
+                  className="flex items-center gap-1 text-xs text-text-muted hover:text-text transition-colors"
+                >
+                  {showAccessControl ? (
+                    <ChevronDown className="w-3 h-3" />
+                  ) : (
+                    <ChevronRight className="w-3 h-3" />
+                  )}
+                  Access control
+                  <span className="text-text-muted/50 ml-1">
+                    (All repos · All agents ·{" "}
+                    {PERMISSION_LEVELS.find((p) => p.value === formPermission)?.label ??
+                      "Read only"}
+                    )
+                  </span>
+                </button>
+
+                {showAccessControl && (
+                  <div className="space-y-3 pl-4 border-l-2 border-border/50">
+                    {/* Permission */}
+                    <div>
+                      <label className="block text-xs text-text-muted mb-1">Permission</label>
+                      <div className="relative">
+                        <select
+                          value={formPermission}
+                          onChange={(e) => setFormPermission(e.target.value)}
+                          className="w-full appearance-none px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 pr-8"
+                        >
+                          {PERMISSION_LEVELS.map((p) => (
+                            <option key={p.value} value={p.value}>
+                              {p.label}
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
+                      </div>
+                    </div>
+
+                    {/* Agents */}
+                    <div>
+                      <label className="block text-xs text-text-muted mb-1">
+                        Limit to specific agents{" "}
+                        <span className="text-text-muted/50">(leave empty for all)</span>
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {AGENT_TYPES.map((agent) => (
+                          <button
+                            key={agent.value}
+                            type="button"
+                            onClick={() =>
+                              setFormSelectedAgents((prev) =>
+                                prev.includes(agent.value)
+                                  ? prev.filter((v) => v !== agent.value)
+                                  : [...prev, agent.value],
+                              )
+                            }
+                            className={cn(
+                              "px-2.5 py-1 rounded-md text-xs border transition-colors",
+                              formSelectedAgents.includes(agent.value)
+                                ? "border-primary/50 bg-primary/10 text-primary"
+                                : "border-border text-text-muted hover:bg-bg-hover",
+                            )}
+                          >
+                            {agent.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Repos */}
+                    {repos.length > 0 && (
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">
+                          Limit to specific repos{" "}
+                          <span className="text-text-muted/50">(leave empty for all)</span>
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {repos.map((repo) => (
+                            <button
+                              key={repo.id}
+                              type="button"
+                              onClick={() =>
+                                setFormSelectedRepos((prev) =>
+                                  prev.includes(repo.id)
+                                    ? prev.filter((id) => id !== repo.id)
+                                    : [...prev, repo.id],
+                                )
+                              }
+                              className={cn(
+                                "px-2.5 py-1 rounded-md text-xs border transition-colors truncate max-w-48",
+                                formSelectedRepos.includes(repo.id)
+                                  ? "border-primary/50 bg-primary/10 text-primary"
+                                  : "border-border text-text-muted hover:bg-bg-hover",
+                              )}
+                            >
+                              {repo.fullName ?? repo.repoUrl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Actions */}
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={closeForm}
+                    className="px-3 py-1.5 rounded-md text-xs text-text-muted hover:bg-bg-hover"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreate}
+                    disabled={submitting}
+                    className="px-3 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {submitting && <Loader2 className="w-3 h-3 animate-spin" />}
+                    {submitting ? "Saving..." : "Add Connection"}
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
+        {/* ── Active Connections ────────────────────────────────────────── */}
         {connections.length > 0 && (
-          <div>
-            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-              Active Connections
+          <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+              Active Connections ({connections.length})
             </h2>
             <div className="space-y-2">
               {connections.map((conn) => {
@@ -390,55 +611,45 @@ export default function ConnectionsPage() {
                 return (
                   <div
                     key={conn.id}
-                    className="flex items-center justify-between p-4 bg-bg-secondary border border-border rounded-xl hover:border-border/80 transition-colors"
+                    className="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {/* Status dot */}
-                      <span
-                        className={cn(
-                          "w-2 h-2 rounded-full flex-shrink-0",
-                          statusColor(conn.status),
+                    <span
+                      className={cn("w-2 h-2 rounded-full flex-shrink-0", statusColor(conn.status))}
+                    />
+                    <IconComp className="w-4 h-4 text-text-muted flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-text truncate">{conn.name}</span>
+                        {provider && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-hover text-text-muted">
+                            {provider.name}
+                          </span>
                         )}
-                      />
-                      {/* Icon */}
-                      <IconComp className="w-5 h-5 text-text-muted flex-shrink-0" />
-                      {/* Info */}
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-text truncate">
-                            {conn.name}
+                        {!conn.enabled && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-hover text-text-muted">
+                            disabled
                           </span>
-                          {provider && (
-                            <span className="text-xs text-text-muted">{provider.name}</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-xs text-text-muted truncate">
-                            {renderScopeInfo(conn)}
-                          </span>
-                          {conn.lastCheckedAt && (
-                            <span className="text-xs text-text-muted/60">
-                              Checked {formatRelativeTime(conn.lastCheckedAt)}
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
+                      {conn.lastCheckedAt && (
+                        <span className="text-[11px] text-text-muted/60">
+                          Checked {formatRelativeTime(conn.lastCheckedAt)}
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-4">
-                      {/* Test button */}
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
                       <button
                         onClick={() => handleTest(conn.id)}
                         disabled={testing === conn.id}
-                        className="px-2.5 py-1 text-xs border border-border text-text-muted hover:bg-bg-hover rounded-lg transition-colors disabled:opacity-50"
+                        className="px-2 py-1 text-xs border border-border text-text-muted hover:bg-bg-hover rounded-md transition-colors disabled:opacity-50"
                         title="Test connection"
                       >
                         {testing === conn.id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <Loader2 className="w-3 h-3 animate-spin" />
                         ) : (
-                          <Zap className="w-3.5 h-3.5" />
+                          <Zap className="w-3 h-3" />
                         )}
                       </button>
-                      {/* Enable/disable toggle */}
                       <button
                         onClick={() => handleToggle(conn)}
                         className={cn(
@@ -454,40 +665,36 @@ export default function ConnectionsPage() {
                           )}
                         />
                       </button>
-                      {/* Delete */}
                       <button
                         onClick={() => handleDelete(conn)}
-                        className="p-1.5 rounded-md hover:bg-error/10 text-text-muted hover:text-error transition-colors"
-                        title="Delete connection"
+                        className="p-1 rounded-md hover:bg-error/10 text-text-muted hover:text-error transition-colors"
+                        title="Delete"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </div>
                 );
               })}
             </div>
-          </div>
+          </section>
         )}
 
-        {/* Separator */}
-        {connections.length > 0 && <div className="my-3 mx-1 border-t border-border/50" />}
-
-        {/* ----------------------------------------------------------------- */}
-        {/* Provider Catalog                                                   */}
-        {/* ----------------------------------------------------------------- */}
-        <div>
-          <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-3">
-            Available Providers
-          </h2>
+        {/* ── Provider Catalog ─────────────────────────────────────────── */}
+        <section className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xs font-semibold text-text-muted uppercase tracking-wider">
+              Available Providers
+            </h2>
+          </div>
 
           {/* Category filter tabs */}
           {groupedProviders.length > 1 && (
-            <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
               <button
                 onClick={() => setActiveCategoryFilter(null)}
                 className={cn(
-                  "px-3 py-1 rounded-lg text-xs font-medium transition-colors",
+                  "px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
                   activeCategoryFilter === null
                     ? "bg-primary text-white"
                     : "border border-border text-text-muted hover:bg-bg-hover",
@@ -506,7 +713,7 @@ export default function ConnectionsPage() {
                       setActiveCategoryFilter(activeCategoryFilter === cat.id ? null : cat.id)
                     }
                     className={cn(
-                      "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-colors",
+                      "flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors",
                       activeCategoryFilter === cat.id
                         ? "bg-primary text-white"
                         : "border border-border text-text-muted hover:bg-bg-hover",
@@ -520,7 +727,7 @@ export default function ConnectionsPage() {
             </div>
           )}
 
-          {/* Provider grid by category */}
+          {/* Empty state */}
           {filteredGroups.length === 0 && providers.length === 0 && (
             <div className="text-center py-12 text-text-muted border border-dashed border-border rounded-lg">
               <Plug className="w-8 h-8 mx-auto mb-2 opacity-50" />
@@ -529,31 +736,32 @@ export default function ConnectionsPage() {
             </div>
           )}
 
+          {/* Provider grid by category */}
           {filteredGroups.map((group) => {
             const CatIcon = group.icon;
             return (
-              <div key={group.id} className="mb-6">
+              <div key={group.id}>
                 <div className="flex items-center gap-2 mb-2">
                   <CatIcon className="w-3.5 h-3.5 text-text-muted" />
                   <span className="text-xs font-semibold text-text-muted uppercase tracking-wider">
                     {group.label}
                   </span>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-4">
                   {group.providers.map((provider) => {
                     const IconComp = getProviderIcon(provider.icon);
                     return (
                       <button
                         key={provider.id}
-                        onClick={() => openSetup(provider)}
-                        className="flex items-start gap-3 p-4 bg-bg-secondary border border-border rounded-xl hover:border-primary/40 hover:bg-bg-hover transition-colors text-left group"
+                        onClick={() => openForm(provider)}
+                        className="flex items-center gap-3 p-3 border border-border rounded-lg bg-bg hover:border-primary/40 hover:bg-bg-hover transition-colors text-left group"
                       >
-                        <div className="p-2 rounded-lg bg-bg border border-border group-hover:border-primary/30 transition-colors">
-                          <IconComp className="w-5 h-5 text-text-muted group-hover:text-primary transition-colors" />
+                        <div className="p-1.5 rounded-md bg-bg-hover border border-border/50 group-hover:border-primary/30 transition-colors">
+                          <IconComp className="w-4 h-4 text-text-muted group-hover:text-primary transition-colors" />
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-medium text-text">{provider.name}</p>
-                          <p className="text-xs text-text-muted mt-0.5 line-clamp-2">
+                          <p className="text-[11px] text-text-muted mt-0.5 line-clamp-1">
                             {provider.description ?? "Connect to " + provider.name}
                           </p>
                         </div>
@@ -564,269 +772,8 @@ export default function ConnectionsPage() {
               </div>
             );
           })}
-        </div>
+        </section>
       </div>
-
-      {/* =================================================================== */}
-      {/* Setup Dialog                                                         */}
-      {/* =================================================================== */}
-      {showSetup && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className="bg-bg-secondary border border-border rounded-2xl shadow-xl max-w-lg w-full mx-4 max-h-[85vh] overflow-y-auto p-6">
-            {/* Dialog header */}
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-3">
-                {selectedProvider && (
-                  <>
-                    {(() => {
-                      const IconComp = getProviderIcon(selectedProvider.icon);
-                      return (
-                        <div className="p-2 rounded-lg bg-bg border border-border">
-                          <IconComp className="w-5 h-5 text-primary" />
-                        </div>
-                      );
-                    })()}
-                    <div>
-                      <h2 className="text-lg font-semibold text-text">{selectedProvider.name}</h2>
-                      <p className="text-xs text-text-muted">Set up a new connection</p>
-                    </div>
-                  </>
-                )}
-                {!selectedProvider && (
-                  <h2 className="text-lg font-semibold text-text">Add Connection</h2>
-                )}
-              </div>
-              <button
-                onClick={closeSetup}
-                className="p-1.5 rounded-md hover:bg-bg-hover text-text-muted hover:text-text transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Provider picker (if opened without a provider) */}
-            {!selectedProvider && providers.length > 0 && (
-              <div className="space-y-2 mb-4">
-                <p className="text-sm text-text-muted">Choose a provider to connect:</p>
-                <div className="grid grid-cols-2 gap-2 max-h-60 overflow-y-auto">
-                  {providers.map((p) => {
-                    const IconComp = getProviderIcon(p.icon);
-                    return (
-                      <button
-                        key={p.id}
-                        onClick={() => openSetup(p)}
-                        className="flex items-center gap-2 p-3 rounded-lg border border-border hover:border-primary/40 hover:bg-bg-hover text-left text-sm transition-colors"
-                      >
-                        <IconComp className="w-4 h-4 text-text-muted" />
-                        {p.name}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Form (shown when a provider is selected) */}
-            {selectedProvider && (
-              <form onSubmit={handleCreate} className="space-y-4">
-                {/* Description & capabilities */}
-                {(selectedProvider.description || selectedProvider.capabilities?.length > 0) && (
-                  <div className="rounded-lg bg-bg border border-border/50 p-3">
-                    {selectedProvider.description && (
-                      <p className="text-sm text-text-muted">{selectedProvider.description}</p>
-                    )}
-                    {selectedProvider.capabilities?.length > 0 && (
-                      <ul className="mt-2 space-y-1">
-                        {selectedProvider.capabilities.map((cap: string, i: number) => (
-                          <li key={i} className="flex items-center gap-2 text-xs text-text-muted">
-                            <CheckCircle2 className="w-3 h-3 text-green-500 flex-shrink-0" />
-                            {cap}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                )}
-
-                {/* Connection name */}
-                <div>
-                  <label htmlFor="conn-name" className="block text-sm text-text-muted mb-1">
-                    Connection name <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    id="conn-name"
-                    type="text"
-                    required
-                    value={formName}
-                    onChange={(e) => setFormName(e.target.value)}
-                    placeholder="e.g. Production Notion"
-                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
-                  />
-                </div>
-
-                {/* Dynamic config fields */}
-                {renderConfigFields()}
-
-                <div className="my-3 mx-1 border-t border-border/50" />
-
-                {/* Access control: repos */}
-                <div>
-                  <label className="block text-sm font-medium text-text mb-2">
-                    Repository access
-                  </label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer text-sm text-text-muted">
-                      <input
-                        type="radio"
-                        name="repoScope"
-                        checked={formRepoScope === "all"}
-                        onChange={() => setFormRepoScope("all")}
-                        className="accent-primary"
-                      />
-                      All repos
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer text-sm text-text-muted">
-                      <input
-                        type="radio"
-                        name="repoScope"
-                        checked={formRepoScope === "select"}
-                        onChange={() => setFormRepoScope("select")}
-                        className="accent-primary"
-                      />
-                      Select repos...
-                    </label>
-                    {formRepoScope === "select" && (
-                      <div className="ml-6 space-y-1.5 max-h-36 overflow-y-auto rounded-lg border border-border/50 bg-bg p-2">
-                        {repos.length === 0 && (
-                          <p className="text-xs text-text-muted py-1">No repos configured yet.</p>
-                        )}
-                        {repos.map((repo) => (
-                          <label
-                            key={repo.id}
-                            className="flex items-center gap-2 cursor-pointer text-xs text-text-muted hover:text-text"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formSelectedRepos.includes(repo.id)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setFormSelectedRepos((prev) => [...prev, repo.id]);
-                                } else {
-                                  setFormSelectedRepos((prev) =>
-                                    prev.filter((id) => id !== repo.id),
-                                  );
-                                }
-                              }}
-                              className="accent-primary rounded"
-                            />
-                            {repo.fullName ?? repo.repoUrl}
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Access control: agents */}
-                <div>
-                  <label className="block text-sm font-medium text-text mb-2">Agent access</label>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 cursor-pointer text-sm text-text-muted">
-                      <input
-                        type="radio"
-                        name="agentScope"
-                        checked={formAgentScope === "all"}
-                        onChange={() => setFormAgentScope("all")}
-                        className="accent-primary"
-                      />
-                      All agents
-                    </label>
-                    <label className="flex items-center gap-2 cursor-pointer text-sm text-text-muted">
-                      <input
-                        type="radio"
-                        name="agentScope"
-                        checked={formAgentScope === "select"}
-                        onChange={() => setFormAgentScope("select")}
-                        className="accent-primary"
-                      />
-                      Select agents...
-                    </label>
-                    {formAgentScope === "select" && (
-                      <div className="ml-6 space-y-1.5 rounded-lg border border-border/50 bg-bg p-2">
-                        {AGENT_TYPES.map((agent) => (
-                          <label
-                            key={agent.value}
-                            className="flex items-center gap-2 cursor-pointer text-xs text-text-muted hover:text-text"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={formSelectedAgents.includes(agent.value)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setFormSelectedAgents((prev) => [...prev, agent.value]);
-                                } else {
-                                  setFormSelectedAgents((prev) =>
-                                    prev.filter((v) => v !== agent.value),
-                                  );
-                                }
-                              }}
-                              className="accent-primary rounded"
-                            />
-                            {agent.label}
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Permission level */}
-                <div>
-                  <label htmlFor="permission" className="block text-sm font-medium text-text mb-2">
-                    Permission level
-                  </label>
-                  <div className="relative">
-                    <select
-                      id="permission"
-                      value={formPermission}
-                      onChange={(e) => setFormPermission(e.target.value)}
-                      className="w-full appearance-none px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 pr-8"
-                    >
-                      {PERMISSION_LEVELS.map((p) => (
-                        <option key={p.value} value={p.value}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
-                  </div>
-                </div>
-
-                <div className="my-3 mx-1 border-t border-border/50" />
-
-                {/* Actions */}
-                <div className="flex items-center justify-end gap-2 pt-1">
-                  <button
-                    type="button"
-                    onClick={closeSetup}
-                    className="border border-border text-text-muted hover:bg-bg-hover rounded-lg px-4 py-2 text-sm transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 flex items-center gap-2"
-                  >
-                    {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                    {submitting ? "Saving..." : "Save Connection"}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }
