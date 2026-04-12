@@ -107,6 +107,11 @@ async function main() {
   const applied = await migrateSafe(db, migrationsPath);
   logger.info({ applied }, "Database migrations applied");
 
+  // Seed built-in connection providers (idempotent upsert)
+  const { seedBuiltInProviders } = await import("./services/connection-service.js");
+  await seedBuiltInProviders();
+  logger.info("Built-in connection providers seeded");
+
   // Register observable metric gauge callbacks now that DB is available.
   // OTel SDK invokes callbacks synchronously at export time, so we maintain
   // cached counts refreshed every 30s.

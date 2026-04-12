@@ -19,6 +19,7 @@ import {
   Bot,
   GitBranch,
   Webhook,
+  Plug,
 } from "lucide-react";
 import { UserMenu } from "./user-menu";
 import { WorkspaceSwitcher } from "./workspace-switcher";
@@ -29,6 +30,7 @@ const MAIN_NAV = [
   { href: "/tasks", label: "Tasks", icon: ListTodo },
   { href: "/sessions", label: "Sessions", icon: Terminal },
   { href: "/repos", label: "Repos", icon: FolderGit2 },
+  { href: "/connections", label: "Connections", icon: Plug },
   { href: "/cluster", label: "Cluster", icon: Server },
   { href: "/costs", label: "Costs", icon: DollarSign },
   { href: "/workflows", label: "Workflows", icon: GitBranch },

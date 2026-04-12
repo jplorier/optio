@@ -1266,4 +1266,40 @@ export const api = {
     const qs = limit ? `?limit=${limit}` : "";
     return request<{ deliveries: any[] }>(`/api/webhooks/${id}/deliveries${qs}`);
   },
+
+  // Connections (external service integrations for agents)
+  listConnectionProviders: () => request<{ providers: any[] }>("/api/connection-providers"),
+
+  listConnections: () => request<{ connections: any[] }>("/api/connections"),
+
+  createConnection: (data: Record<string, unknown>) =>
+    request<{ connection: any }>("/api/connections", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateConnection: (id: string, data: Record<string, unknown>) =>
+    request<{ connection: any }>(`/api/connections/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteConnection: (id: string) => request<void>(`/api/connections/${id}`, { method: "DELETE" }),
+
+  testConnection: (id: string) =>
+    request<{ status: string; message: string }>(`/api/connections/${id}/test`, {
+      method: "POST",
+    }),
+
+  createConnectionAssignment: (connectionId: string, data: Record<string, unknown>) =>
+    request<{ assignment: any }>(`/api/connections/${connectionId}/assignments`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  listRepoConnections: (repoId: string) =>
+    request<{ connections: any[] }>(`/api/repos/${repoId}/connections`),
+
+  deleteConnectionAssignment: (id: string) =>
+    request<void>(`/api/connection-assignments/${id}`, { method: "DELETE" }),
 };

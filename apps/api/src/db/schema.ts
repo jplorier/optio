@@ -665,6 +665,92 @@ export const workflowRunLogs = pgTable(
   ],
 );
 
+// ── Connection Providers (catalog) ──────────────────────────────────────────
+
+export const connectionProviders = pgTable(
+  "connection_providers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    slug: text("slug").notNull(), // e.g. "notion", "postgres", "custom-mcp"
+    name: text("name").notNull(), // "Notion"
+    description: text("description"),
+    icon: text("icon"), // SVG string or URL
+    category: text("category").notNull().default("custom"), // "productivity" | "database" | "cloud" | "knowledge" | "custom"
+    type: text("type").notNull().default("mcp"), // "mcp" | "http" | "database"
+    configSchema: jsonb("config_schema").$type<Record<string, unknown>>(), // JSON Schema for setup form
+    requiredSecrets: jsonb("required_secrets").$type<string[]>().default([]),
+    mcpConfig: jsonb("mcp_config").$type<{
+      command: string;
+      args: string[];
+      envMapping: Record<string, string>; // maps config fields to env vars
+      installCommand?: string;
+    }>(),
+    capabilities: jsonb("capabilities").$type<string[]>().default([]),
+    docsUrl: text("docs_url"),
+    builtIn: boolean("built_in").notNull().default(false),
+    workspaceId: uuid("workspace_id"), // null for built-in providers
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("connection_providers_slug_ws_key").on(table.slug, table.workspaceId),
+    index("connection_providers_category_idx").on(table.category),
+    index("connection_providers_workspace_id_idx").on(table.workspaceId),
+  ],
+);
+
+// ── Connections (configured instances) ─────────────────────────────────────
+
+export const connectionStatusEnum = pgEnum("connection_status", ["healthy", "error", "unknown"]);
+
+export const connections = pgTable(
+  "connections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(), // "Our Notion Workspace"
+    providerId: uuid("provider_id")
+      .notNull()
+      .references(() => connectionProviders.id, { onDelete: "cascade" }),
+    config: jsonb("config").$type<Record<string, unknown>>(), // provider-specific config
+    scope: text("scope").notNull().default("global"), // "global" or repo URL
+    repoUrl: text("repo_url"), // null = global
+    workspaceId: uuid("workspace_id"),
+    enabled: boolean("enabled").notNull().default(true),
+    status: connectionStatusEnum("status").notNull().default("unknown"),
+    statusMessage: text("status_message"),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("connections_provider_id_idx").on(table.providerId),
+    index("connections_workspace_id_idx").on(table.workspaceId),
+    index("connections_scope_idx").on(table.scope),
+  ],
+);
+
+// ── Connection Assignments (which repos get which connections) ──────────────
+
+export const connectionAssignments = pgTable(
+  "connection_assignments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => connections.id, { onDelete: "cascade" }),
+    repoId: uuid("repo_id").references(() => repos.id, { onDelete: "cascade" }), // null = all repos
+    agentTypes: jsonb("agent_types").$type<string[]>().default([]), // empty = all agents
+    permission: text("permission").notNull().default("read"), // "read" | "write" | "full"
+    enabled: boolean("enabled").notNull().default(true),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("connection_assignments_conn_repo_key").on(table.connectionId, table.repoId),
+    index("connection_assignments_connection_id_idx").on(table.connectionId),
+    index("connection_assignments_repo_id_idx").on(table.repoId),
+  ],
+);
+
 // ── MCP Servers ──────────────────────────────────────────────────────────────
 
 export const mcpServers = pgTable(

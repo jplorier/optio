@@ -414,6 +414,13 @@
       "when": 1775855324000,
       "tag": "1775855324_openclaw_repo_columns",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1775971783000,
+      "tag": "1775971783_connections",
+      "breakpoints": true
     }
   ]
 }

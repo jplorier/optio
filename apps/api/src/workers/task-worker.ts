@@ -373,6 +373,148 @@ export function startTaskWorker() {
           log.info({ count: mcpServers.length }, "Injecting MCP servers");
         }
 
+        // ── Connection-based MCP injection ─────────────────────────
+        const { getConnectionsForTask } = await import("../services/connection-service.js");
+        const resolvedConnections = await getConnectionsForTask(
+          task.repoUrl,
+          task.agentType,
+          taskWorkspaceId,
+        );
+        if (resolvedConnections.length > 0) {
+          // Build MCP entries from connections and merge into .mcp.json
+          const connectionMcpEntries: Record<
+            string,
+            { command: string; args: string[]; env?: Record<string, string> }
+          > = {};
+          const connectionInstallCommands: string[] = [];
+
+          for (const conn of resolvedConnections) {
+            if (!conn.mcpConfig) continue;
+            const mcpCfg = conn.mcpConfig;
+
+            // Resolve env vars by mapping config values through envMapping
+            const resolvedEnv: Record<string, string> = {};
+            for (const [envKey, configKey] of Object.entries(mcpCfg.envMapping)) {
+              const value = conn.config[configKey];
+              if (typeof value === "string") {
+                // Check if it's a secret reference
+                if (value.startsWith("${{") && value.endsWith("}}")) {
+                  const secretName = value.slice(3, -2).trim();
+                  try {
+                    let secretValue: string;
+                    try {
+                      secretValue = await retrieveSecretWithFallback(
+                        secretName,
+                        task.repoUrl,
+                        taskWorkspaceId,
+                      );
+                    } catch {
+                      secretValue = await retrieveSecretWithFallback(
+                        secretName,
+                        "global",
+                        taskWorkspaceId,
+                      );
+                    }
+                    resolvedEnv[envKey] = secretValue;
+                  } catch {
+                    // Secret not found — try the config key as a secret name directly
+                    try {
+                      resolvedEnv[envKey] = await retrieveSecretWithFallback(
+                        configKey,
+                        task.repoUrl,
+                        taskWorkspaceId,
+                      );
+                    } catch {
+                      try {
+                        resolvedEnv[envKey] = await retrieveSecretWithFallback(
+                          configKey,
+                          "global",
+                          taskWorkspaceId,
+                        );
+                      } catch {
+                        // Leave unresolved
+                      }
+                    }
+                  }
+                } else {
+                  resolvedEnv[envKey] = value;
+                }
+              } else {
+                // Try resolving the config key as a secret name
+                try {
+                  resolvedEnv[envKey] = await retrieveSecretWithFallback(
+                    configKey,
+                    task.repoUrl,
+                    taskWorkspaceId,
+                  );
+                } catch {
+                  try {
+                    resolvedEnv[envKey] = await retrieveSecretWithFallback(
+                      configKey,
+                      "global",
+                      taskWorkspaceId,
+                    );
+                  } catch {
+                    // Leave unresolved
+                  }
+                }
+              }
+            }
+
+            // Resolve template args (e.g., {{ROOT_PATH}})
+            const resolvedArgs = mcpCfg.args.map((arg) =>
+              arg.replace(/\{\{(\w+)\}\}/g, (_match, key) => {
+                const val = conn.config[key];
+                return typeof val === "string" ? val : arg;
+              }),
+            );
+
+            connectionMcpEntries[conn.connectionName] = {
+              command: mcpCfg.command,
+              args: resolvedArgs,
+              ...(Object.keys(resolvedEnv).length > 0 ? { env: resolvedEnv } : {}),
+            };
+
+            if (mcpCfg.installCommand) {
+              connectionInstallCommands.push(mcpCfg.installCommand);
+            }
+          }
+
+          if (Object.keys(connectionMcpEntries).length > 0) {
+            // Find existing .mcp.json in setup files and merge, or create new
+            agentConfig.setupFiles = agentConfig.setupFiles ?? [];
+            const existingIdx = agentConfig.setupFiles.findIndex((f) => f.path === ".mcp.json");
+
+            if (existingIdx >= 0) {
+              // Merge with existing MCP servers
+              const existing = JSON.parse(agentConfig.setupFiles[existingIdx].content);
+              existing.mcpServers = {
+                ...existing.mcpServers,
+                ...connectionMcpEntries,
+              };
+              agentConfig.setupFiles[existingIdx].content = JSON.stringify(existing, null, 2);
+            } else {
+              agentConfig.setupFiles.push({
+                path: ".mcp.json",
+                content: JSON.stringify({ mcpServers: connectionMcpEntries }, null, 2),
+              });
+            }
+
+            // Merge install commands
+            if (connectionInstallCommands.length > 0) {
+              const existing = agentConfig.env.OPTIO_MCP_INSTALL_COMMANDS;
+              agentConfig.env.OPTIO_MCP_INSTALL_COMMANDS = existing
+                ? `${existing} && ${connectionInstallCommands.join(" && ")}`
+                : connectionInstallCommands.join(" && ");
+            }
+
+            log.info(
+              { count: Object.keys(connectionMcpEntries).length },
+              "Injecting connections as MCP servers",
+            );
+          }
+        }
+
         const skills = await getSkillsForTask(task.repoUrl, taskWorkspaceId);
         if (skills.length > 0) {
           agentConfig.setupFiles = agentConfig.setupFiles ?? [];

@@ -42,6 +42,7 @@ import { workspaceRoutes } from "./routes/workspaces.js";
 import { dependencyRoutes } from "./routes/dependencies.js";
 import { workflowTriggerRoutes } from "./routes/workflow-triggers.js";
 import { mcpServerRoutes } from "./routes/mcp-servers.js";
+import { connectionRoutes } from "./routes/connections.js";
 import { skillRoutes } from "./routes/skills.js";
 import { workflowRoutes } from "./routes/workflows.js";
 import { sharedDirectoryRoutes } from "./routes/shared-directories.js";
@@ -272,6 +273,7 @@ export async function buildServer() {
   await app.register(dependencyRoutes);
   await app.register(workflowTriggerRoutes);
   await app.register(mcpServerRoutes);
+  await app.register(connectionRoutes);
   await app.register(skillRoutes);
   await app.register(workflowRoutes);
   await app.register(sharedDirectoryRoutes);

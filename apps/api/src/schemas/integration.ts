@@ -41,3 +41,9 @@ export const SharedDirectorySchema = z
 export const TicketProviderSchema = z.unknown().describe("Ticket provider connection config");
 
 export const SlackConfigSchema = z.unknown().describe("Per-repo Slack notification configuration");
+
+export const ConnectionProviderSchema = z.unknown().describe("Connection provider catalog entry");
+
+export const ConnectionSchema = z.unknown().describe("Configured connection instance");
+
+export const ConnectionAssignmentSchema = z.unknown().describe("Connection-to-repo assignment");
