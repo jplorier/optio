@@ -20,7 +20,7 @@ import { parseCopilotEvent } from "../services/copilot-event-parser.js";
 import { parseOpenCodeEvent } from "../services/opencode-event-parser.js";
 import { parseGeminiEvent } from "../services/gemini-event-parser.js";
 import { parseOpenClawEvent } from "../services/openclaw-event-parser.js";
-import { checkExistingPr } from "../services/pr-detection-service.js";
+import { checkExistingPr, type ExistingPr } from "../services/pr-detection-service.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
 import { eq, sql } from "drizzle-orm";
@@ -1081,26 +1081,60 @@ export function startTaskWorker() {
             log.info("Task completed");
           }
         } else {
-          await repoPool.updateWorktreeState(taskId, "dirty");
-          await taskService.transitionTask(taskId, TaskState.FAILED, "agent_failure", result.error);
-          log.warn({ error: result.error }, "Task failed");
+          // Before failing, check if a PR was actually created via the API.
+          // Log-based PR detection can miss URLs (e.g. agent created a PR but
+          // the URL wasn't in stdout, or repo validation filtered it out).
+          let apiFallbackPr: ExistingPr | null = null;
+          if (!isReviewTask) {
+            try {
+              apiFallbackPr = await checkExistingPr(task.repoUrl, taskId, taskWorkspaceId);
+            } catch {
+              // Non-fatal — proceed with failure
+            }
+          }
 
-          // Publish global alert for auth failures so the UI can show a banner
-          if (
-            result.error &&
-            /OAuth token|authentication_failed|token.*expired/i.test(result.error)
-          ) {
-            // Invalidate the usage cache so subsequent API calls return fresh data
-            // instead of stale "healthy" results that hide the expiration
-            const { invalidateUsageCache } = await import("../services/auth-service.js");
-            invalidateUsageCache();
+          if (apiFallbackPr) {
+            // PR exists despite agent reporting failure — go to pr_opened so the
+            // PR watcher can track CI/review and auto-resume works correctly.
+            await taskService.updateTaskPr(taskId, apiFallbackPr.url);
+            await repoPool.updateWorktreeState(taskId, "preserved");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.PR_OPENED,
+              "pr_detected_api",
+              apiFallbackPr.url,
+            );
+            log.info(
+              { prUrl: apiFallbackPr.url, inferredError: result.error },
+              "PR found via API fallback — transitioning to pr_opened instead of failed",
+            );
+          } else {
+            await repoPool.updateWorktreeState(taskId, "dirty");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.FAILED,
+              "agent_failure",
+              result.error,
+            );
+            log.warn({ error: result.error }, "Task failed");
 
-            await publishEvent({
-              type: "auth:failed",
-              message:
-                "Claude Code OAuth token has expired. Re-authenticate with 'claude auth login' and retry failed tasks.",
-              timestamp: new Date().toISOString(),
-            });
+            // Publish global alert for auth failures so the UI can show a banner
+            if (
+              result.error &&
+              /OAuth token|authentication_failed|token.*expired/i.test(result.error)
+            ) {
+              // Invalidate the usage cache so subsequent API calls return fresh data
+              // instead of stale "healthy" results that hide the expiration
+              const { invalidateUsageCache } = await import("../services/auth-service.js");
+              invalidateUsageCache();
+
+              await publishEvent({
+                type: "auth:failed",
+                message:
+                  "Claude Code OAuth token has expired. Re-authenticate with 'claude auth login' and retry failed tasks.",
+                timestamp: new Date().toISOString(),
+              });
+            }
           }
         }
 
@@ -1670,11 +1704,35 @@ export function inferExitCode(agentType: string, logs: string): number {
     }
     case "claude-code":
     default: {
-      // Claude: check for is_error in result event, or fatal errors
-      const hasResultError = logs.includes('"is_error":true');
-      const hasFatalError =
-        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
-      return hasResultError || hasFatalError ? 1 : 0;
+      // Parse the NDJSON result event (authoritative source for Claude's exit status).
+      // Raw string matching on the full logs produces false positives — e.g. "fatal:"
+      // appearing in git command output that Claude ran and handled gracefully.
+      for (const line of logs.split("\n")) {
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === "result") {
+            return ev.is_error ? 1 : 0;
+          }
+        } catch {
+          // Not JSON — skip
+        }
+      }
+      // No result event found — agent likely crashed before emitting one.
+      // Fall back to heuristic checks on raw (non-JSON) output only.
+      for (const line of logs.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          JSON.parse(trimmed);
+          continue; // Skip JSON lines — errors inside tool output are not fatal
+        } catch {
+          // Raw output line — check for fatal errors
+          if (trimmed.includes("fatal:") || trimmed.includes("Error: authentication_failed")) {
+            return 1;
+          }
+        }
+      }
+      return 0;
     }
   }
 }
