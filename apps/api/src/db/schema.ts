@@ -216,6 +216,7 @@ export const authEvents = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tokenType: text("token_type").notNull(), // "claude" | "github"
+    source: text("source"), // e.g. "pr-watcher", "ticket-sync:<providerId>"
     errorMessage: text("error_message").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

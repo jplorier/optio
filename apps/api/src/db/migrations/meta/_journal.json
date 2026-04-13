@@ -428,6 +428,13 @@
       "when": 1776045285000,
       "tag": "1776045285_statefulset_job_support",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1776050234000,
+      "tag": "1776050234_auth_events_source",
+      "breakpoints": true
     }
   ]
 }

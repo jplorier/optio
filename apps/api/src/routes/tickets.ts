@@ -1,14 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { and, eq, gt, sql } from "drizzle-orm";
 import { Readable } from "node:stream";
 import { db } from "../db/client.js";
-import { ticketProviders } from "../db/schema.js";
+import { ticketProviders, authEvents } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
 import * as taskService from "../services/task-service.js";
 import { syncAllTickets } from "../services/ticket-sync-service.js";
 import { storeSecret, deleteSecret } from "../services/secret-service.js";
+import { RECENT_AUTH_FAILURE_WINDOW_MS } from "../services/auth-failure-detector.js";
 import { isSsrfSafeUrl, isSsrfSafeHost } from "../utils/ssrf.js";
 import { HmacSha256Verifier } from "../services/crypto/signer.js";
 import { logger } from "../logger.js";
@@ -105,6 +106,7 @@ const WebhookOkResponseSchema = z.object({ ok: z.boolean() });
 
 /** Fields per provider type that contain credentials and must be encrypted. */
 const SENSITIVE_PROVIDER_FIELDS: Record<string, string[]> = {
+  github: ["token"],
   jira: ["apiToken"],
   linear: ["apiKey"],
   notion: ["apiKey"],
@@ -153,7 +155,24 @@ export async function ticketRoutes(rawApp: FastifyInstance) {
     },
     async (_req, reply) => {
       const providers = await db.select().from(ticketProviders);
-      reply.send({ providers });
+
+      // Annotate each provider with recent auth failure status
+      const cutoff = new Date(Date.now() - RECENT_AUTH_FAILURE_WINDOW_MS);
+      const failedRows = await db
+        .selectDistinct({ source: authEvents.source })
+        .from(authEvents)
+        .where(
+          and(gt(authEvents.createdAt, cutoff), sql`${authEvents.source} LIKE 'ticket-sync:%'`),
+        );
+      const failedIds = new Set(
+        failedRows.map((r) => r.source?.replace("ticket-sync:", "")).filter(Boolean),
+      );
+      const annotated = providers.map((p) => ({
+        ...p,
+        hasAuthFailure: failedIds.has(p.id),
+      }));
+
+      reply.send({ providers: annotated });
     },
   );
 

@@ -473,7 +473,7 @@ export function startPrWatcherWorker() {
           } catch (err: any) {
             logger.warn({ err, taskId: task.id }, "Failed to check PR status");
             if (err?.status === 401 || err?.message?.includes("Bad credentials")) {
-              recordAuthEvent("github", err.message ?? "GitHub 401").catch(() => {});
+              recordAuthEvent("github", err.message ?? "GitHub 401", "pr-watcher").catch(() => {});
             }
           }
         }

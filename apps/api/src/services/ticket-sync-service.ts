@@ -160,7 +160,11 @@ export async function syncAllTickets(): Promise<number> {
         "Failed to sync tickets from provider",
       );
       if (err?.status === 401 || err?.message?.includes("Bad credentials")) {
-        recordAuthEvent("github", err.message ?? "GitHub 401").catch(() => {});
+        recordAuthEvent(
+          "github",
+          err.message ?? "GitHub 401",
+          `ticket-sync:${providerConfig.id}`,
+        ).catch(() => {});
       }
     }
   }

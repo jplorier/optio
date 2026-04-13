@@ -8,11 +8,15 @@ const orderByMock = vi.fn(() => ({ limit: limitMock }));
 const whereMock = vi.fn(() => ({ limit: limitMock, orderBy: orderByMock }));
 const fromMock = vi.fn(() => ({ where: whereMock }));
 const selectMock = vi.fn(() => ({ from: fromMock }));
+const selectDistinctMock = vi.fn(() => ({ from: fromMock }));
+const deleteMock = vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock("../db/client.js", () => ({
   db: {
     select: selectMock,
+    selectDistinct: selectDistinctMock,
     insert: vi.fn(() => ({ values: vi.fn() })),
+    delete: deleteMock,
   },
 }));
 
@@ -27,6 +31,7 @@ vi.mock("../db/schema.js", () => ({
   },
   authEvents: {
     tokenType: "auth_events.token_type",
+    source: "auth_events.source",
     createdAt: "auth_events.created_at",
   },
 }));
@@ -35,6 +40,7 @@ vi.mock("../db/schema.js", () => ({
 const {
   hasRecentClaudeAuthFailure,
   getRecentAuthFailures,
+  recordAuthEvent,
   AUTH_FAILURE_PATTERNS,
   GITHUB_FAILURE_PATTERNS,
 } = await import("./auth-failure-detector.js");
@@ -193,6 +199,73 @@ describe("getRecentAuthFailures", () => {
 
     const result = await getRecentAuthFailures();
     expect(result).toEqual({ claude: false, github: false });
+  });
+});
+
+describe("source-based filtering", () => {
+  beforeEach(() => {
+    selectMock.mockClear();
+    fromMock.mockClear();
+    whereMock.mockClear();
+    limitMock.mockClear();
+    deleteMock.mockClear();
+  });
+
+  it("returns github=false when only ticket-sync events exist (provider-specific failures)", async () => {
+    // 1. Claude watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 2. GitHub watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 3. Claude task_logs
+    limitMock.mockResolvedValueOnce([]);
+    // 4. GitHub auth_events — filtered by source, no match after excluding ticket-sync:*
+    limitMock.mockResolvedValueOnce([]);
+    // 5. GitHub task_logs
+    limitMock.mockResolvedValueOnce([]);
+
+    const result = await getRecentAuthFailures();
+    expect(result).toEqual({ claude: false, github: false });
+  });
+
+  it("returns github=true when pr-watcher events exist", async () => {
+    // 1. Claude watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 2. GitHub watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 3. Claude task_logs
+    limitMock.mockResolvedValueOnce([]);
+    // 4. GitHub auth_events — pr-watcher source, should count
+    limitMock.mockResolvedValueOnce([{ exists: 1 }]);
+    // 5. GitHub task_logs
+    limitMock.mockResolvedValueOnce([]);
+
+    const result = await getRecentAuthFailures();
+    expect(result).toEqual({ claude: false, github: true });
+  });
+
+  it("returns github=true when legacy null-source events exist", async () => {
+    // 1. Claude watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 2. GitHub watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 3. Claude task_logs
+    limitMock.mockResolvedValueOnce([]);
+    // 4. GitHub auth_events — null source (legacy), should count
+    limitMock.mockResolvedValueOnce([{ exists: 1 }]);
+    // 5. GitHub task_logs
+    limitMock.mockResolvedValueOnce([]);
+
+    const result = await getRecentAuthFailures();
+    expect(result).toEqual({ claude: false, github: true });
+  });
+});
+
+describe("recordAuthEvent", () => {
+  it("accepts an optional source parameter", async () => {
+    // Should not throw
+    await recordAuthEvent("github", "Bad credentials", "pr-watcher");
+    await recordAuthEvent("github", "Bad credentials", "ticket-sync:abc-123");
+    await recordAuthEvent("github", "Bad credentials");
   });
 });
 
