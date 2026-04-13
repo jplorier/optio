@@ -72,7 +72,6 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
-              subPath: pgdata
           resources:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}
       volumes:
