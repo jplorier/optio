@@ -10,6 +10,8 @@ type: Opaque
 stringData:
   POSTGRES_PASSWORD: {{ required "postgresql.auth.password is required when postgresql is enabled" .Values.postgresql.auth.password | quote }}
 ---
+{{- $existingPVC := lookup "v1" "PersistentVolumeClaim" .Values.namespace (printf "%s-postgres-data" .Release.Name) }}
+{{- if not $existingPVC }}
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -28,6 +30,7 @@ spec:
     requests:
       storage: {{ .Values.postgresql.storage.size }}
 ---
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
