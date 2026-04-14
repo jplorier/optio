@@ -5,18 +5,18 @@
 #
 # Image repositories default to short names for local dev (pullPolicy: Never).
 # For registry deployments, override with full GHCR paths, e.g.:
-#   api.image.repository: ghcr.io/jonwiggins/optio-api
-#   web.image.repository: ghcr.io/jonwiggins/optio-web
-# Or install a released chart: helm install optio oci://ghcr.io/jonwiggins/optio
+#   api.image.repository: ghcr.io/jplorier/optio-api
+#   web.image.repository: ghcr.io/jplorier/optio-web
+# Or install a released chart: helm install optio oci://ghcr.io/jplorier/optio
 
 # ──────────────────────────────────────────────────────────────────────────────
 # API Server
 # ──────────────────────────────────────────────────────────────────────────────
 api:
   image:
-    repository: optio-api  # Registry: ghcr.io/jonwiggins/optio-api
+    repository: ghcr.io/jplorier/optio-api
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   replicas: 1
   port: 4000
   service:
@@ -62,9 +62,9 @@ api:
 # ──────────────────────────────────────────────────────────────────────────────
 web:
   image:
-    repository: optio-web  # Registry: ghcr.io/jonwiggins/optio-web
+    repository: ghcr.io/jplorier/optio-web
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   replicas: 1
   port: 3000
   service:
