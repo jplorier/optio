@@ -4,46 +4,48 @@ import { CodeBlock } from "@/components/docs/code-block";
 import { Callout } from "@/components/docs/callout";
 
 export const metadata: Metadata = {
-  title: "Workflows",
+  title: "Standalone Tasks",
   description:
-    "Create reusable, non-coding agent workflows that run on a schedule, via webhook, or on demand. Automate repetitive tasks beyond code generation.",
+    "Run AI agents without attaching a repo. Standalone tasks are ideal for reports, triage, and anything that doesn't need a code checkout.",
 };
 
 export default function WorkflowsPage() {
   return (
     <>
-      <h1 className="text-3xl font-bold text-text-heading">Workflows</h1>
+      <h1 className="text-3xl font-bold text-text-heading">Standalone Tasks</h1>
       <p className="mt-4 text-text-muted leading-relaxed">
-        Workflows let you run AI agents for tasks beyond code generation. Unlike{" "}
-        <Link href="/docs/task-lifecycle" className="text-primary-light hover:underline">
-          tasks
+        Every unit of agent work in Optio is a <strong>Task</strong>. When a Task has a repo
+        attached (a <strong>Repo Task</strong>), the agent clones the repo and opens a PR. When it
+        doesn&apos;t (a <strong>Standalone Task</strong>), the agent runs in an isolated pod with no
+        git checkout and produces logs + side effects through its{" "}
+        <Link href="/docs/guides/connections" className="text-primary-light hover:underline">
+          Connections
         </Link>
-        , which are tied to a Git repository and produce pull requests, workflows are standalone
-        agent executions with templated prompts, parameterized inputs, and flexible triggers.
+        .
       </p>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Use workflows for things like generating reports, analyzing data, triaging alerts, drafting
-        documentation, or any repeatable agent job that doesn&apos;t need a repo checkout.
+        Use Standalone Tasks for generating reports, analyzing data, triaging alerts, drafting
+        documentation, or anything repeatable that doesn&apos;t need a repo checkout.
       </p>
 
-      <h2 className="mt-10 text-2xl font-bold text-text-heading">
-        How Workflows Differ from Tasks
-      </h2>
+      <h2 className="mt-10 text-2xl font-bold text-text-heading">Standalone vs Repo Tasks</h2>
       <div className="mt-4 overflow-hidden rounded-xl border border-border bg-bg-card">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="border-b border-border bg-bg-subtle">
               <th className="px-4 py-3 text-left font-semibold text-text-heading">Aspect</th>
-              <th className="px-4 py-3 text-left font-semibold text-text-heading">Tasks</th>
-              <th className="px-4 py-3 text-left font-semibold text-text-heading">Workflows</th>
+              <th className="px-4 py-3 text-left font-semibold text-text-heading">Repo Task</th>
+              <th className="px-4 py-3 text-left font-semibold text-text-heading">
+                Standalone Task
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
             {[
               ["Repository", "Required (Git repo)", "Not required"],
-              ["Output", "Pull request", "Text / structured output"],
+              ["Output", "Pull request", "Logs + side effects"],
               ["Prompt", "Static or template override", "Template with {{params}}"],
-              ["Triggers", "Manual / ticket sync", "Manual, schedule, or webhook"],
+              ["Triggers", "Manual, schedule, webhook, ticket", "Manual, schedule, webhook"],
               ["Review loop", "CI + code review + auto-resume", "Retry on failure"],
               [
                 "State machine",
@@ -61,15 +63,15 @@ export default function WorkflowsPage() {
         </table>
       </div>
 
-      <h2 className="mt-10 text-2xl font-bold text-text-heading">Creating a Workflow</h2>
+      <h2 className="mt-10 text-2xl font-bold text-text-heading">Creating a Standalone Task</h2>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Navigate to <strong className="text-text-heading">Workflows &rarr; New Workflow</strong> in
-        the dashboard. A workflow definition includes:
+        Navigate to <strong className="text-text-heading">Tasks &rarr; New Task</strong> in the
+        dashboard. A standalone task definition includes:
       </p>
       <ul className="mt-3 list-disc pl-5 space-y-2 text-[14px] text-text-muted">
         <li>
-          <strong className="text-text-heading">Name and description</strong> — identify the
-          workflow in the dashboard and logs
+          <strong className="text-text-heading">Name and description</strong> — identify the task in
+          the dashboard and logs
         </li>
         <li>
           <strong className="text-text-heading">Agent runtime</strong> — choose from Claude Code,
@@ -97,7 +99,7 @@ export default function WorkflowsPage() {
       </ul>
 
       <div className="mt-4">
-        <CodeBlock title="API: Create a workflow">{`POST /api/workflows
+        <CodeBlock title="API: Create a standalone task">{`POST /api/jobs
 {
   "name": "Weekly Security Report",
   "description": "Scans dependencies and generates a vulnerability summary",
@@ -120,7 +122,7 @@ export default function WorkflowsPage() {
 
       <h2 className="mt-10 text-2xl font-bold text-text-heading">Prompt Templates</h2>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Workflow prompts use{" "}
+        Standalone task prompts use{" "}
         <code className="rounded bg-bg-hover px-1.5 py-0.5 text-[13px] font-mono">
           {"{{PARAM_NAME}}"}
         </code>{" "}
@@ -142,17 +144,17 @@ Output as markdown.`}</CodeBlock>
 
       <h2 className="mt-10 text-2xl font-bold text-text-heading">Triggers</h2>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Each workflow can have up to three triggers — one of each type. Triggers determine how and
-        when a workflow run starts.
+        Each standalone task can have up to three triggers — one of each type. Triggers determine
+        how and when a standalone task run starts.
       </p>
 
       <h3 className="mt-6 text-lg font-semibold text-text-heading">Manual</h3>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Run the workflow on demand from the dashboard or via the API. Pass parameters in the request
+        Run the task on demand from the dashboard or via the API. Pass parameters in the request
         body.
       </p>
       <div className="mt-3">
-        <CodeBlock title="API: Trigger a manual run">{`POST /api/workflows/:id/runs
+        <CodeBlock title="API: Trigger a manual run">{`POST /api/jobs/:id/runs
 {
   "params": {
     "REPO_NAME": "optio",
@@ -163,11 +165,11 @@ Output as markdown.`}</CodeBlock>
 
       <h3 className="mt-6 text-lg font-semibold text-text-heading">Schedule</h3>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Run the workflow on a cron schedule. The trigger worker checks for due schedules every 60
+        Run the task on a cron schedule. The trigger worker checks for due schedules every 60
         seconds.
       </p>
       <div className="mt-3">
-        <CodeBlock title="API: Create a schedule trigger">{`POST /api/workflows/:id/triggers
+        <CodeBlock title="API: Create a schedule trigger">{`POST /api/jobs/:id/triggers
 {
   "type": "schedule",
   "config": {
@@ -185,11 +187,11 @@ Output as markdown.`}</CodeBlock>
 
       <h3 className="mt-6 text-lg font-semibold text-text-heading">Webhook</h3>
       <p className="mt-3 text-text-muted leading-relaxed">
-        Trigger the workflow from an external system via HTTP POST. Each webhook trigger gets a
-        unique path that you can point third-party services at.
+        Trigger the task from an external system via HTTP POST. Each webhook trigger gets a unique
+        path that you can point third-party services at.
       </p>
       <div className="mt-3">
-        <CodeBlock title="API: Create a webhook trigger">{`POST /api/workflows/:id/triggers
+        <CodeBlock title="API: Create a webhook trigger">{`POST /api/jobs/:id/triggers
 {
   "type": "webhook",
   "config": {
@@ -222,14 +224,14 @@ Output as markdown.`}</CodeBlock>
         <code className="rounded bg-bg-hover px-1.5 py-0.5 text-[13px] font-mono">
           202 Accepted
         </code>{" "}
-        with the run ID immediately — the workflow executes asynchronously.
+        with the run ID immediately — the run executes asynchronously.
       </Callout>
 
       <h2 className="mt-10 text-2xl font-bold text-text-heading">Execution</h2>
       <p className="mt-3 text-text-muted leading-relaxed">
         When a run is created, it enters the{" "}
         <code className="rounded bg-bg-hover px-1.5 py-0.5 text-[13px] font-mono">queued</code>{" "}
-        state and is picked up by the workflow worker. The worker:
+        state and is picked up by the worker. The worker:
       </p>
       <ol className="mt-3 list-decimal pl-5 space-y-2 text-[14px] text-text-muted">
         <li>Renders the prompt template with the run&apos;s parameters</li>
@@ -247,14 +249,14 @@ Output as markdown.`}</CodeBlock>
           <code className="rounded bg-bg-hover px-1.5 py-0.5 text-[13px] font-mono">
             OPTIO_MAX_WORKFLOW_CONCURRENT
           </code>{" "}
-          (default: 5) — total workflow runs across all workflows
+          (default: 5) — total standalone task runs
         </li>
         <li>
-          <strong className="text-text-heading">Per-workflow</strong>:{" "}
+          <strong className="text-text-heading">Per-task</strong>:{" "}
           <code className="rounded bg-bg-hover px-1.5 py-0.5 text-[13px] font-mono">
             maxConcurrent
           </code>{" "}
-          (default: 2) — parallel runs of the same workflow
+          (default: 2) — parallel runs of the same standalone task
         </li>
       </ul>
       <p className="mt-3 text-text-muted leading-relaxed">
@@ -265,12 +267,12 @@ Output as markdown.`}</CodeBlock>
 
       <h2 className="mt-10 text-2xl font-bold text-text-heading">Monitoring Runs</h2>
       <p className="mt-3 text-text-muted leading-relaxed">
-        The workflow detail page shows all runs with their status, duration, cost, and parameters.
-        Click a run to view its full log stream, output, and metadata. You can also retry failed
-        runs or cancel running ones from the dashboard.
+        The detail page shows all runs with their status, duration, cost, and parameters. Click a
+        run to view its full log stream, output, and metadata. You can also retry failed runs or
+        cancel running ones from the dashboard.
       </p>
       <div className="mt-4">
-        <CodeBlock title="API: List runs for a workflow">{`GET /api/workflows/:id/runs`}</CodeBlock>
+        <CodeBlock title="API: List runs for a workflow">{`GET /api/jobs/:id/runs`}</CodeBlock>
       </div>
       <div className="mt-3">
         <CodeBlock title="API: Get run details and logs">{`GET /api/workflow-runs/:runId

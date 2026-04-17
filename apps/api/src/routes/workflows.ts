@@ -120,7 +120,7 @@ export async function workflowRoutes(rawApp: FastifyInstance) {
   const app = rawApp.withTypeProvider<ZodTypeProvider>();
 
   app.get(
-    "/api/workflows",
+    "/api/jobs",
     {
       schema: {
         operationId: "listWorkflows",
@@ -143,7 +143,7 @@ export async function workflowRoutes(rawApp: FastifyInstance) {
   );
 
   app.post(
-    "/api/workflows",
+    "/api/jobs",
     {
       schema: {
         operationId: "createWorkflow",
@@ -180,7 +180,7 @@ export async function workflowRoutes(rawApp: FastifyInstance) {
   );
 
   app.get(
-    "/api/workflows/:id",
+    "/api/jobs/:id",
     {
       schema: {
         operationId: "getWorkflow",
@@ -207,7 +207,7 @@ export async function workflowRoutes(rawApp: FastifyInstance) {
   );
 
   app.patch(
-    "/api/workflows/:id",
+    "/api/jobs/:id",
     {
       schema: {
         operationId: "updateWorkflow",
@@ -249,7 +249,7 @@ export async function workflowRoutes(rawApp: FastifyInstance) {
   );
 
   app.post(
-    "/api/workflows/:id/clone",
+    "/api/jobs/:id/clone",
     {
       schema: {
         operationId: "cloneWorkflow",
@@ -284,7 +284,7 @@ export async function workflowRoutes(rawApp: FastifyInstance) {
   );
 
   app.delete(
-    "/api/workflows/:id",
+    "/api/jobs/:id",
     {
       schema: {
         operationId: "deleteWorkflow",
@@ -316,7 +316,7 @@ export async function workflowRoutes(rawApp: FastifyInstance) {
   // ── Workflow Runs ─────────────────────────────────────────────────────────
 
   app.post(
-    "/api/workflows/:id/runs",
+    "/api/jobs/:id/runs",
     {
       schema: {
         operationId: "createWorkflowRun",
@@ -360,7 +360,7 @@ export async function workflowRoutes(rawApp: FastifyInstance) {
   );
 
   app.get(
-    "/api/workflows/:id/runs",
+    "/api/jobs/:id/runs",
     {
       schema: {
         operationId: "listWorkflowRuns",

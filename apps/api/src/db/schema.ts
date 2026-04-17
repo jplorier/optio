@@ -505,6 +505,40 @@ export const taskDependencies = pgTable(
   ],
 );
 
+// ── Task Configs (reusable task blueprints) ─────────────────────────────────
+
+// A task_config is a saved, reusable task definition — the "blueprint" that
+// a trigger (schedule/webhook/manual) instantiates into a concrete task run.
+// Pattern intentionally mirrors `workflows` so that both targets plug into
+// the same generic trigger table.
+export const taskConfigs = pgTable(
+  "task_configs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(),
+    description: text("description"),
+    workspaceId: uuid("workspace_id"),
+    // Task spawn blueprint — fields passed to taskService.createTask() when instantiated.
+    title: text("title").notNull(),
+    prompt: text("prompt").notNull(),
+    promptTemplateId: uuid("prompt_template_id"),
+    repoUrl: text("repo_url").notNull(),
+    repoBranch: text("repo_branch").notNull().default("main"),
+    agentType: text("agent_type"),
+    maxRetries: integer("max_retries").notNull().default(3),
+    priority: integer("priority").notNull().default(100),
+    enabled: boolean("enabled").notNull().default(true),
+    createdBy: uuid("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    unique("task_configs_workspace_name_key").on(table.workspaceId, table.name),
+    index("task_configs_workspace_id_idx").on(table.workspaceId),
+    index("task_configs_enabled_idx").on(table.enabled),
+  ],
+);
+
 // ── Workflows ────────────────────────────────────────────────────────────────
 
 export const workflows = pgTable(
@@ -535,13 +569,18 @@ export const workflows = pgTable(
   ],
 );
 
+// Generic trigger table — dispatches to any target (jobs or task_configs).
+// Historical name "workflow_triggers" kept to avoid a large rename migration;
+// treat it as the generic `triggers` table.
 export const workflowTriggers = pgTable(
   "workflow_triggers",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    workflowId: uuid("workflow_id")
-      .notNull()
-      .references(() => workflows.id, { onDelete: "cascade" }),
+    // Legacy FK retained for back-compat with workflow_runs.triggerId joins.
+    // For target_type='job' this mirrors target_id; for other types it is null.
+    workflowId: uuid("workflow_id").references(() => workflows.id, { onDelete: "cascade" }),
+    targetType: text("target_type").notNull().default("job"), // "job" | "task_config"
+    targetId: uuid("target_id").notNull(),
     type: text("type").notNull(), // "manual" | "schedule" | "webhook"
     config: jsonb("config").$type<Record<string, unknown>>(),
     paramMapping: jsonb("param_mapping").$type<Record<string, unknown>>(),
@@ -554,6 +593,7 @@ export const workflowTriggers = pgTable(
   (table) => [
     index("workflow_triggers_workflow_id_idx").on(table.workflowId),
     index("workflow_triggers_schedule_due_idx").on(table.enabled, table.nextFireAt),
+    index("workflow_triggers_target_idx").on(table.targetType, table.targetId),
   ],
 );
 
@@ -892,10 +932,21 @@ export const promptTemplates = pgTable(
     repoUrl: text("repo_url"), // null = global default, set = repo-specific
     autoMerge: boolean("auto_merge").notNull().default(false),
     workspaceId: uuid("workspace_id"),
+    // Discriminator: "prompt" (coding template, existing usage)
+    //                "review" (review agent template)
+    //                "job"    (Job prompt template — previously inline on workflows)
+    //                "task"   (Task config template)
+    kind: text("kind").notNull().default("prompt"),
+    paramsSchema: jsonb("params_schema").$type<Record<string, unknown>>(),
+    defaultAgentType: text("default_agent_type"),
+    description: text("description"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("prompt_templates_workspace_id_idx").on(table.workspaceId)],
+  (table) => [
+    index("prompt_templates_workspace_id_idx").on(table.workspaceId),
+    index("prompt_templates_kind_idx").on(table.kind),
+  ],
 );
 
 // ── Repo Shared Directories (persistent cache) ───────────────────────────────

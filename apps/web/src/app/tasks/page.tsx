@@ -7,7 +7,18 @@ import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import Link from "next/link";
 import { cn, formatRelativeTime } from "@/lib/utils";
-import { Plus, RotateCcw, XCircle, Loader2, Zap, GitBranch, CircleDot, Check } from "lucide-react";
+import {
+  Plus,
+  RotateCcw,
+  XCircle,
+  Loader2,
+  Zap,
+  GitBranch,
+  CircleDot,
+  Check,
+  Clock,
+  Workflow,
+} from "lucide-react";
 import { PrBrowser } from "@/components/pr-browser";
 
 export default function TasksPage() {
@@ -65,6 +76,20 @@ export default function TasksPage() {
             </>
           )}
           <Link
+            href="/jobs"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-bg-card border border-border text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
+          >
+            <Workflow className="w-4 h-4" />
+            Standalone
+          </Link>
+          <Link
+            href="/tasks/scheduled"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-bg-card border border-border text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
+          >
+            <Clock className="w-4 h-4" />
+            Scheduled
+          </Link>
+          <Link
             href="/tasks/new"
             className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-colors"
           >
@@ -85,7 +110,7 @@ export default function TasksPage() {
               : "border-transparent text-text-muted hover:text-text",
           )}
         >
-          Optio Tasks
+          Repo Tasks
         </button>
         <button
           onClick={() => setTab("issues")}

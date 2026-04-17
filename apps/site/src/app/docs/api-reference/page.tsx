@@ -549,12 +549,12 @@ export default function ApiReferencePage() {
       </p>
       <RouteTable
         routes={[
-          { method: "GET", path: "/api/workflows", description: "List workflow templates" },
-          { method: "POST", path: "/api/workflows", description: "Create a workflow template" },
-          { method: "POST", path: "/api/workflows/:id/run", description: "Execute a workflow" },
+          { method: "GET", path: "/api/jobs", description: "List workflow templates" },
+          { method: "POST", path: "/api/jobs", description: "Create a workflow template" },
+          { method: "POST", path: "/api/jobs/:id/run", description: "Execute a workflow" },
           {
             method: "GET",
-            path: "/api/workflows/:id/runs",
+            path: "/api/jobs/:id/runs",
             description: "List runs for a workflow",
           },
         ]}

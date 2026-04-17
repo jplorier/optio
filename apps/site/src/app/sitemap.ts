@@ -31,6 +31,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     "/docs/guides/review-agents",
     "/docs/guides/integrations",
     "/docs/guides/workflows",
+    "/docs/guides/scheduled-tasks",
     "/docs/api-reference",
     "/docs/deployment",
     "/docs/contributing",

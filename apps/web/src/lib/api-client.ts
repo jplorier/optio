@@ -1089,9 +1089,9 @@ export const api = {
     }),
 
   // Workflows
-  listWorkflows: () => request<{ workflows: any[] }>("/api/workflows"),
+  listWorkflows: () => request<{ workflows: any[] }>("/api/jobs"),
 
-  getWorkflow: (id: string) => request<{ workflow: any }>(`/api/workflows/${id}`),
+  getWorkflow: (id: string) => request<{ workflow: any }>(`/api/jobs/${id}`),
 
   createWorkflow: (data: {
     name: string;
@@ -1108,44 +1108,43 @@ export const api = {
     environmentSpec?: Record<string, unknown>;
     paramsSchema?: Record<string, unknown>;
   }) =>
-    request<{ workflow: any }>("/api/workflows", {
+    request<{ workflow: any }>("/api/jobs", {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
   updateWorkflow: (id: string, data: Record<string, unknown>) =>
-    request<{ workflow: any }>(`/api/workflows/${id}`, {
+    request<{ workflow: any }>(`/api/jobs/${id}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
 
-  deleteWorkflow: (id: string) => request<void>(`/api/workflows/${id}`, { method: "DELETE" }),
+  deleteWorkflow: (id: string) => request<void>(`/api/jobs/${id}`, { method: "DELETE" }),
 
   cloneWorkflow: (id: string) =>
-    request<{ workflow: any }>(`/api/workflows/${id}/clone`, { method: "POST" }),
+    request<{ workflow: any }>(`/api/jobs/${id}/clone`, { method: "POST" }),
 
   runWorkflow: (workflowId: string, params?: Record<string, unknown> | null) =>
-    request<{ run: any }>(`/api/workflows/${workflowId}/runs`, {
+    request<{ run: any }>(`/api/jobs/${workflowId}/runs`, {
       method: "POST",
       body: JSON.stringify({ params: params ?? null }),
     }),
 
-  getWorkflowRuns: (workflowId: string) =>
-    request<{ runs: any[] }>(`/api/workflows/${workflowId}/runs`),
+  getWorkflowRuns: (workflowId: string) => request<{ runs: any[] }>(`/api/jobs/${workflowId}/runs`),
 
   listWorkflowRuns: (workflowId: string, limit?: number) => {
     const qs = limit ? `?limit=${limit}` : "";
-    return request<{ runs: any[] }>(`/api/workflows/${workflowId}/runs${qs}`);
+    return request<{ runs: any[] }>(`/api/jobs/${workflowId}/runs${qs}`);
   },
 
   getWorkflowRun: (id: string) => request<{ run: any }>(`/api/workflow-runs/${id}`),
 
   // Workflow Triggers
   getWorkflowTriggers: (workflowId: string) =>
-    request<{ triggers: any[] }>(`/api/workflows/${workflowId}/triggers`),
+    request<{ triggers: any[] }>(`/api/jobs/${workflowId}/triggers`),
 
   listWorkflowTriggers: (workflowId: string) =>
-    request<{ triggers: any[] }>(`/api/workflows/${workflowId}/triggers`),
+    request<{ triggers: any[] }>(`/api/jobs/${workflowId}/triggers`),
 
   retryWorkflowRun: (id: string) =>
     request<{ run: any }>(`/api/workflow-runs/${id}/retry`, { method: "POST" }),
@@ -1170,19 +1169,19 @@ export const api = {
       enabled?: boolean;
     },
   ) =>
-    request<{ trigger: any }>(`/api/workflows/${workflowId}/triggers`, {
+    request<{ trigger: any }>(`/api/jobs/${workflowId}/triggers`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
 
   updateWorkflowTrigger: (workflowId: string, triggerId: string, data: Record<string, unknown>) =>
-    request<{ trigger: any }>(`/api/workflows/${workflowId}/triggers/${triggerId}`, {
+    request<{ trigger: any }>(`/api/jobs/${workflowId}/triggers/${triggerId}`, {
       method: "PATCH",
       body: JSON.stringify(data),
     }),
 
   deleteWorkflowTrigger: (workflowId: string, triggerId: string) =>
-    request<void>(`/api/workflows/${workflowId}/triggers/${triggerId}`, {
+    request<void>(`/api/jobs/${workflowId}/triggers/${triggerId}`, {
       method: "DELETE",
     }),
 
@@ -1298,4 +1297,133 @@ export const api = {
       };
     }>(`/api/activity${query ? `?${query}` : ""}`);
   },
+
+  // ── Task Configs ──────────────────────────────────────────────────────────
+
+  listTaskConfigs: () => request<{ taskConfigs: any[] }>("/api/task-configs"),
+
+  getTaskConfig: (id: string) => request<{ taskConfig: any }>(`/api/task-configs/${id}`),
+
+  createTaskConfig: (data: {
+    name: string;
+    description?: string;
+    title: string;
+    prompt: string;
+    promptTemplateId?: string;
+    repoUrl: string;
+    repoBranch?: string;
+    agentType?: string;
+    maxRetries?: number;
+    priority?: number;
+    enabled?: boolean;
+  }) =>
+    request<{ taskConfig: any }>("/api/task-configs", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateTaskConfig: (
+    id: string,
+    data: Partial<{
+      name: string;
+      description: string | null;
+      title: string;
+      prompt: string;
+      promptTemplateId: string | null;
+      repoUrl: string;
+      repoBranch: string;
+      agentType: string | null;
+      maxRetries: number;
+      priority: number;
+      enabled: boolean;
+    }>,
+  ) =>
+    request<{ taskConfig: any }>(`/api/task-configs/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteTaskConfig: (id: string) => request<null>(`/api/task-configs/${id}`, { method: "DELETE" }),
+
+  runTaskConfig: (id: string) =>
+    request<{ taskId: string }>(`/api/task-configs/${id}/run`, { method: "POST" }),
+
+  listTaskConfigTriggers: (id: string) =>
+    request<{ triggers: any[] }>(`/api/task-configs/${id}/triggers`),
+
+  createTaskConfigTrigger: (
+    id: string,
+    data: {
+      type: "manual" | "schedule" | "webhook";
+      config?: Record<string, unknown>;
+      paramMapping?: Record<string, unknown>;
+      enabled?: boolean;
+    },
+  ) =>
+    request<{ trigger: any }>(`/api/task-configs/${id}/triggers`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateTaskConfigTrigger: (
+    id: string,
+    triggerId: string,
+    data: Partial<{
+      config: Record<string, unknown>;
+      paramMapping: Record<string, unknown>;
+      enabled: boolean;
+    }>,
+  ) =>
+    request<{ trigger: any }>(`/api/task-configs/${id}/triggers/${triggerId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteTaskConfigTrigger: (id: string, triggerId: string) =>
+    request<null>(`/api/task-configs/${id}/triggers/${triggerId}`, { method: "DELETE" }),
+
+  // ── Named templates (prompt | review | job | task) ────────────────────────
+
+  listTemplates: (kind?: string) => {
+    const qs = kind ? `?kind=${encodeURIComponent(kind)}` : "";
+    return request<{ templates: any[] }>(`/api/prompt-templates${qs}`);
+  },
+
+  createNamedTemplate: (data: {
+    name: string;
+    template: string;
+    kind?: "prompt" | "review" | "job" | "task";
+    description?: string;
+    paramsSchema?: Record<string, unknown>;
+    defaultAgentType?: string;
+  }) =>
+    request<{ template: any }>("/api/prompt-templates/named", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  updateNamedTemplate: (
+    id: string,
+    data: Partial<{
+      name: string;
+      template: string;
+      kind: "prompt" | "review" | "job" | "task";
+      description: string | null;
+      paramsSchema: Record<string, unknown> | null;
+      defaultAgentType: string | null;
+    }>,
+  ) =>
+    request<{ template: any }>(`/api/prompt-templates/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    }),
+
+  deleteNamedTemplate: (id: string) =>
+    request<null>(`/api/prompt-templates/${id}`, { method: "DELETE" }),
+
+  previewTemplate: (id: string, params: Record<string, unknown>) =>
+    request<{ rendered: string }>(`/api/prompt-templates/${id}/preview`, {
+      method: "POST",
+      body: JSON.stringify({ params }),
+    }),
 };

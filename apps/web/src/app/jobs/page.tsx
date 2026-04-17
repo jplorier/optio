@@ -80,7 +80,7 @@ function WorkflowTableSkeleton() {
 }
 
 export default function WorkflowsPage() {
-  usePageTitle("Agent Workflows");
+  usePageTitle("Standalone Tasks");
   const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [runTarget, setRunTarget] = useState<WorkflowSummary | null>(null);
@@ -89,7 +89,7 @@ export default function WorkflowsPage() {
     api
       .listWorkflows()
       .then((res) => setWorkflows(res.workflows as WorkflowSummary[]))
-      .catch(() => toast.error("Failed to load agent workflows"))
+      .catch(() => toast.error("Failed to load standalone tasks"))
       .finally(() => setLoading(false));
   }, []);
 
@@ -100,13 +100,22 @@ export default function WorkflowsPage() {
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Agent Workflows</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Standalone Tasks</h1>
+          <p className="text-sm text-text-muted mt-1">
+            Agent runs with no repo attached. For repo-attached work, see{" "}
+            <Link href="/tasks" className="text-primary hover:underline">
+              Tasks
+            </Link>
+            .
+          </p>
+        </div>
         <Link
-          href="/workflows/new"
+          href="/tasks/new"
           className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-colors"
         >
           <Plus className="w-4 h-4" />
-          New Agent Workflow
+          New Task
         </Link>
       </div>
 
@@ -115,16 +124,16 @@ export default function WorkflowsPage() {
       ) : workflows.length === 0 ? (
         <div className="text-center py-16 text-text-muted border border-dashed border-border rounded-lg">
           <Workflow className="w-10 h-10 mx-auto mb-3 opacity-50" />
-          <p className="font-medium">No agent workflows yet</p>
+          <p className="font-medium">No standalone tasks yet</p>
           <p className="text-sm mt-1">
-            Agent workflows let you define reusable agent pipelines with triggers, parameters, and
+            Standalone tasks let you define reusable agent pipelines with triggers, parameters, and
             budgets.
           </p>
           <Link
-            href="/workflows/new"
+            href="/tasks/new"
             className="text-primary hover:underline text-sm mt-2 inline-block"
           >
-            Create your first agent workflow
+            Create your first standalone task
           </Link>
         </div>
       ) : (
@@ -145,7 +154,7 @@ export default function WorkflowsPage() {
           {workflows.map((wf) => (
             <Link
               key={wf.id}
-              href={`/workflows/${wf.id}`}
+              href={`/jobs/${wf.id}`}
               className="grid grid-cols-[2fr_80px_120px_60px_100px_80px_70px_40px] gap-2 items-center px-4 py-3 border-b border-border/30 last:border-b-0 hover:bg-bg-hover/50 transition-colors"
             >
               {/* Name */}
@@ -215,7 +224,7 @@ export default function WorkflowsPage() {
                   }}
                   disabled={!wf.enabled}
                   className="p-1.5 rounded-md hover:bg-primary/10 text-text-muted hover:text-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={wf.enabled ? "Run agent workflow" : "Agent workflow is disabled"}
+                  title={wf.enabled ? "Run standalone task" : "Standalone task is disabled"}
                 >
                   <Play className="w-4 h-4" />
                 </button>

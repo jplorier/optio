@@ -5,6 +5,7 @@ import { getTicketProvider } from "@optio/ticket-providers";
 import type { TicketSource } from "@optio/shared";
 import { TaskState, normalizeRepoUrl } from "@optio/shared";
 import * as taskService from "./task-service.js";
+import * as taskConfigService from "./task-config-service.js";
 import { taskQueue } from "../workers/task-worker.js";
 import { retrieveSecret } from "./secret-service.js";
 import { logger } from "../logger.js";
@@ -153,6 +154,26 @@ export async function syncAllTickets(): Promise<number> {
         }
 
         totalSynced++;
+
+        // Fire any task_config ticket triggers that match this ticket. These
+        // spawn additional tasks alongside the repo-scoped task above — e.g.
+        // a "security" workspace-wide task_config that runs on every ticket
+        // labeled cve.
+        try {
+          await taskConfigService.fireTicketTriggers({
+            source: ticket.source,
+            externalId: ticket.externalId,
+            title: ticket.title,
+            body: ticket.body,
+            labels: ticket.labels,
+            url: ticket.url,
+          });
+        } catch (triggerErr) {
+          logger.warn(
+            { err: triggerErr, ticketId: ticket.externalId },
+            "Failed to fire ticket triggers for task_configs",
+          );
+        }
       }
     } catch (err: any) {
       logger.error(
