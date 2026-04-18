@@ -125,7 +125,7 @@ export default function OverviewPage() {
 
       <ActiveSessions sessions={activeSessions} activeCount={activeSessionCount} />
 
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(28rem,1fr))] gap-8">
+      <div className="[column-width:28rem] [column-gap:2rem] [&>*]:break-inside-avoid [&>*]:mb-8 [&>*:last-child]:mb-0">
         <RecentTasks tasks={recentTasks} />
         <PodsList
           pods={pods}
