@@ -182,3 +182,32 @@ async function pruneStaleAuthEvents(windowMs: number): Promise<void> {
   const cutoff = new Date(Date.now() - windowMs);
   await db.delete(authEvents).where(lt(authEvents.createdAt, cutoff));
 }
+
+export interface AuthFailureDetection {
+  matched: boolean;
+  pattern?: (typeof AUTH_FAILURE_PATTERNS)[number];
+  /** Short, whitespace-normalized excerpt around the match, capped at ~240 chars. */
+  excerpt?: string;
+}
+
+/**
+ * Scan a raw log blob (accumulated agent stdout/stderr) for Claude auth failure
+ * markers. Pure function; does no DB I/O. Returns the first matching pattern.
+ *
+ * Callers should use this to override a nominally-successful agent result when
+ * the agent emitted a 401 mid-run — claude-code and similar CLIs often swallow
+ * the error and exit 0, which would otherwise mark the run as completed.
+ */
+export function detectAuthFailureInLogs(logs: string): AuthFailureDetection {
+  if (!logs) return { matched: false };
+  const lower = logs.toLowerCase();
+  for (const pattern of AUTH_FAILURE_PATTERNS) {
+    const idx = lower.indexOf(pattern);
+    if (idx === -1) continue;
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(logs.length, idx + pattern.length + 200);
+    const excerpt = logs.slice(start, end).replace(/\s+/g, " ").trim().slice(0, 240);
+    return { matched: true, pattern, excerpt };
+  }
+  return { matched: false };
+}

@@ -34,6 +34,7 @@ import { isGitHubAppConfigured } from "../services/github-app-service.js";
 import { getCredentialSecret } from "../services/credential-secret-service.js";
 import { subscribeToTaskMessages } from "../services/task-message-bus.js";
 import * as messageService from "../services/task-message-service.js";
+import { detectAuthFailureInLogs, recordAuthEvent } from "../services/auth-failure-detector.js";
 import { logger } from "../logger.js";
 import {
   recordTaskComplete,
@@ -995,6 +996,26 @@ export function startTaskWorker() {
         // Detect exit code from logs (agent-type-specific patterns)
         const inferredExitCode = inferExitCode(task.agentType, allLogs);
         const result = adapter.parseResult(inferredExitCode, allLogs);
+
+        // Override a nominally-successful result if the agent emitted an auth
+        // failure mid-run. Many agent CLIs catch 401s internally and exit 0,
+        // which would otherwise mark the task as completed despite no useful
+        // work. Mutating the result here propagates to every downstream branch.
+        const authDetection = detectAuthFailureInLogs(allLogs);
+        if (authDetection.matched && result.success) {
+          log.warn(
+            { pattern: authDetection.pattern, excerpt: authDetection.excerpt },
+            "Auth failure detected in agent output — overriding result",
+          );
+          result.success = false;
+          result.error = `Agent authentication failed: ${authDetection.excerpt ?? authDetection.pattern}`;
+          recordAuthEvent(
+            "claude",
+            authDetection.excerpt ?? authDetection.pattern ?? "auth_failure",
+            "task-worker",
+          ).catch(() => {});
+        }
+
         await taskService.updateTaskResult(taskId, result.summary, result.error);
 
         // Persist cost, token usage, and model data

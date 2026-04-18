@@ -20,6 +20,7 @@ import { publishWorkflowRunEvent } from "../services/event-bus.js";
 import { enqueueWebhookEvent } from "./webhook-worker.js";
 import type { WebhookEvent } from "../services/webhook-service.js";
 import { resolveSecretsForTask, retrieveSecretWithFallback } from "../services/secret-service.js";
+import { detectAuthFailureInLogs, recordAuthEvent } from "../services/auth-failure-detector.js";
 import { logger } from "../logger.js";
 import { instrumentWorkerProcessor } from "../telemetry/instrument-worker.js";
 
@@ -535,13 +536,34 @@ export function startWorkflowWorker() {
         // ── Parse result and update run ───────────────────────────────
         const result = adapter.parseResult(0, allLogs);
 
+        // Override a nominally-successful result if the agent emitted an auth
+        // failure mid-run. Claude CLIs typically catch the 401 internally and
+        // exit 0, which would otherwise mark the run as completed despite no
+        // useful work being done.
+        const authDetection = detectAuthFailureInLogs(allLogs);
+        let effectiveSuccess = result.success;
+        let effectiveError = result.error;
+        if (authDetection.matched) {
+          effectiveSuccess = false;
+          effectiveError = `Agent authentication failed: ${authDetection.excerpt ?? authDetection.pattern}`;
+          log.warn(
+            { pattern: authDetection.pattern, excerpt: authDetection.excerpt },
+            "Auth failure detected in agent output — overriding result",
+          );
+          recordAuthEvent(
+            "claude",
+            authDetection.excerpt ?? authDetection.pattern ?? "auth_failure",
+            "workflow-worker",
+          ).catch(() => {});
+        }
+
         const costFields: Record<string, unknown> = {};
         if (result.costUsd != null) costFields.costUsd = String(result.costUsd);
         if (result.inputTokens != null) costFields.inputTokens = result.inputTokens;
         if (result.outputTokens != null) costFields.outputTokens = result.outputTokens;
         if (result.model) costFields.modelUsed = result.model;
 
-        if (result.success) {
+        if (effectiveSuccess) {
           await transitionRun(
             workflowRunId,
             workflow.id,
@@ -562,11 +584,11 @@ export function startWorkflowWorker() {
             WorkflowRunState.FAILED,
             {
               ...costFields,
-              errorMessage: result.error ?? "Agent execution failed",
+              errorMessage: effectiveError ?? "Agent execution failed",
               finishedAt: new Date(),
             },
           );
-          log.warn({ error: result.error }, "Workflow run failed");
+          log.warn({ error: effectiveError }, "Workflow run failed");
 
           // ── Retry with exponential backoff ────────────────────────
           const currentRetry = run.retryCount ?? 0;

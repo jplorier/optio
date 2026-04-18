@@ -41,6 +41,7 @@ const {
   hasRecentClaudeAuthFailure,
   getRecentAuthFailures,
   recordAuthEvent,
+  detectAuthFailureInLogs,
   AUTH_FAILURE_PATTERNS,
   GITHUB_FAILURE_PATTERNS,
 } = await import("./auth-failure-detector.js");
@@ -287,5 +288,84 @@ describe("failure pattern constants", () => {
     expect(GITHUB_FAILURE_PATTERNS).toEqual(
       expect.arrayContaining(["Bad credentials", "bad credentials"]),
     );
+  });
+});
+
+describe("detectAuthFailureInLogs", () => {
+  it("returns no match for empty input", () => {
+    expect(detectAuthFailureInLogs("").matched).toBe(false);
+  });
+
+  it("returns no match for clean logs", () => {
+    const logs = "Session started. Did some work. Wrote a file. Exiting cleanly.";
+    expect(detectAuthFailureInLogs(logs).matched).toBe(false);
+  });
+
+  it("matches the claude stream-json 401 shape", () => {
+    const logs =
+      "Session started · claude-sonnet-4-6\n" +
+      'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error","message":"Invalid authentication credentials"},"request_id":"req_abc"}\n' +
+      "Session ended";
+    const result = detectAuthFailureInLogs(logs);
+    expect(result.matched).toBe(true);
+    // "api error: 401" is listed before "authentication_error" in the pattern
+    // array, so the first-match precedence means we should see that pattern.
+    expect(result.pattern).toBe("api error: 401");
+    expect(result.excerpt).toContain("authentication_error");
+  });
+
+  it("matches the plain authentication_error token", () => {
+    const logs = 'irrelevant noise ... "type":"authentication_error" ... more noise';
+    const result = detectAuthFailureInLogs(logs);
+    expect(result.matched).toBe(true);
+    expect(result.pattern).toBe("authentication_error");
+  });
+
+  it("matches case-insensitively", () => {
+    const logs = "Error: API Error: 401 Unauthorized";
+    const result = detectAuthFailureInLogs(logs);
+    expect(result.matched).toBe(true);
+    expect(result.pattern).toBe("api error: 401");
+  });
+
+  it('matches "status":401 embedded in JSON', () => {
+    const logs = 'response body: {"status":401,"message":"bad token"}';
+    expect(detectAuthFailureInLogs(logs).matched).toBe(true);
+  });
+
+  it("matches invalid_api_key from api-key mode", () => {
+    const logs = "error: invalid_api_key provided";
+    const result = detectAuthFailureInLogs(logs);
+    expect(result.matched).toBe(true);
+    expect(result.pattern).toBe("invalid_api_key");
+  });
+
+  it("matches oauth token has expired", () => {
+    const logs = "[optio] precheck: OAuth token has expired — please re-run claude setup-token";
+    const result = detectAuthFailureInLogs(logs);
+    expect(result.matched).toBe(true);
+    expect(result.pattern).toBe("oauth token has expired");
+  });
+
+  it("does not match unrelated '401' numbers", () => {
+    const logs = "Processed 401 items successfully.";
+    expect(detectAuthFailureInLogs(logs).matched).toBe(false);
+  });
+
+  it("excerpt is whitespace-normalized and capped", () => {
+    const logs = "x".repeat(1000) + "\n\n   authentication_error   \t  " + "y".repeat(1000);
+    const result = detectAuthFailureInLogs(logs);
+    expect(result.matched).toBe(true);
+    expect(result.excerpt).toBeDefined();
+    expect(result.excerpt!.length).toBeLessThanOrEqual(240);
+    expect(result.excerpt).not.toMatch(/\s{2,}/);
+  });
+
+  it("first matching pattern wins when several are present", () => {
+    const logs = "invalid_api_key ... authentication_error ... api error: 401";
+    // Array order determines precedence: "api error: 401" comes before the
+    // other two in AUTH_FAILURE_PATTERNS.
+    const result = detectAuthFailureInLogs(logs);
+    expect(result.pattern).toBe("api error: 401");
   });
 });
