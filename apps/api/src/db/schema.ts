@@ -129,6 +129,11 @@ export const tasks = pgTable(
     activitySubstate: taskActivitySubstateEnum("activity_substate").notNull().default("active"),
     workspaceId: uuid("workspace_id"), // nullable for backward compat; new tasks should always set this
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }),
+    // Control plane: declarative user intent. Reconciler observes and clears.
+    controlIntent: text("control_intent"), // "cancel" | "retry" | "resume" | "restart" | null
+    // Control plane: durable reconcile backoff for transient world-read failures.
+    reconcileBackoffUntil: timestamp("reconcile_backoff_until", { withTimezone: true }),
+    reconcileAttempts: integer("reconcile_attempts").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     startedAt: timestamp("started_at", { withTimezone: true }),
@@ -621,6 +626,11 @@ export const workflowRuns = pgTable(
     retryCount: integer("retry_count").notNull().default(0),
     startedAt: timestamp("started_at", { withTimezone: true }),
     finishedAt: timestamp("finished_at", { withTimezone: true }),
+    // Control plane: declarative user intent. Reconciler observes and clears.
+    controlIntent: text("control_intent"), // "cancel" | "retry" | "resume" | "restart" | null
+    // Control plane: durable reconcile backoff.
+    reconcileBackoffUntil: timestamp("reconcile_backoff_until", { withTimezone: true }),
+    reconcileAttempts: integer("reconcile_attempts").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

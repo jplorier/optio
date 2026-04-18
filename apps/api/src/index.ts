@@ -63,6 +63,8 @@ async function main() {
   const { startWorkflowWorker } = await import("./workers/workflow-worker.js");
   const { startWorkflowTriggerWorker } = await import("./workers/workflow-trigger-worker.js");
   const { startTokenValidationWorker } = await import("./workers/token-validation-worker.js");
+  const { startReconcileWorker, startReconcileResyncWorker } =
+    await import("./workers/reconcile-worker.js");
   const { getBullMQConnectionOptions } = await import("./services/redis-config.js");
   const { logTlsStackInfo, initTlsObservability } = await import("./services/tls-observability.js");
 
@@ -187,6 +189,8 @@ async function main() {
     cleanRepeatJobs("workflow-runs"),
     cleanRepeatJobs("workflow-trigger-checker"),
     cleanRepeatJobs("token-validation"),
+    cleanRepeatJobs("reconcile"),
+    cleanRepeatJobs("reconcile-resync"),
   ]);
 
   // Start BullMQ workers (each re-registers its repeat job)
@@ -215,6 +219,23 @@ async function main() {
   const tokenValidationWorker = startTokenValidationWorker();
   logger.info("Token validation worker started");
 
+  const reconcileEnabled =
+    (process.env.OPTIO_RECONCILE_ENABLED ?? "false").toLowerCase() === "true";
+  let reconcileWorker: ReturnType<typeof startReconcileWorker> | null = null;
+  let reconcileResyncWorker: ReturnType<typeof startReconcileResyncWorker> | null = null;
+  if (reconcileEnabled) {
+    reconcileWorker = startReconcileWorker();
+    reconcileResyncWorker = startReconcileResyncWorker();
+    logger.info(
+      {
+        shadow: (process.env.OPTIO_RECONCILE_SHADOW ?? "true").toLowerCase() !== "false",
+      },
+      "Reconcile workers started",
+    );
+  } else {
+    logger.info("Reconcile workers disabled (set OPTIO_RECONCILE_ENABLED=true to enable)");
+  }
+
   // Check if metrics-server is available
   checkMetricsServer().catch(() => {});
 
@@ -235,6 +256,8 @@ async function main() {
     await workflowWorker.close();
     await workflowTriggerWorker.close();
     await tokenValidationWorker.close();
+    if (reconcileWorker) await reconcileWorker.close();
+    if (reconcileResyncWorker) await reconcileResyncWorker.close();
     await app.close();
     // Flush pending OTel spans/metrics with 5s timeout
     await shutdownTelemetry();
