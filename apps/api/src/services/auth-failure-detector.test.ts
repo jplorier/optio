@@ -47,11 +47,12 @@ const {
 } = await import("./auth-failure-detector.js");
 
 // The execution order for getRecentAuthFailures is:
-// 1. Claude watermark  (Promise.all group 1)
-// 2. GitHub watermark  (Promise.all group 1)
-// 3. Claude task_logs  (Promise.all group 2)
-// 4. GitHub auth_events (Promise.all group 2)
-// 5. GitHub task_logs  (Promise.all group 2)
+// 1. Claude watermark   (Promise.all group 1)
+// 2. GitHub watermark   (Promise.all group 1)
+// 3. Claude task_logs   (Promise.all group 2)
+// 4. Claude auth_events (Promise.all group 2)
+// 5. GitHub auth_events (Promise.all group 2)
+// 6. GitHub task_logs   (Promise.all group 2)
 //
 // For hasRecentClaudeAuthFailure (backward compat), it calls getRecentAuthFailures
 // which follows the same pattern but we only care about the claude result.
@@ -71,9 +72,11 @@ describe("hasRecentClaudeAuthFailure (backward compat)", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs
     limitMock.mockResolvedValueOnce([]);
-    // 4. GitHub auth_events
+    // 4. Claude auth_events
     limitMock.mockResolvedValueOnce([]);
-    // 5. GitHub task_logs
+    // 5. GitHub auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
     await expect(hasRecentClaudeAuthFailure()).resolves.toBe(false);
   });
@@ -85,9 +88,27 @@ describe("hasRecentClaudeAuthFailure (backward compat)", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs — match!
     limitMock.mockResolvedValueOnce([{ exists: 1 }]);
-    // 4. GitHub auth_events
+    // 4. Claude auth_events
     limitMock.mockResolvedValueOnce([]);
-    // 5. GitHub task_logs
+    // 5. GitHub auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs
+    limitMock.mockResolvedValueOnce([]);
+    await expect(hasRecentClaudeAuthFailure()).resolves.toBe(true);
+  });
+
+  it("returns true when only an auth_events claude row exists (Standalone Task path)", async () => {
+    // 1. Claude watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 2. GitHub watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 3. Claude task_logs — no match (logs live in workflow_run_logs)
+    limitMock.mockResolvedValueOnce([]);
+    // 4. Claude auth_events — match! (recorded by workflow-worker)
+    limitMock.mockResolvedValueOnce([{ exists: 1 }]);
+    // 5. GitHub auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
     await expect(hasRecentClaudeAuthFailure()).resolves.toBe(true);
   });
@@ -108,9 +129,11 @@ describe("getRecentAuthFailures", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs
     limitMock.mockResolvedValueOnce([]);
-    // 4. GitHub auth_events
+    // 4. Claude auth_events
     limitMock.mockResolvedValueOnce([]);
-    // 5. GitHub task_logs
+    // 5. GitHub auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();
@@ -124,9 +147,29 @@ describe("getRecentAuthFailures", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs — match!
     limitMock.mockResolvedValueOnce([{ exists: 1 }]);
-    // 4. GitHub auth_events
+    // 4. Claude auth_events
     limitMock.mockResolvedValueOnce([]);
-    // 5. GitHub task_logs
+    // 5. GitHub auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs
+    limitMock.mockResolvedValueOnce([]);
+
+    const result = await getRecentAuthFailures();
+    expect(result).toEqual({ claude: true, github: false });
+  });
+
+  it("returns claude=true when Claude auth failures found in auth_events (Standalone)", async () => {
+    // 1. Claude watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 2. GitHub watermark
+    limitMock.mockResolvedValueOnce([]);
+    // 3. Claude task_logs
+    limitMock.mockResolvedValueOnce([]);
+    // 4. Claude auth_events — match! (recorded by workflow-worker)
+    limitMock.mockResolvedValueOnce([{ exists: 1 }]);
+    // 5. GitHub auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();
@@ -140,9 +183,11 @@ describe("getRecentAuthFailures", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs
     limitMock.mockResolvedValueOnce([]);
-    // 4. GitHub auth_events — match!
+    // 4. Claude auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 5. GitHub auth_events — match!
     limitMock.mockResolvedValueOnce([{ exists: 1 }]);
-    // 5. GitHub task_logs
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();
@@ -156,9 +201,11 @@ describe("getRecentAuthFailures", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs — match!
     limitMock.mockResolvedValueOnce([{ exists: 1 }]);
-    // 4. GitHub auth_events — match!
+    // 4. Claude auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 5. GitHub auth_events — match!
     limitMock.mockResolvedValueOnce([{ exists: 1 }]);
-    // 5. GitHub task_logs
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();
@@ -173,9 +220,11 @@ describe("getRecentAuthFailures", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs: no failures in the narrowed window
     limitMock.mockResolvedValueOnce([]);
-    // 4. GitHub auth_events
+    // 4. Claude auth_events
     limitMock.mockResolvedValueOnce([]);
-    // 5. GitHub task_logs
+    // 5. GitHub auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();
@@ -193,9 +242,11 @@ describe("getRecentAuthFailures", () => {
     limitMock.mockResolvedValueOnce([{ updatedAt: githubUpdate }]);
     // 3. Claude task_logs: no failures in the 1-minute window
     limitMock.mockResolvedValueOnce([]);
-    // 4. GitHub auth_events: no failures in the 30-second window
+    // 4. Claude auth_events: no failures in the 1-minute window
     limitMock.mockResolvedValueOnce([]);
-    // 5. GitHub task_logs: no failures
+    // 5. GitHub auth_events: no failures in the 30-second window
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs: no failures
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();
@@ -219,9 +270,11 @@ describe("source-based filtering", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs
     limitMock.mockResolvedValueOnce([]);
-    // 4. GitHub auth_events — filtered by source, no match after excluding ticket-sync:*
+    // 4. Claude auth_events
     limitMock.mockResolvedValueOnce([]);
-    // 5. GitHub task_logs
+    // 5. GitHub auth_events — filtered by source, no match after excluding ticket-sync:*
+    limitMock.mockResolvedValueOnce([]);
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();
@@ -235,9 +288,11 @@ describe("source-based filtering", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs
     limitMock.mockResolvedValueOnce([]);
-    // 4. GitHub auth_events — pr-watcher source, should count
+    // 4. Claude auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 5. GitHub auth_events — pr-watcher source, should count
     limitMock.mockResolvedValueOnce([{ exists: 1 }]);
-    // 5. GitHub task_logs
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();
@@ -251,9 +306,11 @@ describe("source-based filtering", () => {
     limitMock.mockResolvedValueOnce([]);
     // 3. Claude task_logs
     limitMock.mockResolvedValueOnce([]);
-    // 4. GitHub auth_events — null source (legacy), should count
+    // 4. Claude auth_events
+    limitMock.mockResolvedValueOnce([]);
+    // 5. GitHub auth_events — null source (legacy), should count
     limitMock.mockResolvedValueOnce([{ exists: 1 }]);
-    // 5. GitHub task_logs
+    // 6. GitHub task_logs
     limitMock.mockResolvedValueOnce([]);
 
     const result = await getRecentAuthFailures();

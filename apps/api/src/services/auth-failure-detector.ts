@@ -82,6 +82,21 @@ async function hasClaudeFailuresInLogs(cutoff: Date): Promise<boolean> {
 }
 
 /**
+ * Check if any Claude auth failures exist in auth_events after the cutoff.
+ * This is the mechanism by which Standalone Task runs surface auth failures:
+ * their logs live in `workflow_run_logs` (not `task_logs`), so the workflow
+ * worker records a claude auth_event when it detects a 401 mid-run.
+ */
+async function hasClaudeFailuresInEvents(cutoff: Date): Promise<boolean> {
+  const rows = await db
+    .select({ exists: sql<number>`1` })
+    .from(authEvents)
+    .where(and(eq(authEvents.tokenType, "claude"), gt(authEvents.createdAt, cutoff)))
+    .limit(1);
+  return rows.length > 0;
+}
+
+/**
  * Check if any GitHub auth failures exist in the auth_events table after the cutoff.
  * Only considers failures from the central token path (pr-watcher, legacy/null source).
  * Provider-specific failures (ticket-sync:*) are excluded — they don't reflect global
@@ -133,17 +148,19 @@ export async function getRecentAuthFailures(
   const githubCutoff = effectiveCutoff(windowMs, githubWatermark);
 
   // Check failures in parallel
-  const [claudeFailure, githubEventFailure, githubLogFailure] = await Promise.all([
-    hasClaudeFailuresInLogs(claudeCutoff),
-    hasGithubFailuresInEvents(githubCutoff),
-    hasGithubFailuresInLogs(githubCutoff),
-  ]);
+  const [claudeLogFailure, claudeEventFailure, githubEventFailure, githubLogFailure] =
+    await Promise.all([
+      hasClaudeFailuresInLogs(claudeCutoff),
+      hasClaudeFailuresInEvents(claudeCutoff),
+      hasGithubFailuresInEvents(githubCutoff),
+      hasGithubFailuresInLogs(githubCutoff),
+    ]);
 
   // Prune stale rows in the background to prevent unbounded table growth
   pruneStaleAuthEvents(windowMs).catch(() => {});
 
   return {
-    claude: claudeFailure,
+    claude: claudeLogFailure || claudeEventFailure,
     github: githubEventFailure || githubLogFailure,
   };
 }
