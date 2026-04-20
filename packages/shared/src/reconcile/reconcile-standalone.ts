@@ -52,13 +52,44 @@ export function reconcileStandalone(snapshot: WorldSnapshot): StandaloneAction {
     case WorkflowRunState.COMPLETED:
       return { kind: "noop", reason: "terminal_completed" };
     case WorkflowRunState.FAILED:
-      return { kind: "noop", reason: "failed_no_retry_intent" };
+      return decideFailed(snapshot);
     default:
       return {
         kind: "noop",
         reason: `unknown_state:${status.state as string}`,
       };
   }
+}
+
+function decideFailed(snapshot: WorldSnapshot): StandaloneAction {
+  if (snapshot.run.kind !== "standalone") {
+    return { kind: "noop", reason: "wrong_kind" };
+  }
+  const { spec, status } = snapshot.run;
+  // Auto-retry with exponential backoff. Setting reconcileBackoffUntil in
+  // the patch defers the next reconcile until the backoff window expires;
+  // the executor schedules a delayed reconcile to fire at that time.
+  if (status.retryCount < spec.maxRetries) {
+    const backoffMs = retryBackoff(status.retryCount);
+    return {
+      kind: "transition",
+      to: WorkflowRunState.QUEUED,
+      statusPatch: {
+        retryCount: status.retryCount + 1,
+        errorMessage: null,
+        reconcileBackoffUntil: new Date(snapshot.now.getTime() + backoffMs),
+      },
+      trigger: "auto_retry",
+      reason: `auto_retry_${status.retryCount + 1}/${spec.maxRetries}`,
+    };
+  }
+  return { kind: "noop", reason: "failed_no_retry_intent" };
+}
+
+function retryBackoff(retryCount: number): number {
+  // 5s, 10s, 20s, 40s ... + jitter. Matches workflow-worker's prior policy.
+  const base = 5_000 * Math.pow(2, retryCount);
+  return base + Math.floor(Math.random() * 3_000);
 }
 
 function interpretIntent(

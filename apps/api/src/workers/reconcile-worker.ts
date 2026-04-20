@@ -14,19 +14,11 @@ const connectionOpts = getBullMQConnectionOptions();
  * The reconcile worker pops keys off the `reconcile` queue, builds a fresh
  * WorldSnapshot for each, runs the pure decision function, and executes the
  * resulting action via the CAS-gated executor.
- *
- * Phase A: runs in shadow mode by default (logs decisions without mutating).
- * Flip `OPTIO_RECONCILE_SHADOW=false` to enable applied execution.
- *
- * The worker never directly drives state transitions for runs whose legacy
- * paths are still active — the executor's Phase-A side-effect short-circuits
- * protect against that (see reconcile-executor.ts).
  */
 export function startReconcileWorker() {
-  const shadow = (process.env.OPTIO_RECONCILE_SHADOW ?? "true").toLowerCase() !== "false";
   const concurrency = parseIntEnv("OPTIO_RECONCILE_CONCURRENCY", 4);
 
-  logger.info({ shadow, concurrency }, "Starting reconcile worker");
+  logger.info({ concurrency }, "Starting reconcile worker");
 
   const worker = new Worker(
     "reconcile",
@@ -43,9 +35,7 @@ export function startReconcileWorker() {
       const action: Action =
         snapshot.run.kind === "repo" ? reconcileRepo(snapshot) : reconcileStandalone(snapshot);
 
-      const outcome: ExecuteOutcome = await executeAction(action, snapshot, {
-        shadow,
-      });
+      const outcome: ExecuteOutcome = await executeAction(action, snapshot);
 
       log.info(
         {

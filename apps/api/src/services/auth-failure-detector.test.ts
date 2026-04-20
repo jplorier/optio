@@ -425,4 +425,42 @@ describe("detectAuthFailureInLogs", () => {
     const result = detectAuthFailureInLogs(logs);
     expect(result.pattern).toBe("api error: 401");
   });
+
+  it("ignores Read tool_result content even when it contains pattern text", () => {
+    // Agent reads a test fixture that asserts on an Invalid API key response.
+    // The string appears inside a `{"type":"user","message":{"content":[{"type":"tool_result",...}]}}`
+    // NDJSON event, which is agent-internal data — not a real auth failure.
+    const logs = [
+      '{"type":"system","subtype":"init","model":"claude-sonnet-4-6"}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"adapter.test.ts"}}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","content":"209\\u2192 \'{\\"error\\":{\\"message\\":\\"Invalid API key\\",\\"type\\":\\"auth_error\\",\\"code\\":\\"invalid_key\\"}}\';\\n 210\\u2192 const result = adapter.parseResult(0, logs);"}]}}',
+      '{"type":"result","result":"done","is_error":false}',
+    ].join("\n");
+    expect(detectAuthFailureInLogs(logs).matched).toBe(false);
+  });
+
+  it("ignores assistant tool_use input that contains pattern text", () => {
+    // Agent is writing a fixture file via Edit — its tool_use input legitimately
+    // contains the pattern. Should not trigger.
+    const logs = [
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Edit","input":{"file_path":"x.ts","new_string":"const fixture = \'invalid_api_key\';"}}]}}',
+      '{"type":"result","result":"done","is_error":false}',
+    ].join("\n");
+    expect(detectAuthFailureInLogs(logs).matched).toBe(false);
+  });
+
+  it("still matches a real auth failure that appears as runtime plain text", () => {
+    // The agent runtime catches a 401 from Anthropic and prints it as plain
+    // stdout/stderr — NOT as a stream-json event. This is the path we *do*
+    // want to detect; the user/assistant filter must not suppress it.
+    const logs = [
+      '{"type":"system","subtype":"init","model":"claude-sonnet-4-6"}',
+      '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Read","input":{"file_path":"x"}}]}}',
+      '{"type":"user","message":{"content":[{"type":"tool_result","content":"file contents"}]}}',
+      'Failed to authenticate. API Error: 401 {"type":"error","error":{"type":"authentication_error"}}',
+    ].join("\n");
+    const result = detectAuthFailureInLogs(logs);
+    expect(result.matched).toBe(true);
+    expect(result.pattern).toBe("api error: 401");
+  });
 });

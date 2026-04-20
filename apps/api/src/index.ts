@@ -219,22 +219,9 @@ async function main() {
   const tokenValidationWorker = startTokenValidationWorker();
   logger.info("Token validation worker started");
 
-  const reconcileEnabled =
-    (process.env.OPTIO_RECONCILE_ENABLED ?? "false").toLowerCase() === "true";
-  let reconcileWorker: ReturnType<typeof startReconcileWorker> | null = null;
-  let reconcileResyncWorker: ReturnType<typeof startReconcileResyncWorker> | null = null;
-  if (reconcileEnabled) {
-    reconcileWorker = startReconcileWorker();
-    reconcileResyncWorker = startReconcileResyncWorker();
-    logger.info(
-      {
-        shadow: (process.env.OPTIO_RECONCILE_SHADOW ?? "true").toLowerCase() !== "false",
-      },
-      "Reconcile workers started",
-    );
-  } else {
-    logger.info("Reconcile workers disabled (set OPTIO_RECONCILE_ENABLED=true to enable)");
-  }
+  const reconcileWorker = startReconcileWorker();
+  const reconcileResyncWorker = startReconcileResyncWorker();
+  logger.info("Reconcile workers started");
 
   // Check if metrics-server is available
   checkMetricsServer().catch(() => {});
@@ -256,8 +243,8 @@ async function main() {
     await workflowWorker.close();
     await workflowTriggerWorker.close();
     await tokenValidationWorker.close();
-    if (reconcileWorker) await reconcileWorker.close();
-    if (reconcileResyncWorker) await reconcileResyncWorker.close();
+    await reconcileWorker.close();
+    await reconcileResyncWorker.close();
     await app.close();
     // Flush pending OTel spans/metrics with 5s timeout
     await shutdownTelemetry();

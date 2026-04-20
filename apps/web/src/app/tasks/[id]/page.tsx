@@ -481,9 +481,11 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       )}
 
-      {/* Error panel */}
+      {/* Error panel — only for terminal failures and needs_attention. A task
+          in pr_opened state is healthy (the PR is being monitored); a stale
+          errorMessage there shouldn't paint it red. */}
       {task.errorMessage &&
-        (isTerminal || task.state === "needs_attention" || task.state === "pr_opened") &&
+        (isTerminal || task.state === "needs_attention") &&
         (() => {
           const classified = classifyError(task.errorMessage);
           if (classified.category === "auth") {

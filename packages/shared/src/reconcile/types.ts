@@ -158,6 +158,11 @@ export interface WorldSnapshot {
     offPeakOnly: boolean;
     offPeakActive: boolean;
     hasReviewSubtask: boolean;
+    /** Cap on auto_resume_* events since the last manual action. When the
+     *  count reaches this value, decideFromPrStatus escalates to
+     *  NEEDS_ATTENTION instead of returning resumeAgent. */
+    maxAutoResumes: number;
+    recentAutoResumeCount: number;
   };
   readErrors: WorldReadError[];
 }

@@ -111,6 +111,8 @@ function snapshot(
       offPeakOnly: false,
       offPeakActive: false,
       hasReviewSubtask: false,
+      maxAutoResumes: 10,
+      recentAutoResumeCount: 0,
     },
     readErrors: [],
     ...extras,
@@ -376,6 +378,10 @@ describe("reconcileRepo — QUEUED", () => {
           offPeakOnly: true,
           offPeakActive: false,
           hasReviewSubtask: false,
+          maxAutoResumes: 10,
+          recentAutoResumeCount: 0,
+          maxAutoResumes: 10,
+          recentAutoResumeCount: 0,
         },
       },
     );
@@ -399,6 +405,10 @@ describe("reconcileRepo — QUEUED", () => {
           offPeakOnly: true,
           offPeakActive: false,
           hasReviewSubtask: false,
+          maxAutoResumes: 10,
+          recentAutoResumeCount: 0,
+          maxAutoResumes: 10,
+          recentAutoResumeCount: 0,
         },
       },
     );
@@ -549,6 +559,8 @@ describe("reconcileRepo — PR_OPENED", () => {
         offPeakOnly: false,
         offPeakActive: false,
         hasReviewSubtask: false,
+        maxAutoResumes: 10,
+        recentAutoResumeCount: 0,
       },
     });
     const action = reconcileRepo(s);
@@ -578,6 +590,8 @@ describe("reconcileRepo — PR_OPENED", () => {
         offPeakOnly: false,
         offPeakActive: false,
         hasReviewSubtask: false,
+        maxAutoResumes: 10,
+        recentAutoResumeCount: 0,
       },
     });
     const action = reconcileRepo(s);
@@ -598,6 +612,8 @@ describe("reconcileRepo — PR_OPENED", () => {
         offPeakOnly: false,
         offPeakActive: false,
         hasReviewSubtask: false,
+        maxAutoResumes: 10,
+        recentAutoResumeCount: 0,
       },
     });
     expect(reconcileRepo(s).kind).toBe("launchReview");
@@ -616,6 +632,8 @@ describe("reconcileRepo — PR_OPENED", () => {
         offPeakOnly: false,
         offPeakActive: false,
         hasReviewSubtask: false,
+        maxAutoResumes: 10,
+        recentAutoResumeCount: 0,
       },
     });
     expect(reconcileRepo(s).kind).toBe("launchReview");
@@ -634,6 +652,8 @@ describe("reconcileRepo — PR_OPENED", () => {
         offPeakOnly: false,
         offPeakActive: false,
         hasReviewSubtask: false,
+        maxAutoResumes: 10,
+        recentAutoResumeCount: 0,
       },
     });
     expect(reconcileRepo(s).kind).toBe("autoMergePr");
@@ -652,6 +672,8 @@ describe("reconcileRepo — PR_OPENED", () => {
         offPeakOnly: false,
         offPeakActive: false,
         hasReviewSubtask: false,
+        maxAutoResumes: 10,
+        recentAutoResumeCount: 0,
       },
     });
     expect(reconcileRepo(s).kind).not.toBe("autoMergePr");
@@ -674,6 +696,8 @@ describe("reconcileRepo — PR_OPENED", () => {
         offPeakOnly: false,
         offPeakActive: false,
         hasReviewSubtask: false,
+        maxAutoResumes: 10,
+        recentAutoResumeCount: 0,
       },
     });
     expect(reconcileRepo(s).kind).not.toBe("autoMergePr");
@@ -692,6 +716,8 @@ describe("reconcileRepo — PR_OPENED", () => {
         offPeakOnly: false,
         offPeakActive: false,
         hasReviewSubtask: false,
+        maxAutoResumes: 10,
+        recentAutoResumeCount: 0,
       },
     });
     const action = reconcileRepo(s);

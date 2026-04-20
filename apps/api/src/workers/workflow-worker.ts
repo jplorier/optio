@@ -189,6 +189,16 @@ async function transitionRun(
     );
   }
 
+  // Wake the reconciler so it observes the new state on the next pass.
+  import("../services/reconcile-queue.js")
+    .then(({ enqueueReconcile }) =>
+      enqueueReconcile(
+        { kind: "standalone", id: runId },
+        { reason: `transition:${currentState}->${newState}` },
+      ),
+    )
+    .catch((err) => logger.warn({ err, runId }, "Failed to enqueue reconcile"));
+
   return true;
 }
 
@@ -589,37 +599,8 @@ export function startWorkflowWorker() {
             },
           );
           log.warn({ error: effectiveError }, "Workflow run failed");
-
-          // ── Retry with exponential backoff ────────────────────────
-          const currentRetry = run.retryCount ?? 0;
-          if (currentRetry < workflow.maxRetries) {
-            log.info(
-              { retryCount: currentRetry + 1, maxRetries: workflow.maxRetries },
-              "Retrying workflow run",
-            );
-            // Transition back to queued
-            await transitionRun(
-              workflowRunId,
-              workflow.id,
-              WorkflowRunState.FAILED,
-              WorkflowRunState.QUEUED,
-              {
-                retryCount: currentRetry + 1,
-                errorMessage: null,
-              },
-            );
-            // Exponential backoff: 5s, 10s, 20s, 40s, ...
-            const backoffDelay = 5000 * Math.pow(2, currentRetry);
-            const jitter = Math.floor(Math.random() * 3000);
-            await workflowRunQueue.add(
-              "process-workflow-run",
-              { workflowRunId, provisioningRetryCount: 0 },
-              {
-                jobId: `${workflowRunId}-retry-${Date.now()}`,
-                delay: backoffDelay + jitter,
-              },
-            );
-          }
+          // The reconciler's decideFailed handles the FAILED→QUEUED retry +
+          // exponential backoff. transitionRun above wakes it.
         }
       } catch (err) {
         log.error({ err }, "Workflow worker error");

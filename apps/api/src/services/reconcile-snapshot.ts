@@ -1,6 +1,14 @@
 import { and, eq, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks, workflowRuns, workflows, repoPods, repos } from "../db/schema.js";
+import {
+  tasks,
+  workflowRuns,
+  workflows,
+  repoPods,
+  repos,
+  taskEvents,
+  workflowPods,
+} from "../db/schema.js";
 import {
   TaskState,
   WorkflowRunState,
@@ -53,39 +61,48 @@ async function buildRepoSnapshot(ref: RunRef): Promise<WorldSnapshot | null> {
   const run = loadRepoRun(row, ref);
 
   // Fetch dependents, blocking subtasks, capacity, and PR status in parallel.
-  const [deps, subtaskCounts, globalCap, repoCap, prResult, podResult, repoConfig] =
-    await Promise.all([
-      loadDependencies(ref.id).catch((err) => {
-        readErrors.push({ source: "deps", message: String(err) });
-        return [] as DependencyObservation[];
-      }),
-      loadBlockingSubtasks(ref.id).catch((err) => {
-        readErrors.push({ source: "deps", message: String(err) });
-        return [] as DependencyObservation[];
-      }),
-      loadGlobalRepoCapacity().catch((err) => {
-        readErrors.push({ source: "capacity", message: String(err) });
-        return null;
-      }),
-      loadPerRepoCapacity(row.repoUrl, row.workspaceId ?? null).catch((err) => {
-        readErrors.push({ source: "capacity", message: String(err) });
-        return null;
-      }),
-      row.taskType === "review"
-        ? Promise.resolve(null)
-        : loadPrStatus(run, row.createdBy ?? null).catch((err) => {
-            readErrors.push({ source: "pr", message: String(err) });
-            return null;
-          }),
-      loadPodStatusForRepo(row.lastPodId ?? null).catch((err) => {
-        readErrors.push({ source: "pod", message: String(err) });
-        return null;
-      }),
-      loadRepoSettings(row.repoUrl, row.workspaceId ?? null).catch((err) => {
-        readErrors.push({ source: "capacity", message: String(err) });
-        return null;
-      }),
-    ]);
+  const [
+    deps,
+    subtaskCounts,
+    globalCap,
+    repoCap,
+    prResult,
+    podResult,
+    repoConfig,
+    recentAutoResumeCount,
+  ] = await Promise.all([
+    loadDependencies(ref.id).catch((err) => {
+      readErrors.push({ source: "deps", message: String(err) });
+      return [] as DependencyObservation[];
+    }),
+    loadBlockingSubtasks(ref.id).catch((err) => {
+      readErrors.push({ source: "deps", message: String(err) });
+      return [] as DependencyObservation[];
+    }),
+    loadGlobalRepoCapacity().catch((err) => {
+      readErrors.push({ source: "capacity", message: String(err) });
+      return null;
+    }),
+    loadPerRepoCapacity(row.repoUrl, row.workspaceId ?? null).catch((err) => {
+      readErrors.push({ source: "capacity", message: String(err) });
+      return null;
+    }),
+    row.taskType === "review"
+      ? Promise.resolve(null)
+      : loadPrStatus(run, row.createdBy ?? null).catch((err) => {
+          readErrors.push({ source: "pr", message: String(err) });
+          return null;
+        }),
+    loadPodStatusForRepo(row.lastPodId ?? null).catch((err) => {
+      readErrors.push({ source: "pod", message: String(err) });
+      return null;
+    }),
+    loadRepoSettings(row.repoUrl, row.workspaceId ?? null).catch((err) => {
+      readErrors.push({ source: "capacity", message: String(err) });
+      return null;
+    }),
+    countRecentAutoResumes(ref.id).catch(() => 0),
+  ]);
 
   const stallThresholdMs = parseIntEnv("OPTIO_STALL_THRESHOLD_MS", DEFAULT_STALL_THRESHOLD_MS);
   const heartbeat = computeHeartbeat(
@@ -125,11 +142,35 @@ async function buildRepoSnapshot(ref: RunRef): Promise<WorldSnapshot | null> {
       offPeakOnly: repoConfig?.offPeakOnly ?? false,
       offPeakActive: offPeak.isOffPeak,
       hasReviewSubtask,
+      maxAutoResumes: repoConfig?.maxAutoResumes ?? parseIntEnv("OPTIO_MAX_AUTO_RESUMES", 10),
+      recentAutoResumeCount,
     },
     readErrors,
   };
 
   return Object.freeze(snapshot);
+}
+
+/**
+ * Count auto_resume_* events for this task since the last manual action
+ * (force_restart, user_resume, etc.). Used by decideFromPrStatus to cap
+ * resumeAgent firing.
+ */
+async function countRecentAutoResumes(taskId: string): Promise<number> {
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(taskEvents)
+    .where(
+      sql`${taskEvents.taskId} = ${taskId}
+        AND ${taskEvents.trigger} LIKE 'auto_resume_%'
+        AND ${taskEvents.createdAt} > COALESCE(
+          (SELECT MAX(te2.created_at) FROM task_events te2
+           WHERE te2.task_id = ${taskId}
+           AND te2.trigger IN ('force_restart', 'user_resume', 'force_redo', 'user_retry', 'issue_assigned')),
+          '1970-01-01'::timestamptz
+        )`,
+    );
+  return Number(count);
 }
 
 function loadRepoRun(row: typeof tasks.$inferSelect, ref: RunRef): Run {
@@ -267,6 +308,35 @@ async function loadPrStatus(run: Run, userId: string | null): Promise<PrStatus |
   };
 }
 
+async function loadPodStatusForWorkflowRun(runId: string): Promise<PodStatus | null> {
+  const [row] = await db
+    .select()
+    .from(workflowPods)
+    .where(eq(workflowPods.workflowRunId, runId))
+    .limit(1);
+  if (!row) return null;
+  return {
+    podName: row.podName ?? row.id,
+    phase: mapWorkflowPodPhase(row.state),
+    lastError: row.errorMessage ?? null,
+  };
+}
+
+function mapWorkflowPodPhase(state: string): PodStatus["phase"] {
+  switch (state) {
+    case "provisioning":
+      return "pending";
+    case "ready":
+      return "ready";
+    case "error":
+      return "error";
+    case "terminating":
+      return "terminated";
+    default:
+      return "unknown";
+  }
+}
+
 async function loadPodStatusForRepo(podId: string | null): Promise<PodStatus | null> {
   if (!podId) return null;
   const [row] = await db.select().from(repoPods).where(eq(repoPods.id, podId));
@@ -312,6 +382,7 @@ async function loadRepoSettings(repoUrl: string, workspaceId: string | null) {
     reviewTrigger: row.reviewTrigger ?? null,
     offPeakOnly: row.offPeakOnly ?? false,
     maxConcurrentTasks: row.maxConcurrentTasks ?? 2,
+    maxAutoResumes: row.maxAutoResumes ?? null,
   };
 }
 
@@ -332,13 +403,17 @@ async function buildStandaloneSnapshot(ref: RunRef): Promise<WorldSnapshot | nul
 
   const run = loadStandaloneRun(row, workflowRow, ref);
 
-  const [globalCap, workflowCap] = await Promise.all([
+  const [globalCap, workflowCap, podResult] = await Promise.all([
     loadGlobalWorkflowCapacity().catch((err) => {
       readErrors.push({ source: "capacity", message: String(err) });
       return null;
     }),
     loadPerWorkflowCapacity(row.workflowId, workflowRow.maxConcurrent).catch((err) => {
       readErrors.push({ source: "capacity", message: String(err) });
+      return null;
+    }),
+    loadPodStatusForWorkflowRun(ref.id).catch((err) => {
+      readErrors.push({ source: "pod", message: String(err) });
       return null;
     }),
   ]);
@@ -356,7 +431,7 @@ async function buildStandaloneSnapshot(ref: RunRef): Promise<WorldSnapshot | nul
   const snapshot: WorldSnapshot = {
     now,
     run,
-    pod: null, // workflow pod lookup deferred until Phase C needs it
+    pod: podResult,
     pr: null,
     dependencies: [],
     blockingSubtasks: [],
@@ -378,6 +453,8 @@ async function buildStandaloneSnapshot(ref: RunRef): Promise<WorldSnapshot | nul
       offPeakOnly: false,
       offPeakActive: false,
       hasReviewSubtask: false,
+      maxAutoResumes: 0,
+      recentAutoResumeCount: 0,
     },
     readErrors,
   };

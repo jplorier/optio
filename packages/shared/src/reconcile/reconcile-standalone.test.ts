@@ -75,6 +75,8 @@ function snapshot(
       offPeakOnly: false,
       offPeakActive: false,
       hasReviewSubtask: false,
+      maxAutoResumes: 0,
+      recentAutoResumeCount: 0,
     },
     readErrors: [],
     ...extras,
@@ -373,8 +375,51 @@ describe("reconcileStandalone — terminal states", () => {
     expect(reconcileStandalone(s).kind).toBe("noop");
   });
 
-  it("FAILED without retry intent is a no-op", () => {
-    const s = snapshot({}, { state: WorkflowRunState.FAILED });
+  it("FAILED noops when retries exhausted", () => {
+    const s = snapshot({ maxRetries: 3 }, { state: WorkflowRunState.FAILED, retryCount: 3 });
     expect(reconcileStandalone(s).kind).toBe("noop");
+  });
+});
+
+// ── Auto-retry on FAILED ────────────────────────────────────────────────────
+
+describe("reconcileStandalone — auto-retry on FAILED", () => {
+  it("transitions FAILED → QUEUED with retryCount++ when retries remain", () => {
+    const s = snapshot({ maxRetries: 3 }, { state: WorkflowRunState.FAILED, retryCount: 0 });
+    const action = reconcileStandalone(s);
+    expect(action.kind).toBe("transition");
+    if (action.kind === "transition") {
+      expect(action.to).toBe(WorkflowRunState.QUEUED);
+      expect(action.statusPatch?.retryCount).toBe(1);
+      expect(action.statusPatch?.errorMessage).toBeNull();
+    }
+  });
+
+  it("sets reconcileBackoffUntil for the executor to schedule a delayed reconcile", () => {
+    const s = snapshot({ maxRetries: 3 }, { state: WorkflowRunState.FAILED, retryCount: 0 });
+    const action = reconcileStandalone(s);
+    if (action.kind !== "transition") throw new Error("expected transition");
+    const backoff = action.statusPatch?.reconcileBackoffUntil;
+    expect(backoff).toBeInstanceOf(Date);
+    if (backoff instanceof Date) {
+      const delayMs = backoff.getTime() - s.now.getTime();
+      // First retry: 5s base + up to 3s jitter
+      expect(delayMs).toBeGreaterThanOrEqual(5_000);
+      expect(delayMs).toBeLessThan(8_001);
+    }
+  });
+
+  it("backoff grows exponentially across retries", () => {
+    const s0 = snapshot({ maxRetries: 5 }, { state: WorkflowRunState.FAILED, retryCount: 0 });
+    const s3 = snapshot({ maxRetries: 5 }, { state: WorkflowRunState.FAILED, retryCount: 3 });
+    const a0 = reconcileStandalone(s0);
+    const a3 = reconcileStandalone(s3);
+    if (a0.kind !== "transition" || a3.kind !== "transition") throw new Error();
+    const backoff0 = a0.statusPatch?.reconcileBackoffUntil as Date;
+    const backoff3 = a3.statusPatch?.reconcileBackoffUntil as Date;
+    // 5s vs 40s — much larger
+    expect(backoff3.getTime() - s3.now.getTime()).toBeGreaterThan(
+      (backoff0.getTime() - s0.now.getTime()) * 4,
+    );
   });
 });

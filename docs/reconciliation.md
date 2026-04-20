@@ -2,7 +2,7 @@
 
 Optio drives task and pod state through a Kubernetes-style reconciliation loop. A worker observes the world, runs a pure decision function, and applies a single typed action — gated by compare-and-swap so concurrent observers cannot trample each other.
 
-This guide covers what the loop does, how to enable it, the configuration surface, and how to debug a decision.
+This guide covers what the loop does, the configuration surface, and how to debug a decision.
 
 ## Why a reconciler
 
@@ -12,7 +12,7 @@ Before v0.2.0, state transitions lived inside the workers that produced them: `t
 2. **No single decision point.** Two workers could attempt overlapping transitions on the same row.
 3. **Hard to test.** Decisions were tangled with I/O, so most logic was exercised only through integration tests.
 
-The reconciler centralizes the decision step. Workers still produce events and execute side effects (spawning pods, running agents, polling GitHub), but the call to `taskService.transitionTask()` flows through the reconciler.
+The reconciler centralizes the decision step. Workers still produce events and execute side effects (spawning pods, running agents, polling GitHub), but PR-driven transitions, auto-merge, auto-resume, review launch, stall and pod-death detection, and control-intent handling all flow through the reconciler.
 
 ## How a reconcile pass runs
 
@@ -35,10 +35,11 @@ reconcileRepo(snapshot)        ← pure function, no I/O
 reconcileStandalone(snapshot)  ← pure function, no I/O
    │
    ▼  (Action union)
-executeAction(action, snapshot, { shadow })
-  - shadow=true:  log decision, return
-  - shadow=false: CAS-update row; transitions delegate
-                  to taskService.transitionTask()
+executeAction(action, snapshot)
+  - state mutations: CAS-update row, then delegate to
+                     taskService.transitionTask() for fan-out
+  - side effects: enqueue agent jobs, call platform.merge,
+                  launch review subtask, etc.
    │
    ▼
 Telemetry: reconcile.decision { kind, id, action, reason, outcome }
@@ -71,36 +72,26 @@ The repo decision function evaluates capacity, dependency state, pod health, PR 
 
 States: `queued`, `running`, `completed`, `failed`. Simpler — the decision function reads pod state and decides whether to enqueue the agent, transition, or back off.
 
-## Triggers
+## Producers
 
-Three things can enqueue a reconcile job:
+Three things enqueue a reconcile job:
 
-1. **State-change events.** Producers (the existing workers) enqueue after a meaningful side effect.
-2. **Periodic resync.** Every 5 minutes (configurable) the resync worker scans non-terminal `tasks` and `workflow_runs` and enqueues each one. This is the safety net for lost events.
-3. **Manual.** Operations tooling can enqueue directly with `{ kind, id }`.
+1. **State-change events.** `taskService.transitionTask` and `workflow-worker`'s `transitionRun` helper both fire `enqueueReconcile` after every successful transition. Anywhere the codebase changes a run's state, the reconciler is woken within milliseconds.
+2. **PR poll updates.** The `pr-watcher-worker` polls open PRs every 30s, writes refreshed `prState` / `prChecksStatus` / `prReviewStatus` / `prReviewComments` to the row, then enqueues a reconcile so the decision function sees the new PR data.
+3. **Pod-health events.** When `repo-cleanup-worker` detects a crashed or OOM-killed pod, it marks worktrees dirty and enqueues a reconcile for each affected task — the reconciler observes `pod.phase=error` from the snapshot and fires the FAILED transition.
+4. **Periodic resync.** Every 5 minutes (configurable) the resync worker scans non-terminal runs in both tables and enqueues each one. Safety net for any signal that's lost.
 
-The queue dedups by `${kind}__${id}`, so multiple producers do not amplify the load.
-
-## Enabling
-
-The reconciler is **off by default** and ships in shadow mode behind a feature flag. The recommended rollout is:
-
-1. **Phase A — observe.** Enable workers in shadow mode. Decisions are logged but not applied. Compare logged decisions against actual state to validate correctness.
-2. **Phase B — apply.** Disable shadow. The reconciler's decisions become the source of truth.
-3. **Phase C — retire ad-hoc transitions.** Remove direct `transitionTask()` calls from individual workers as the reconciler subsumes them.
-
-Today, Phase A is the supported configuration.
+The queue dedups by `${kind}__${id}`, so multiple producers do not amplify load.
 
 ## Configuration
 
 | Env var                           | Default           | Purpose                                                  |
 | --------------------------------- | ----------------- | -------------------------------------------------------- |
-| `OPTIO_RECONCILE_ENABLED`         | `false`           | Start the reconcile worker and resync worker             |
-| `OPTIO_RECONCILE_SHADOW`          | `true`            | Log decisions without applying them                      |
 | `OPTIO_RECONCILE_CONCURRENCY`     | `4`               | Parallel reconcile jobs                                  |
 | `OPTIO_RECONCILE_LOCK_MS`         | `30000`           | BullMQ job lock — hard kill for runaway jobs             |
 | `OPTIO_RECONCILE_RESYNC_INTERVAL` | `300000` (5 min)  | Full sweep cadence for non-terminal runs                 |
 | `OPTIO_STALL_THRESHOLD_MS`        | `900000` (15 min) | Heartbeat staleness threshold the decision function uses |
+| `OPTIO_MAX_AUTO_RESUMES`          | `10`              | Cap on `auto_resume_*` events between manual actions     |
 
 ## Schema
 

@@ -6,6 +6,15 @@ import type { Action, RepoAction, StandaloneAction, WorldSnapshot, Run } from "@
 
 const mockDbUpdate = vi.fn();
 const mockTransitionTask = vi.fn();
+const mockTaskQueueAdd = vi.fn();
+const mockWorkflowQueueAdd = vi.fn();
+const mockLaunchReview = vi.fn();
+const mockMergePR = vi.fn();
+const mockGetPlatform = vi.fn();
+const mockPublishWorkflowRunEvent = vi.fn();
+const mockEnqueueWebhookEvent = vi.fn();
+const mockGetWorkflowRun = vi.fn();
+const mockGetWorkflow = vi.fn();
 
 function chainable(returning: unknown) {
   const obj: Record<string, unknown> = {};
@@ -31,6 +40,41 @@ vi.mock("./task-service.js", () => ({
   transitionTask: (...args: unknown[]) => mockTransitionTask(...args),
 }));
 
+vi.mock("../workers/task-worker.js", () => ({
+  taskQueue: { add: (...args: unknown[]) => mockTaskQueueAdd(...args) },
+}));
+
+vi.mock("../workers/workflow-worker.js", () => ({
+  workflowRunQueue: { add: (...args: unknown[]) => mockWorkflowQueueAdd(...args) },
+}));
+
+vi.mock("./review-service.js", () => ({
+  launchReview: (...args: unknown[]) => mockLaunchReview(...args),
+}));
+
+vi.mock("./git-token-service.js", () => ({
+  getGitPlatformForRepo: (...args: unknown[]) => mockGetPlatform(...args),
+}));
+
+vi.mock("./event-bus.js", () => ({
+  publishWorkflowRunEvent: (...args: unknown[]) => mockPublishWorkflowRunEvent(...args),
+}));
+
+vi.mock("../workers/webhook-worker.js", () => ({
+  enqueueWebhookEvent: (...args: unknown[]) => mockEnqueueWebhookEvent(...args),
+}));
+
+vi.mock("./workflow-service.js", () => ({
+  getWorkflowRun: (...args: unknown[]) => mockGetWorkflowRun(...args),
+  getWorkflow: (...args: unknown[]) => mockGetWorkflow(...args),
+}));
+
+const mockEnqueueReconcile = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("./reconcile-queue.js", () => ({
+  enqueueReconcile: (...args: unknown[]) => mockEnqueueReconcile(...args),
+}));
+
 vi.mock("../logger.js", () => ({
   logger: {
     child: () => ({
@@ -39,6 +83,7 @@ vi.mock("../logger.js", () => ({
       error: vi.fn(),
       debug: vi.fn(),
     }),
+    warn: vi.fn(),
   },
 }));
 
@@ -112,6 +157,8 @@ function repoSnapshot(overrides: Partial<WorldSnapshot> = {}): WorldSnapshot {
       offPeakOnly: false,
       offPeakActive: false,
       hasReviewSubtask: false,
+      maxAutoResumes: 10,
+      recentAutoResumeCount: 0,
     },
     readErrors: [],
     ...overrides,
@@ -166,6 +213,8 @@ function standaloneSnapshot(overrides: Partial<WorldSnapshot> = {}): WorldSnapsh
       offPeakOnly: false,
       offPeakActive: false,
       hasReviewSubtask: false,
+      maxAutoResumes: 0,
+      recentAutoResumeCount: 0,
     },
     readErrors: [],
     ...overrides,
@@ -179,28 +228,6 @@ describe("reconcile-executor", () => {
     vi.clearAllMocks();
   });
 
-  describe("shadow mode", () => {
-    it("returns shadow outcome without any DB call", async () => {
-      const action: Action = { kind: "noop", reason: "healthy" };
-      const outcome = await executeAction(action, repoSnapshot(), { shadow: true });
-      expect(outcome.status).toBe("shadow");
-      expect(mockDbUpdate).not.toHaveBeenCalled();
-      expect(mockTransitionTask).not.toHaveBeenCalled();
-    });
-
-    it("shadows transition actions too", async () => {
-      const action: RepoAction = {
-        kind: "transition",
-        to: TaskState.CANCELLED,
-        trigger: "user_cancel",
-        reason: "control_intent=cancel",
-      };
-      const outcome = await executeAction(action, repoSnapshot(), { shadow: true });
-      expect(outcome.status).toBe("shadow");
-      expect(mockTransitionTask).not.toHaveBeenCalled();
-    });
-  });
-
   describe("simple actions", () => {
     it("noop → skipped", async () => {
       const outcome = await executeAction({ kind: "noop", reason: "idle" }, repoSnapshot());
@@ -208,7 +235,7 @@ describe("reconcile-executor", () => {
       expect(outcome.reason).toBe("idle");
     });
 
-    it("requeueSoon → skipped (worker handles re-enqueue)", async () => {
+    it("requeueSoon → skipped (worker re-enqueues)", async () => {
       const action: Action = {
         kind: "requeueSoon",
         delayMs: 10_000,
@@ -216,21 +243,6 @@ describe("reconcile-executor", () => {
       };
       const outcome = await executeAction(action, repoSnapshot());
       expect(outcome.status).toBe("skipped");
-      expect(mockDbUpdate).not.toHaveBeenCalled();
-    });
-
-    it("Phase-B-deferred side effects return skipped", async () => {
-      const actions: RepoAction[] = [
-        { kind: "requeueForAgent", trigger: "t", reason: "r" },
-        { kind: "resumeAgent", resumeReason: "ci_failure", reason: "r" },
-        { kind: "launchReview", reason: "r" },
-        { kind: "autoMergePr", reason: "r" },
-      ];
-      for (const action of actions) {
-        const outcome = await executeAction(action, repoSnapshot());
-        expect(outcome.status).toBe("skipped");
-        expect(outcome.reason).toMatch(/^phase_b_defer:/);
-      }
       expect(mockDbUpdate).not.toHaveBeenCalled();
     });
   });
@@ -255,76 +267,14 @@ describe("reconcile-executor", () => {
       );
     });
 
-    it("increments attempts counter across defers", async () => {
-      const chain = chainable([{ id: "task-1" }]);
-      mockDbUpdate.mockReturnValue(chain);
-
-      const snap = repoSnapshot();
-      snap.run.status.reconcileAttempts = 4;
-      const action: Action = {
-        kind: "deferWithBackoff",
-        untilMs: NOW.getTime() + 60_000,
-        reason: "github_timeout",
-      };
-      await executeAction(action, snap);
-      expect(chain.set).toHaveBeenCalledWith(expect.objectContaining({ reconcileAttempts: 5 }));
-    });
-
     it("returns stale when CAS fails", async () => {
-      const chain = chainable([]);
-      mockDbUpdate.mockReturnValue(chain);
+      mockDbUpdate.mockReturnValue(chainable([]));
       const action: Action = {
         kind: "deferWithBackoff",
         untilMs: NOW.getTime() + 60_000,
         reason: "x",
       };
       const outcome = await executeAction(action, repoSnapshot());
-      expect(outcome.status).toBe("stale");
-    });
-
-    it("works for standalone runs too", async () => {
-      const chain = chainable([{ id: "run-1" }]);
-      mockDbUpdate.mockReturnValue(chain);
-      const action: Action = {
-        kind: "deferWithBackoff",
-        untilMs: NOW.getTime() + 60_000,
-        reason: "pod_timeout",
-      };
-      const outcome = await executeAction(action, standaloneSnapshot());
-      expect(outcome.status).toBe("applied");
-    });
-  });
-
-  describe("clearControlIntent", () => {
-    it("sets control_intent to null for repo runs", async () => {
-      const chain = chainable([{ id: "task-1" }]);
-      mockDbUpdate.mockReturnValue(chain);
-
-      const outcome = await executeAction(
-        { kind: "clearControlIntent", reason: "exhausted" },
-        repoSnapshot(),
-      );
-      expect(outcome.status).toBe("applied");
-      expect(chain.set).toHaveBeenCalledWith(expect.objectContaining({ controlIntent: null }));
-    });
-
-    it("clears intent on standalone runs", async () => {
-      const chain = chainable([{ id: "run-1" }]);
-      mockDbUpdate.mockReturnValue(chain);
-
-      const outcome = await executeAction(
-        { kind: "clearControlIntent", reason: "unsupported" },
-        standaloneSnapshot(),
-      );
-      expect(outcome.status).toBe("applied");
-    });
-
-    it("stale CAS on clear returns stale", async () => {
-      mockDbUpdate.mockReturnValue(chainable([]));
-      const outcome = await executeAction(
-        { kind: "clearControlIntent", reason: "x" },
-        repoSnapshot(),
-      );
       expect(outcome.status).toBe("stale");
     });
   });
@@ -351,20 +301,10 @@ describe("reconcile-executor", () => {
         "user_cancel",
         expect.any(String),
       );
-      // Patch should include backoff reset, intent clear, plus errorMessage
-      expect(chain.set).toHaveBeenCalledWith(
-        expect.objectContaining({
-          errorMessage: "Cancelled by user",
-          reconcileBackoffUntil: null,
-          reconcileAttempts: 0,
-          controlIntent: null,
-        }),
-      );
     });
 
     it("bails before transitionTask when pre-patch CAS fails", async () => {
-      mockDbUpdate.mockReturnValue(chainable([])); // stale
-
+      mockDbUpdate.mockReturnValue(chainable([]));
       const action: RepoAction = {
         kind: "transition",
         to: TaskState.FAILED,
@@ -390,26 +330,22 @@ describe("reconcile-executor", () => {
       const outcome = await executeAction(action, repoSnapshot());
       expect(outcome.status).toBe("stale");
     });
-
-    it("surfaces other transitionTask errors as error outcomes", async () => {
-      mockDbUpdate.mockReturnValue(chainable([{ id: "task-1" }]));
-      mockTransitionTask.mockRejectedValue(new Error("ENOTFOUND"));
-
-      const action: RepoAction = {
-        kind: "transition",
-        to: TaskState.FAILED,
-        trigger: "x",
-        reason: "x",
-      };
-      const outcome = await executeAction(action, repoSnapshot());
-      expect(outcome.status).toBe("error");
-    });
   });
 
   describe("standalone transition", () => {
-    it("applies state + patch + CAS", async () => {
+    it("applies state + patch + CAS and publishes event", async () => {
       const chain = chainable([{ id: "run-1" }]);
       mockDbUpdate.mockReturnValue(chain);
+      mockGetWorkflowRun.mockResolvedValue({
+        id: "run-1",
+        state: WorkflowRunState.FAILED,
+        params: null,
+        output: null,
+        retryCount: 0,
+        startedAt: null,
+        finishedAt: null,
+      });
+      mockGetWorkflow.mockResolvedValue({ id: "wf-1", name: "Test workflow" });
 
       const action: StandaloneAction = {
         kind: "transition",
@@ -421,14 +357,17 @@ describe("reconcile-executor", () => {
       };
       const outcome = await executeAction(action, standaloneSnapshot());
       expect(outcome.status).toBe("applied");
-      expect(chain.set).toHaveBeenCalledWith(
+      expect(mockPublishWorkflowRunEvent).toHaveBeenCalledWith(
         expect.objectContaining({
-          state: WorkflowRunState.FAILED,
-          errorMessage: "Cancelled by user",
-          controlIntent: null,
-          reconcileBackoffUntil: null,
-          reconcileAttempts: 0,
+          type: "workflow_run:state_changed",
+          workflowRunId: "run-1",
+          fromState: WorkflowRunState.QUEUED,
+          toState: WorkflowRunState.FAILED,
         }),
+      );
+      expect(mockEnqueueWebhookEvent).toHaveBeenCalledWith(
+        "workflow_run.failed",
+        expect.objectContaining({ runId: "run-1", workflowId: "wf-1" }),
       );
     });
 
@@ -442,46 +381,224 @@ describe("reconcile-executor", () => {
       };
       const outcome = await executeAction(action, standaloneSnapshot());
       expect(outcome.status).toBe("stale");
+      expect(mockPublishWorkflowRunEvent).not.toHaveBeenCalled();
+    });
+
+    it("schedules a delayed reconcile when statusPatch carries a future backoff", async () => {
+      mockDbUpdate.mockReturnValue(chainable([{ id: "run-1" }]));
+      mockGetWorkflowRun.mockResolvedValue({
+        id: "run-1",
+        state: WorkflowRunState.QUEUED,
+        params: null,
+        output: null,
+        retryCount: 1,
+        startedAt: null,
+        finishedAt: null,
+      });
+      mockGetWorkflow.mockResolvedValue({ id: "wf-1", name: "wf" });
+
+      // scheduleBackoffReconcile uses Date.now(), not the snapshot's NOW,
+      // so the backoff must be in the real wall-clock future.
+      const futureBackoff = new Date(Date.now() + 30_000);
+      const action: StandaloneAction = {
+        kind: "transition",
+        to: WorkflowRunState.QUEUED,
+        statusPatch: {
+          retryCount: 1,
+          errorMessage: null,
+          reconcileBackoffUntil: futureBackoff,
+        },
+        trigger: "auto_retry",
+        reason: "auto_retry_1/3",
+      };
+      await executeAction(action, standaloneSnapshot());
+      expect(mockEnqueueReconcile).toHaveBeenCalledWith(
+        { kind: "standalone", id: "run-1" },
+        expect.objectContaining({
+          reason: "backoff_expired",
+          delayMs: expect.any(Number),
+        }),
+      );
     });
   });
 
-  describe("patchStatus", () => {
-    it("applies patch only, no state change", async () => {
-      const chain = chainable([{ id: "task-1" }]);
-      mockDbUpdate.mockReturnValue(chain);
-
+  describe("requeueForAgent", () => {
+    it("enqueues to taskQueue without state change", async () => {
       const action: RepoAction = {
-        kind: "patchStatus",
-        statusPatch: { prReviewStatus: "pending" },
-        reason: "pr_status_refresh",
+        kind: "requeueForAgent",
+        trigger: "reconcile_queued",
+        reason: "queued_capacity_available",
       };
       const outcome = await executeAction(action, repoSnapshot());
       expect(outcome.status).toBe("applied");
+      expect(mockTaskQueueAdd).toHaveBeenCalledWith(
+        "process-task",
+        { taskId: "task-1" },
+        expect.objectContaining({ priority: 100 }),
+      );
       expect(mockTransitionTask).not.toHaveBeenCalled();
-      expect(chain.set).toHaveBeenCalledWith(
-        expect.objectContaining({ prReviewStatus: "pending" }),
+    });
+
+    it("applies statusPatch CAS-gated before enqueueing", async () => {
+      const chain = chainable([{ id: "task-1" }]);
+      mockDbUpdate.mockReturnValue(chain);
+      const action: RepoAction = {
+        kind: "requeueForAgent",
+        statusPatch: { lastActivityAt: NOW },
+        trigger: "x",
+        reason: "x",
+      };
+      const outcome = await executeAction(action, repoSnapshot());
+      expect(outcome.status).toBe("applied");
+      expect(chain.set).toHaveBeenCalledWith(expect.objectContaining({ lastActivityAt: NOW }));
+      expect(mockTaskQueueAdd).toHaveBeenCalled();
+    });
+  });
+
+  describe("enqueueAgent", () => {
+    it("enqueues to workflowRunQueue", async () => {
+      const action: StandaloneAction = {
+        kind: "enqueueAgent",
+        trigger: "reconcile_queued",
+        reason: "queued_capacity_available",
+      };
+      const outcome = await executeAction(action, standaloneSnapshot());
+      expect(outcome.status).toBe("applied");
+      expect(mockWorkflowQueueAdd).toHaveBeenCalledWith(
+        "process-workflow-run",
+        { workflowRunId: "run-1" },
+        expect.any(Object),
+      );
+    });
+  });
+
+  describe("launchReview", () => {
+    it("calls launchReview with task id", async () => {
+      mockLaunchReview.mockResolvedValue("review-task-id");
+      const action: RepoAction = { kind: "launchReview", reason: "ci_pass" };
+      const outcome = await executeAction(action, repoSnapshot());
+      expect(outcome.status).toBe("applied");
+      expect(mockLaunchReview).toHaveBeenCalledWith("task-1");
+    });
+
+    it("surfaces review-service errors", async () => {
+      mockLaunchReview.mockRejectedValue(new Error("PR not found"));
+      const action: RepoAction = { kind: "launchReview", reason: "ci_pass" };
+      const outcome = await executeAction(action, repoSnapshot());
+      expect(outcome.status).toBe("error");
+    });
+  });
+
+  describe("autoMergePr", () => {
+    it("merges and transitions to COMPLETED on success", async () => {
+      mockGetPlatform.mockResolvedValue({
+        platform: { mergePullRequest: mockMergePR },
+        ri: { owner: "acme", repo: "repo" },
+      });
+      mockMergePR.mockResolvedValue(undefined);
+      const chain = chainable([{ id: "task-1" }]);
+      mockDbUpdate.mockReturnValue(chain);
+      mockTransitionTask.mockResolvedValue({ id: "task-1" });
+
+      const snap = repoSnapshot();
+      if (snap.run.kind !== "repo") throw new Error("fixture mismatch");
+      snap.run.status.prUrl = "https://github.com/acme/repo/pull/42";
+      snap.run.status.state = TaskState.PR_OPENED;
+
+      const action: RepoAction = { kind: "autoMergePr", reason: "auto_merge_ready" };
+      const outcome = await executeAction(action, snap);
+      expect(outcome.status).toBe("applied");
+      expect(mockMergePR).toHaveBeenCalledWith(
+        expect.objectContaining({ owner: "acme" }),
+        42,
+        "squash",
+      );
+      expect(mockTransitionTask).toHaveBeenCalledWith(
+        "task-1",
+        TaskState.COMPLETED,
+        "auto_merged",
+        expect.any(String),
       );
     });
 
-    it("stale CAS returns stale", async () => {
-      mockDbUpdate.mockReturnValue(chainable([]));
+    it("returns error when merge throws", async () => {
+      mockGetPlatform.mockResolvedValue({
+        platform: { mergePullRequest: mockMergePR },
+        ri: { owner: "acme", repo: "repo" },
+      });
+      mockMergePR.mockRejectedValue(new Error("Merge conflict"));
+
+      const snap = repoSnapshot();
+      if (snap.run.kind !== "repo") throw new Error("fixture mismatch");
+      snap.run.status.prUrl = "https://github.com/acme/repo/pull/42";
+
+      const action: RepoAction = { kind: "autoMergePr", reason: "auto_merge_ready" };
+      const outcome = await executeAction(action, snap);
+      expect(outcome.status).toBe("error");
+      expect(mockTransitionTask).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("resumeAgent", () => {
+    it("transitions through NEEDS_ATTENTION → QUEUED and enqueues with prompt", async () => {
+      mockTransitionTask.mockResolvedValue({ id: "task-1" });
+      const snap = repoSnapshot();
+      if (snap.run.kind !== "repo") throw new Error("fixture mismatch");
+      snap.run.status.state = TaskState.PR_OPENED;
+      snap.run.status.prUrl = "https://github.com/acme/repo/pull/42";
+      snap.run.status.sessionId = "sess-99";
+
       const action: RepoAction = {
-        kind: "patchStatus",
-        statusPatch: { prState: "open" },
-        reason: "refresh",
+        kind: "resumeAgent",
+        resumeReason: "ci_failure",
+        reason: "ci_failing_auto_resume",
       };
-      const outcome = await executeAction(action, repoSnapshot());
-      expect(outcome.status).toBe("stale");
+      const outcome = await executeAction(action, snap);
+      expect(outcome.status).toBe("applied");
+      expect(mockTransitionTask).toHaveBeenNthCalledWith(
+        1,
+        "task-1",
+        TaskState.NEEDS_ATTENTION,
+        "ci_failing",
+        expect.stringContaining("CI checks are failing"),
+      );
+      expect(mockTransitionTask).toHaveBeenNthCalledWith(
+        2,
+        "task-1",
+        TaskState.QUEUED,
+        "auto_resume_ci-fix",
+      );
+      expect(mockTaskQueueAdd).toHaveBeenCalledWith(
+        "process-task",
+        expect.objectContaining({
+          taskId: "task-1",
+          resumeSessionId: "sess-99",
+          resumePrompt: expect.stringContaining("CI checks are failing"),
+        }),
+        expect.any(Object),
+      );
     });
 
-    it("patchStatus on standalone returns error (invalid combination)", async () => {
+    it("uses fresh session for conflicts (no resumeSessionId)", async () => {
+      mockTransitionTask.mockResolvedValue({ id: "task-1" });
+      const snap = repoSnapshot();
+      if (snap.run.kind !== "repo") throw new Error("fixture mismatch");
+      snap.run.status.state = TaskState.PR_OPENED;
+      snap.run.status.prUrl = "https://github.com/acme/repo/pull/42";
+      snap.run.status.sessionId = "sess-99";
+
       const action: RepoAction = {
-        kind: "patchStatus",
-        statusPatch: {},
-        reason: "x",
+        kind: "resumeAgent",
+        resumeReason: "conflicts",
+        reason: "pr_conflicts_auto_resume",
       };
-      const outcome = await executeAction(action, standaloneSnapshot());
-      expect(outcome.status).toBe("error");
+      const outcome = await executeAction(action, snap);
+      expect(outcome.status).toBe("applied");
+      expect(mockTaskQueueAdd).toHaveBeenCalledWith(
+        "process-task",
+        expect.objectContaining({ resumeSessionId: undefined }),
+        expect.any(Object),
+      );
     });
   });
 

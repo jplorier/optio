@@ -20,20 +20,24 @@ export interface EnqueueOptions {
 }
 
 /**
- * Enqueue a reconcile pass for the given run. Jobs are deduplicated by
- * `${kind}:${id}` via BullMQ's jobId — a second enqueue while one is already
- * queued/delayed collapses into a single execution. A currently-running job
- * does not dedupe (BullMQ allows a new job with the same id once the active
- * one completes).
+ * Enqueue a reconcile pass for the given run.
+ *
+ * Each call creates a fresh BullMQ job (jobId is timestamp-suffixed). We
+ * cannot use a stable jobId for dedup: BullMQ's `queue.add()` is a no-op
+ * when the same jobId exists in *any* state — including `completed` — so
+ * once a reconcile completes for a given run, a stable jobId would silently
+ * block all future enqueues for that run until the completed entry is
+ * evicted. The reconciler's executor is CAS-gated and idempotent, so a few
+ * back-to-back redundant passes from rapid transitions cost ~ms each.
  */
 export async function enqueueReconcile(ref: RunRef, opts: EnqueueOptions): Promise<void> {
-  const jobId = runKey(ref);
+  const baseId = runKey(ref);
   try {
     await reconcileQueue.add(
       "reconcile",
       { ref, reason: opts.reason },
       {
-        jobId: opts.delayMs ? `${jobId}__${Date.now()}` : jobId,
+        jobId: `${baseId}__${Date.now()}__${Math.floor(Math.random() * 1000)}`,
         delay: opts.delayMs,
         removeOnComplete: 1000,
         removeOnFail: 500,

@@ -214,17 +214,40 @@ export interface AuthFailureDetection {
  * Callers should use this to override a nominally-successful agent result when
  * the agent emitted a 401 mid-run — claude-code and similar CLIs often swallow
  * the error and exit 0, which would otherwise mark the run as completed.
+ *
+ * Lines that are stream-json `{"type":"user",...}` or `{"type":"assistant",...}`
+ * events are skipped: they carry agent-internal content (tool_result file
+ * dumps, Edit/Write input, the agent's own narration) which can contain
+ * literal pattern text — e.g. a Read of a test fixture that asserts on an
+ * `Invalid API key` response. Real claude-code auth failures arrive as plain
+ * text from the runtime ("Failed to authenticate. API Error: 401 …"), not as
+ * NDJSON events, so this filter only removes false positives.
  */
 export function detectAuthFailureInLogs(logs: string): AuthFailureDetection {
   if (!logs) return { matched: false };
-  const lower = logs.toLowerCase();
-  for (const pattern of AUTH_FAILURE_PATTERNS) {
-    const idx = lower.indexOf(pattern);
-    if (idx === -1) continue;
-    const start = Math.max(0, idx - 40);
-    const end = Math.min(logs.length, idx + pattern.length + 200);
-    const excerpt = logs.slice(start, end).replace(/\s+/g, " ").trim().slice(0, 240);
-    return { matched: true, pattern, excerpt };
+  for (const line of logs.split("\n")) {
+    if (!line.trim()) continue;
+    if (isAgentInternalEvent(line)) continue;
+    const lower = line.toLowerCase();
+    for (const pattern of AUTH_FAILURE_PATTERNS) {
+      const idx = lower.indexOf(pattern);
+      if (idx === -1) continue;
+      const start = Math.max(0, idx - 40);
+      const end = Math.min(line.length, idx + pattern.length + 200);
+      const excerpt = line.slice(start, end).replace(/\s+/g, " ").trim().slice(0, 240);
+      return { matched: true, pattern, excerpt };
+    }
   }
   return { matched: false };
+}
+
+function isAgentInternalEvent(line: string): boolean {
+  const trimmed = line.trimStart();
+  if (!trimmed.startsWith("{")) return false;
+  try {
+    const event = JSON.parse(trimmed);
+    return event?.type === "user" || event?.type === "assistant";
+  } catch {
+    return false;
+  }
 }

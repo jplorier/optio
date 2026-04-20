@@ -384,9 +384,14 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
     review: status.prReviewStatus,
   };
 
+  const autoResumeAllowed =
+    snapshot.settings.autoResume &&
+    canResume &&
+    snapshot.settings.recentAutoResumeCount < snapshot.settings.maxAutoResumes;
+
   // Merge conflicts (edge-triggered).
   if (pr.mergeable === false && pr.state === "open" && prev.checks !== "conflicts") {
-    if (snapshot.settings.autoResume && canResume) {
+    if (autoResumeAllowed) {
       return {
         kind: "resumeAgent",
         resumeReason: "conflicts",
@@ -404,7 +409,7 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
 
   // CI just started failing.
   if (pr.checksStatus === "failing" && prev.checks !== "failing" && pr.state === "open") {
-    if (snapshot.settings.autoResume && canResume) {
+    if (autoResumeAllowed) {
       return {
         kind: "resumeAgent",
         resumeReason: "ci_failure",
@@ -457,7 +462,7 @@ function decideFromPrStatus(snapshot: WorldSnapshot, allowFailComplete: boolean)
 
   // Review requested changes (edge-triggered).
   if (pr.reviewStatus === "changes_requested" && prev.review !== "changes_requested") {
-    if (snapshot.settings.autoResume && canResume) {
+    if (autoResumeAllowed) {
       return {
         kind: "resumeAgent",
         resumeReason: "review",
