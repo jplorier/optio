@@ -2,7 +2,7 @@
 
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useDashboardData } from "@/hooks/use-dashboard-data";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, GitPullRequest, Terminal } from "lucide-react";
 import {
   PipelineStatsBar,
   UsagePanel,
@@ -20,6 +20,7 @@ export default function OverviewPage() {
   usePageTitle("Overview");
   const {
     taskStats,
+    standaloneStats,
     recentTasks,
     repoCount,
     cluster,
@@ -110,7 +111,27 @@ export default function OverviewPage() {
 
       <UpdateBanner />
 
-      <PipelineStatsBar taskStats={taskStats} />
+      <div className="space-y-2">
+        <div className="flex items-center gap-1.5 px-1">
+          <GitPullRequest className="w-3 h-3 text-text-muted/60" />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted/60">
+            Repo Tasks
+          </span>
+        </div>
+        <PipelineStatsBar taskStats={taskStats} />
+      </div>
+
+      {(standaloneStats?.total ?? 0) > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-1.5 px-1">
+            <Terminal className="w-3 h-3 text-text-muted/60" />
+            <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-text-muted/60">
+              Standalone Tasks
+            </span>
+          </div>
+          <PipelineStatsBar variant="standalone" standaloneStats={standaloneStats} />
+        </div>
+      )}
 
       <AgentComparison />
 

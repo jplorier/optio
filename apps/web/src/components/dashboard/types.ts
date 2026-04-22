@@ -9,6 +9,14 @@ export interface TaskStats {
   completed: number;
 }
 
+export interface StandaloneStats {
+  total: number;
+  queued: number;
+  running: number;
+  failed: number;
+  completed: number;
+}
+
 export interface UsageData {
   available: boolean;
   error?: string;

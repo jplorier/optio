@@ -2,12 +2,18 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api-client";
-import type { TaskStats, UsageData, MetricsHistoryPoint } from "@/components/dashboard/types.js";
+import type {
+  TaskStats,
+  StandaloneStats,
+  UsageData,
+  MetricsHistoryPoint,
+} from "@/components/dashboard/types.js";
 
 const MAX_HISTORY = 60; // 10 minutes at 10s intervals
 
 export function useDashboardData() {
   const [taskStats, setTaskStats] = useState<TaskStats | null>(null);
+  const [standaloneStats, setStandaloneStats] = useState<StandaloneStats | null>(null);
   const [recentTasks, setRecentTasks] = useState<any[]>([]);
   const [repoCount, setRepoCount] = useState<number | null>(null);
   const [cluster, setCluster] = useState<any>(null);
@@ -27,11 +33,13 @@ export function useDashboardData() {
       api
         .listSessions({ state: "active", limit: 5 })
         .catch(() => ({ sessions: [], activeCount: 0 })),
+      api.getJobStats().catch(() => null),
     ])
-      .then(([statsRes, tasksRes, clusterRes, reposRes, sessionsRes]) => {
+      .then(([statsRes, tasksRes, clusterRes, reposRes, sessionsRes, jobStatsRes]) => {
         setActiveSessions(sessionsRes.sessions);
         setActiveSessionCount(sessionsRes.activeCount);
         setTaskStats(statsRes.stats);
+        setStandaloneStats(jobStatsRes?.stats ?? null);
         setRecentTasks(tasksRes.tasks);
         setRepoCount(reposRes.repos.length);
         if (clusterRes) {
@@ -115,6 +123,7 @@ export function useDashboardData() {
 
   return {
     taskStats,
+    standaloneStats,
     recentTasks,
     repoCount,
     cluster,

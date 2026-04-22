@@ -1,60 +1,125 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Activity, CheckCircle, AlertTriangle, GitMerge, Eye, ListChecks } from "lucide-react";
-import type { TaskStats } from "./types.js";
+import type { TaskStats, StandaloneStats } from "./types.js";
 
-export function PipelineStatsBar({ taskStats }: { taskStats: TaskStats | null }) {
-  const stages = [
+type Stage = {
+  key: string;
+  label: string;
+  value: number;
+  icon: typeof Activity;
+  color: string;
+  href: string;
+};
+
+function taskStages(stats: TaskStats | null): Stage[] {
+  return [
     {
       key: "queue",
       label: "Queue",
-      value: taskStats?.queued ?? 0,
+      value: stats?.queued ?? 0,
       icon: ListChecks,
       color: "var(--color-text-muted)",
+      href: "/tasks?stage=queue&timeFilter=",
     },
     {
       key: "running",
       label: "Running",
-      value: taskStats?.running ?? 0,
+      value: stats?.running ?? 0,
       icon: Activity,
       color: "var(--color-primary)",
+      href: "/tasks?stage=running&timeFilter=",
     },
     {
       key: "ci",
       label: "CI",
-      value: taskStats?.ci ?? 0,
+      value: stats?.ci ?? 0,
       icon: GitMerge,
       color: "var(--color-info)",
+      href: "/tasks?stage=ci&timeFilter=",
     },
     {
       key: "review",
       label: "Review",
-      value: taskStats?.review ?? 0,
+      value: stats?.review ?? 0,
       icon: Eye,
       color: "var(--color-info)",
+      href: "/tasks?stage=review&timeFilter=",
     },
     {
       key: "attention",
       label: "Attention",
-      value: taskStats?.needsAttention ?? 0,
+      value: stats?.needsAttention ?? 0,
       icon: AlertTriangle,
       color: "var(--color-warning)",
+      href: "/tasks?stage=attention&timeFilter=",
     },
     {
       key: "failed",
       label: "Failed",
-      value: taskStats?.failed ?? 0,
+      value: stats?.failed ?? 0,
       icon: AlertTriangle,
       color: "var(--color-error)",
+      href: "/tasks?stage=failed&timeFilter=",
     },
     {
       key: "done",
       label: "Done",
-      value: taskStats?.completed ?? 0,
+      value: stats?.completed ?? 0,
       icon: CheckCircle,
       color: "var(--color-success)",
+      href: "/tasks?stage=done&timeFilter=",
     },
   ];
+}
+
+function standaloneStages(stats: StandaloneStats | null): Stage[] {
+  const href = "/tasks?tab=standalone";
+  return [
+    {
+      key: "queue",
+      label: "Queue",
+      value: stats?.queued ?? 0,
+      icon: ListChecks,
+      color: "var(--color-text-muted)",
+      href,
+    },
+    {
+      key: "running",
+      label: "Running",
+      value: stats?.running ?? 0,
+      icon: Activity,
+      color: "var(--color-primary)",
+      href,
+    },
+    {
+      key: "failed",
+      label: "Failed",
+      value: stats?.failed ?? 0,
+      icon: AlertTriangle,
+      color: "var(--color-error)",
+      href,
+    },
+    {
+      key: "done",
+      label: "Done",
+      value: stats?.completed ?? 0,
+      icon: CheckCircle,
+      color: "var(--color-success)",
+      href,
+    },
+  ];
+}
+
+type PipelineStatsBarProps =
+  | { variant?: "tasks"; taskStats: TaskStats | null }
+  | { variant: "standalone"; standaloneStats: StandaloneStats | null };
+
+export function PipelineStatsBar(props: PipelineStatsBarProps) {
+  const stages =
+    props.variant === "standalone"
+      ? standaloneStages(props.standaloneStats)
+      : taskStages(props.taskStats);
 
   return (
     <div className="rounded-xl border border-border/50 bg-bg-card overflow-hidden">
@@ -66,7 +131,7 @@ export function PipelineStatsBar({ taskStats }: { taskStats: TaskStats | null })
           return (
             <Link
               key={stage.key}
-              href={`/tasks?stage=${stage.key}&timeFilter=`}
+              href={stage.href}
               className="flex-1 relative py-5 flex flex-col items-center gap-1.5 hover:bg-bg-hover/30 transition-all group"
             >
               {/* Colored top accent bar for active stages */}
