@@ -60,6 +60,19 @@ const updateRepoSchema = z
     reviewPromptTemplate: z.string().nullable().optional(),
     testCommand: z.string().optional(),
     reviewModel: z.string().optional(),
+    externalReviewMode: z.enum(["off", "on_request", "on_pr_hold", "on_pr_post"]).optional(),
+    externalReviewFilters: z
+      .object({
+        skipDrafts: z.boolean().optional(),
+        skipOptioAuthored: z.boolean().optional(),
+        includeAuthors: z.array(z.string()).optional(),
+        excludeAuthors: z.array(z.string()).optional(),
+        includeLabels: z.array(z.string()).optional(),
+        excludeLabels: z.array(z.string()).optional(),
+      })
+      .nullable()
+      .optional(),
+    externalReviewWaitForCi: z.boolean().optional(),
     maxAutoResumes: z.number().int().min(1).max(100).nullable().optional(),
     slackWebhookUrl: z
       .string()

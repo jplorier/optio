@@ -45,6 +45,16 @@ export interface RepoRecord {
   testCommand: string | null;
   reviewModel: string | null;
   maxAutoResumes: number | null;
+  externalReviewMode: string;
+  externalReviewFilters: {
+    skipDrafts?: boolean;
+    skipOptioAuthored?: boolean;
+    includeAuthors?: string[];
+    excludeAuthors?: string[];
+    includeLabels?: string[];
+    excludeLabels?: string[];
+  } | null;
+  externalReviewWaitForCi: boolean;
   slackWebhookUrl: string | null;
   slackChannel: string | null;
   slackNotifyOn: string[] | null;
@@ -201,6 +211,16 @@ export async function updateRepo(
     reviewPromptTemplate?: string | null;
     testCommand?: string;
     reviewModel?: string;
+    externalReviewMode?: string;
+    externalReviewFilters?: {
+      skipDrafts?: boolean;
+      skipOptioAuthored?: boolean;
+      includeAuthors?: string[];
+      excludeAuthors?: string[];
+      includeLabels?: string[];
+      excludeLabels?: string[];
+    } | null;
+    externalReviewWaitForCi?: boolean;
     slackWebhookUrl?: string | null;
     slackChannel?: string | null;
     slackNotifyOn?: string[];

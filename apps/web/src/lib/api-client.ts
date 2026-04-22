@@ -969,6 +969,23 @@ export const api = {
       method: "POST",
     }),
 
+  listReviewChat: (taskId: string) =>
+    request<{
+      messages: Array<{
+        id: string;
+        draftId: string;
+        role: "user" | "assistant";
+        content: string;
+        createdAt: string;
+      }>;
+    }>(`/api/tasks/${taskId}/review-chat`),
+
+  postReviewChat: (taskId: string, message: string) =>
+    request<{ turnTaskId: string; draftId: string }>(`/api/tasks/${taskId}/review-chat`, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    }),
+
   mergePullRequest: (data: { prUrl: string; mergeMethod: "merge" | "squash" | "rebase" }) =>
     request<{ merged: boolean }>("/api/pull-requests/merge", {
       method: "POST",

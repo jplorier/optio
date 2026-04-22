@@ -59,6 +59,7 @@ async function main() {
   const { startTicketSyncWorker } = await import("./workers/ticket-sync-worker.js");
   const { startRepoCleanupWorker } = await import("./workers/repo-cleanup-worker.js");
   const { startPrWatcherWorker } = await import("./workers/pr-watcher-worker.js");
+  const { startExternalPrReviewWorker } = await import("./workers/external-pr-review-worker.js");
   const { startWebhookWorker } = await import("./workers/webhook-worker.js");
   const { startWorkflowWorker } = await import("./workers/workflow-worker.js");
   const { startWorkflowTriggerWorker } = await import("./workers/workflow-trigger-worker.js");
@@ -184,6 +185,7 @@ async function main() {
   // Clean stale repeat jobs from previous server sessions
   await Promise.all([
     cleanRepeatJobs("pr-watcher"),
+    cleanRepeatJobs("external-pr-review"),
     cleanRepeatJobs("repo-cleanup"),
     cleanRepeatJobs("ticket-sync"),
     cleanRepeatJobs("workflow-runs"),
@@ -206,6 +208,9 @@ async function main() {
 
   const prWatcherWorker = startPrWatcherWorker();
   logger.info("PR watcher worker started");
+
+  const externalPrReviewWorker = startExternalPrReviewWorker();
+  logger.info("External PR review worker started");
 
   const webhookWorker = startWebhookWorker();
   logger.info("Webhook worker started");
@@ -239,6 +244,7 @@ async function main() {
     await ticketSyncWorker.close();
     await repoCleanupWorker.close();
     await prWatcherWorker.close();
+    await externalPrReviewWorker.close();
     await webhookWorker.close();
     await workflowWorker.close();
     await workflowTriggerWorker.close();

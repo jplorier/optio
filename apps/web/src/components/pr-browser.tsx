@@ -15,6 +15,11 @@ import {
   AlertTriangle,
   Clock,
   User,
+  ThumbsUp,
+  ThumbsDown,
+  MessageSquare,
+  Zap,
+  GitMerge,
 } from "lucide-react";
 
 export function PrBrowser() {
@@ -24,6 +29,7 @@ export function PrBrowser() {
   const [loading, setLoading] = useState(true);
   const [selectedRepo, setSelectedRepo] = useState("");
   const [reviewing, setReviewing] = useState<number | null>(null);
+  const [merging, setMerging] = useState<number | null>(null);
   const [prUrl, setPrUrl] = useState("");
   const [submittingUrl, setSubmittingUrl] = useState(false);
 
@@ -55,6 +61,34 @@ export function PrBrowser() {
     setReviewing(null);
   };
 
+  const handleApproveAndMerge = async (pr: any) => {
+    if (!confirm(`Approve and merge PR #${pr.number}? This skips agent review.`)) return;
+    setMerging(pr.number);
+    try {
+      // If there's a draft, post an approve first so the reviewer record shows approval
+      if (pr.reviewDraft?.taskId) {
+        try {
+          await api.updateReviewDraft(pr.reviewDraft.taskId, {
+            verdict: "approve",
+            summary: "Approved by user",
+          });
+          await api.submitReviewDraft(pr.reviewDraft.taskId);
+        } catch {
+          // Draft may be submitted already — keep going with merge
+        }
+      }
+      await api.mergePullRequest({ prUrl: pr.url, mergeMethod: "squash" });
+      toast.success(`PR #${pr.number} merged`);
+      // Refresh list
+      const res = await api.listPullRequests({ repoId: selectedRepo || undefined });
+      setPrs(res.pullRequests);
+    } catch (err: any) {
+      toast.error(err.message || "Failed to merge PR");
+    } finally {
+      setMerging(null);
+    }
+  };
+
   const handleUrlSubmit = async () => {
     if (!prUrl.trim()) return;
     setSubmittingUrl(true);
@@ -71,12 +105,14 @@ export function PrBrowser() {
   const draftStateBadge = (draft: any) => {
     if (!draft) return null;
     const styles: Record<string, string> = {
+      waiting_ci: "bg-bg text-text-muted border border-border",
       drafting: "bg-warning/10 text-warning",
       ready: "bg-success/10 text-success",
       submitted: "bg-info/10 text-info",
       stale: "bg-error/10 text-error",
     };
     const labels: Record<string, string> = {
+      waiting_ci: "Waiting for CI",
       drafting: "Reviewing...",
       ready: "Draft Ready",
       submitted: "Submitted",
@@ -90,6 +126,41 @@ export function PrBrowser() {
         )}
       >
         {labels[draft.state] ?? draft.state}
+      </span>
+    );
+  };
+
+  const verdictBadge = (draft: any) => {
+    if (!draft?.verdict) return null;
+    const config: Record<string, { icon: any; cls: string; label: string }> = {
+      approve: {
+        icon: ThumbsUp,
+        cls: "bg-success/10 text-success border-success/30",
+        label: "Approve",
+      },
+      request_changes: {
+        icon: ThumbsDown,
+        cls: "bg-error/10 text-error border-error/30",
+        label: "Request Changes",
+      },
+      comment: {
+        icon: MessageSquare,
+        cls: "bg-info/10 text-info border-info/30",
+        label: "Comment",
+      },
+    };
+    const c = config[draft.verdict];
+    if (!c) return null;
+    const Icon = c.icon;
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md font-medium border",
+          c.cls,
+        )}
+      >
+        <Icon className="w-3 h-3" />
+        {c.label}
       </span>
     );
   };
@@ -177,6 +248,16 @@ export function PrBrowser() {
                       </span>
                     )}
                     {pr.reviewDraft && draftStateBadge(pr.reviewDraft)}
+                    {pr.reviewDraft && verdictBadge(pr.reviewDraft)}
+                    {pr.reviewDraft?.origin === "auto" && (
+                      <span
+                        title="Automatically reviewed by Optio"
+                        className="inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary"
+                      >
+                        <Zap className="w-3 h-3" />
+                        Auto
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-text-muted">
                     <span className="flex items-center gap-1">
@@ -206,9 +287,9 @@ export function PrBrowser() {
                   )}
                 </div>
 
-                {/* Action button */}
-                <div className="shrink-0">
-                  {pr.reviewDraft ? (
+                {/* Action buttons */}
+                <div className="shrink-0 flex items-center gap-2">
+                  {pr.reviewDraft && pr.reviewDraft.taskId ? (
                     <Link
                       href={`/tasks/${pr.reviewDraft.taskId}`}
                       className={cn(
@@ -217,12 +298,15 @@ export function PrBrowser() {
                           ? "bg-error/10 text-error hover:bg-error/20"
                           : pr.reviewDraft.state === "submitted"
                             ? "bg-info/10 text-info hover:bg-info/20"
-                            : "bg-success/10 text-success hover:bg-success/20",
+                            : pr.reviewDraft.state === "waiting_ci"
+                              ? "bg-bg text-text-muted border border-border hover:bg-bg-card"
+                              : "bg-success/10 text-success hover:bg-success/20",
                       )}
                     >
                       {pr.reviewDraft.state === "stale" ? (
                         <AlertTriangle className="w-3 h-3" />
-                      ) : pr.reviewDraft.state === "drafting" ? (
+                      ) : pr.reviewDraft.state === "drafting" ||
+                        pr.reviewDraft.state === "waiting_ci" ? (
                         <Clock className="w-3 h-3" />
                       ) : (
                         <Check className="w-3 h-3" />
@@ -243,6 +327,19 @@ export function PrBrowser() {
                       Review with Optio
                     </button>
                   )}
+                  <button
+                    onClick={() => handleApproveAndMerge(pr)}
+                    disabled={merging === pr.number}
+                    title="Approve and merge without using the agent"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-success/10 text-success hover:bg-success/20 text-xs disabled:opacity-50"
+                  >
+                    {merging === pr.number ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <GitMerge className="w-3 h-3" />
+                    )}
+                    Approve & Merge
+                  </button>
                 </div>
               </div>
             </div>

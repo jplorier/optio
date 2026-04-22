@@ -9,8 +9,8 @@ import {
   parseRepoUrl,
 } from "@optio/shared";
 import { db } from "../db/client.js";
-import { repos, tasks, taskLogs, reviewDrafts } from "../db/schema.js";
-import { eq, and, sql } from "drizzle-orm";
+import { repos, tasks, taskLogs, reviewDrafts, reviewChatMessages } from "../db/schema.js";
+import { eq, and, sql, asc } from "drizzle-orm";
 import * as taskService from "./task-service.js";
 import { getGitPlatformForRepo } from "./git-token-service.js";
 import { taskQueue } from "../workers/task-worker.js";
@@ -184,6 +184,8 @@ export async function launchPrReview(input: {
   prUrl: string;
   workspaceId?: string;
   createdBy?: string;
+  origin?: "manual" | "auto";
+  existingDraftId?: string; // if set, replace this draft's task instead of creating a new draft row
 }) {
   const parsed = parsePrUrl(input.prUrl);
   if (!parsed) throw new Error("Invalid PR URL");
@@ -219,19 +221,42 @@ export async function launchPrReview(input: {
     .set({ taskType: "pr_review", prUrl: input.prUrl, prNumber })
     .where(eq(tasks.id, task.id));
 
-  // Create review draft row
-  const [draft] = await db
-    .insert(reviewDrafts)
-    .values({
-      taskId: task.id,
-      prUrl: input.prUrl,
-      prNumber,
-      repoOwner: owner,
-      repoName,
-      headSha: prContext.headSha,
-      state: "drafting",
-    })
-    .returning();
+  // Create or promote review draft row
+  const origin = input.origin ?? "manual";
+  let draft;
+  if (input.existingDraftId) {
+    [draft] = await db
+      .update(reviewDrafts)
+      .set({
+        taskId: task.id,
+        headSha: prContext.headSha,
+        state: "drafting",
+        origin,
+        userEngaged: false,
+        autoSubmitted: false,
+        verdict: null,
+        summary: null,
+        fileComments: null,
+        submittedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(reviewDrafts.id, input.existingDraftId))
+      .returning();
+  } else {
+    [draft] = await db
+      .insert(reviewDrafts)
+      .values({
+        taskId: task.id,
+        prUrl: input.prUrl,
+        prNumber,
+        repoOwner: owner,
+        repoName,
+        headSha: prContext.headSha,
+        state: "drafting",
+        origin,
+      })
+      .returning();
+  }
 
   // Build the review prompt
   const reviewTemplate = repoConfig.reviewPromptTemplate ?? DEFAULT_PR_REVIEW_PROMPT_TEMPLATE;
@@ -378,6 +403,29 @@ export async function parseReviewOutput(taskId: string) {
   await db.update(reviewDrafts).set(updates).where(eq(reviewDrafts.id, draft.id));
 
   logger.info({ taskId, draftId: draft.id, hasStructuredOutput: !!parsed }, "Review output parsed");
+
+  // Auto-post for on_pr_post mode: if this draft came from the poller, submit
+  // the review to GitHub/GitLab immediately. We do this only for initial
+  // reviews (not chat resumes) and only for auto-origin drafts.
+  if (draft.origin === "auto" && !draft.userEngaged) {
+    try {
+      const { getRepoByUrl } = await import("./repo-service.js");
+      const repoUrl = normalizeRepoUrl(
+        `https://${parsePrUrl(draft.prUrl)?.host}/${draft.repoOwner}/${draft.repoName}`,
+      );
+      const repoConfig = await getRepoByUrl(repoUrl);
+      if (repoConfig?.externalReviewMode === "on_pr_post") {
+        await submitReview(draft.id);
+        await db
+          .update(reviewDrafts)
+          .set({ autoSubmitted: true, updatedAt: new Date() })
+          .where(eq(reviewDrafts.id, draft.id));
+        logger.info({ draftId: draft.id }, "Review auto-submitted (on_pr_post)");
+      }
+    } catch (err) {
+      logger.warn({ err, draftId: draft.id }, "Auto-submit failed — draft left in ready state");
+    }
+  }
 }
 
 // ── Get Review Draft ────────────────────────────────────────────────────────
@@ -482,10 +530,12 @@ export async function reReview(taskId: string, userId?: string, workspaceId?: st
   const [draft] = await db.select().from(reviewDrafts).where(eq(reviewDrafts.taskId, taskId));
   if (!draft) throw new Error("No review draft found for task");
 
+  // User-initiated re-review: mark origin manual so auto-submit does not kick in.
   return launchPrReview({
     prUrl: draft.prUrl,
     workspaceId,
     createdBy: userId,
+    origin: "manual",
   });
 }
 
@@ -578,4 +628,189 @@ export async function markDraftStale(draftId: string) {
   }
 
   return updated ?? null;
+}
+
+// ── Review Chat ─────────────────────────────────────────────────────────────
+//
+// Each chat turn spawns a fresh pr_review task that resumes the original
+// Claude session (via resumeSessionId). The new task's completion hook
+// appends the assistant's reply to review_chat_messages and — if the agent
+// emits a fresh JSON verdict block — updates the draft.
+//
+// The initial review task sets the session; follow-up chat turns reuse it,
+// so the agent keeps full context from the review itself.
+
+function findRootReviewTaskId(draft: { taskId: string | null }): string | null {
+  return draft.taskId;
+}
+
+export async function listReviewChat(draftId: string) {
+  return db
+    .select()
+    .from(reviewChatMessages)
+    .where(eq(reviewChatMessages.draftId, draftId))
+    .orderBy(asc(reviewChatMessages.createdAt));
+}
+
+export async function postReviewChat(input: {
+  taskId: string;
+  message: string;
+  userId?: string;
+  workspaceId?: string;
+}) {
+  const [draft] = await db.select().from(reviewDrafts).where(eq(reviewDrafts.taskId, input.taskId));
+  if (!draft) throw new Error("No review draft found for task");
+  if (draft.state === "drafting" || draft.state === "waiting_ci") {
+    throw new Error("Cannot chat while a review is still being generated");
+  }
+
+  // Load the root review task to pull the session id + repo url.
+  const rootTaskId = findRootReviewTaskId(draft);
+  if (!rootTaskId) throw new Error("Draft has no root task — cannot chat");
+  const rootTask = await taskService.getTask(rootTaskId);
+  if (!rootTask) throw new Error("Root review task not found");
+  if (!rootTask.sessionId) {
+    throw new Error("Root review task has no captured session — chat not available yet");
+  }
+
+  // Record the user's turn + flag engagement so the poller stops auto-reruns.
+  await db.insert(reviewChatMessages).values({
+    draftId: draft.id,
+    role: "user",
+    content: input.message,
+  });
+  await db
+    .update(reviewDrafts)
+    .set({ userEngaged: true, updatedAt: new Date() })
+    .where(eq(reviewDrafts.id, draft.id));
+
+  // Spawn a fresh pr_review task dedicated to this turn. taskType stays
+  // `pr_review` so the task-worker's review-aware branches (isReviewTask*,
+  // completion-hook routing) apply unchanged.
+  const turnTask = await taskService.createTask({
+    title: `Review chat: ${rootTask.title}`,
+    prompt: input.message,
+    repoUrl: rootTask.repoUrl,
+    agentType: rootTask.agentType,
+    metadata: {
+      reviewDraftId: draft.id,
+      reviewChatTurn: true,
+      rootReviewTaskId: rootTaskId,
+      prUrl: draft.prUrl,
+      prNumber: draft.prNumber,
+    },
+    createdBy: input.userId,
+    workspaceId: input.workspaceId ?? null,
+  });
+
+  await db
+    .update(tasks)
+    .set({ taskType: "pr_review", prUrl: draft.prUrl, prNumber: draft.prNumber })
+    .where(eq(tasks.id, turnTask.id));
+
+  // Look up the repo config — needed for claudeModel override on resume.
+  const { getRepoByUrl } = await import("./repo-service.js");
+  const repoConfig = await getRepoByUrl(rootTask.repoUrl, input.workspaceId);
+
+  await taskService.transitionTask(turnTask.id, TaskState.QUEUED, "review_chat_requested");
+  await taskQueue.add(
+    "process-task",
+    {
+      taskId: turnTask.id,
+      resumeSessionId: rootTask.sessionId,
+      // OPTIO_PROMPT must contain just the user's message so the resumed
+      // session gets a clean next-turn input (without the original review
+      // context being re-prepended).
+      reviewOverride: {
+        renderedPrompt: input.message,
+        taskFileContent: "",
+        taskFilePath: REVIEW_TASK_FILE_PATH,
+        claudeModel: repoConfig?.reviewModel ?? "sonnet",
+      },
+    },
+    {
+      jobId: turnTask.id,
+      priority: 10,
+    },
+  );
+
+  return { turnTaskId: turnTask.id, draftId: draft.id };
+}
+
+/**
+ * Completion hook for a chat-turn task. Pulls the agent's reply out of the
+ * task logs, stores it as an assistant message, and — if the reply contains
+ * a fresh JSON verdict block — updates the draft in place. Called from
+ * task-worker instead of parseReviewOutput for tasks with
+ * `metadata.reviewChatTurn === true`.
+ */
+export async function appendChatReplyFromOutput(taskId: string) {
+  const task = await taskService.getTask(taskId);
+  if (!task) return;
+  const draftId = (task.metadata as Record<string, unknown> | null)?.reviewDraftId as
+    | string
+    | undefined;
+  if (!draftId) return;
+  const [draft] = await db.select().from(reviewDrafts).where(eq(reviewDrafts.id, draftId));
+  if (!draft) return;
+
+  const logs = await db
+    .select({ content: taskLogs.content })
+    .from(taskLogs)
+    .where(eq(taskLogs.taskId, taskId));
+  const allContent = logs.map((l) => l.content).join("\n");
+
+  // Try to extract a JSON verdict block — same patterns as parseReviewOutput.
+  const jsonPatterns = [
+    /```(?:json)?\s*\n?(\{[\s\S]*?"verdict"[\s\S]*?\})\s*\n?```/,
+    /(\{[\s\S]*?"verdict"\s*:\s*"[^"]*"[\s\S]*\})\s*$/m,
+    /(\{[^{}]*"verdict"\s*:\s*"[^"]*"[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/,
+  ];
+  let parsed: { verdict?: string; summary?: string; fileComments?: any[] } | null = null;
+  let jsonMatch: string | null = null;
+  for (const pattern of jsonPatterns) {
+    const m = allContent.match(pattern);
+    if (m) {
+      jsonMatch = m[1];
+      try {
+        parsed = JSON.parse(m[1]);
+        break;
+      } catch {
+        try {
+          parsed = JSON.parse(m[1].replace(/,\s*([}\]])/g, "$1"));
+          break;
+        } catch {}
+      }
+    }
+  }
+
+  // Reply body = the agent's final text summary, with any JSON block stripped.
+  let reply = task.resultSummary?.trim() || "";
+  if (!reply || /^Agent (completed successfully|exited with code \d+)$/.test(reply)) {
+    // Fall back to tail of logs if resultSummary is uninformative
+    reply = allContent.slice(-4000).trim();
+  }
+  if (jsonMatch) reply = reply.replace(jsonMatch, "").trim();
+  if (!reply) reply = parsed?.summary ?? "(no reply)";
+
+  await db.insert(reviewChatMessages).values({
+    draftId: draft.id,
+    role: "assistant",
+    content: reply,
+  });
+
+  // If the agent emitted a fresh JSON block, it's signalling a draft update.
+  if (parsed) {
+    const updates: Record<string, unknown> = { updatedAt: new Date() };
+    if (parsed.verdict && ["approve", "request_changes", "comment"].includes(parsed.verdict)) {
+      updates.verdict = parsed.verdict;
+    }
+    if (parsed.summary) updates.summary = parsed.summary;
+    if (Array.isArray(parsed.fileComments)) updates.fileComments = parsed.fileComments;
+    if (Object.keys(updates).length > 1) {
+      await db.update(reviewDrafts).set(updates).where(eq(reviewDrafts.id, draft.id));
+    }
+  }
+
+  logger.info({ taskId, draftId: draft.id, hasStructuredOutput: !!parsed }, "Chat reply appended");
 }

@@ -51,6 +51,28 @@ const mergePrSchema = z
   })
   .describe("Body for merging a PR");
 
+const reviewChatBodySchema = z
+  .object({
+    message: z.string().min(1).describe("User's chat message to the review agent"),
+  })
+  .describe("Body for posting a review chat turn");
+
+const ReviewChatMessageSchema = z
+  .object({
+    id: z.string(),
+    draftId: z.string(),
+    role: z.enum(["user", "assistant"]),
+    content: z.string(),
+    createdAt: z.union([z.string(), z.date()]),
+  })
+  .describe("A single message in a review chat thread");
+
+const ReviewChatListResponseSchema = z
+  .object({
+    messages: z.array(ReviewChatMessageSchema),
+  })
+  .describe("Review chat messages");
+
 const prStatusQuerySchema = z
   .object({
     prUrl: z.string().min(1).describe("PR URL to fetch status for"),
@@ -265,6 +287,71 @@ export async function prReviewRoutes(rawApp: FastifyInstance) {
         reply.status(201).send(result);
       } catch (err: unknown) {
         logger.warn({ err, taskId: id }, "Failed to re-review PR");
+        reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
+      }
+    },
+  );
+
+  app.get(
+    "/api/tasks/:id/review-chat",
+    {
+      schema: {
+        operationId: "listReviewChat",
+        summary: "List review chat messages for a task",
+        description:
+          "Return the chronological conversation between the user and the " +
+          "review agent for the review draft attached to this task.",
+        tags: ["Reviews & PRs"],
+        params: IdParamsSchema,
+        response: {
+          200: ReviewChatListResponseSchema,
+          404: ErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params;
+      const draft = await prReviewService.getReviewDraft(id);
+      if (!draft) return reply.status(404).send({ error: "No review draft found" });
+      const messages = await prReviewService.listReviewChat(draft.id);
+      reply.send({ messages });
+    },
+  );
+
+  app.post(
+    "/api/tasks/:id/review-chat",
+    {
+      preHandler: [requireRole("member")],
+      schema: {
+        operationId: "postReviewChat",
+        summary: "Post a chat message to the review agent",
+        description:
+          "Send a follow-up message to the agent that produced this review. " +
+          "The agent resumes its session and replies; the reply is stored as " +
+          "a chat message and may also update the draft in place. Requires " +
+          "`member` role.",
+        tags: ["Reviews & PRs"],
+        params: IdParamsSchema,
+        body: reviewChatBodySchema,
+        response: {
+          201: GenericResultSchema,
+          400: ErrorResponseSchema,
+          404: ErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const { id } = req.params;
+      try {
+        const result = await prReviewService.postReviewChat({
+          taskId: id,
+          message: req.body.message,
+          userId: req.user?.id,
+          workspaceId: req.user?.workspaceId ?? undefined,
+        });
+        reply.status(201).send(result);
+      } catch (err: unknown) {
+        logger.warn({ err, taskId: id }, "Failed to post review chat");
         reply.status(400).send({ error: err instanceof Error ? err.message : String(err) });
       }
     },

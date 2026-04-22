@@ -272,6 +272,17 @@ export const repos = pgTable(
     reviewPromptTemplate: text("review_prompt_template"), // null = use default
     testCommand: text("test_command"), // "npm test", "cargo test", etc.
     reviewModel: text("review_model").default("sonnet"), // can use cheaper model for reviews
+    // External (non-optio-authored) PR auto-review
+    externalReviewMode: text("external_review_mode").notNull().default("off"), // "off" | "on_request" | "on_pr_hold" | "on_pr_post"
+    externalReviewFilters: jsonb("external_review_filters").$type<{
+      skipDrafts?: boolean;
+      skipOptioAuthored?: boolean;
+      includeAuthors?: string[];
+      excludeAuthors?: string[];
+      includeLabels?: string[];
+      excludeLabels?: string[];
+    }>(),
+    externalReviewWaitForCi: boolean("external_review_wait_for_ci").notNull().default(true),
     maxAutoResumes: integer("max_auto_resumes"), // null = use OPTIO_MAX_AUTO_RESUMES env var or default (10)
     encryptedSlackWebhookUrl: bytea("encrypted_slack_webhook_url"), // AES-256-GCM encrypted Slack webhook URL
     slackWebhookUrlIv: bytea("slack_webhook_url_iv"),
@@ -868,6 +879,7 @@ export const optioActions = pgTable(
 // ── Review Drafts (PR Review Assistant) ─────────────────────────────────────
 
 export const reviewDraftStateEnum = pgEnum("review_draft_state", [
+  "waiting_ci",
   "drafting",
   "ready",
   "submitted",
@@ -878,9 +890,7 @@ export const reviewDrafts = pgTable(
   "review_drafts",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    taskId: uuid("task_id")
-      .notNull()
-      .references(() => tasks.id, { onDelete: "cascade" }),
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
     prUrl: text("pr_url").notNull(),
     prNumber: integer("pr_number").notNull(),
     repoOwner: text("repo_owner").notNull(),
@@ -893,6 +903,9 @@ export const reviewDrafts = pgTable(
       jsonb("file_comments").$type<
         Array<{ path: string; line?: number; side?: string; body: string }>
       >(),
+    origin: text("origin").notNull().default("manual"), // "manual" | "auto"
+    userEngaged: boolean("user_engaged").notNull().default(false),
+    autoSubmitted: boolean("auto_submitted").notNull().default(false),
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -901,6 +914,22 @@ export const reviewDrafts = pgTable(
     index("review_drafts_task_id_idx").on(table.taskId),
     index("review_drafts_state_idx").on(table.state),
   ],
+);
+
+export const reviewChatMessageRoleEnum = pgEnum("review_chat_message_role", ["user", "assistant"]);
+
+export const reviewChatMessages = pgTable(
+  "review_chat_messages",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    draftId: uuid("draft_id")
+      .notNull()
+      .references(() => reviewDrafts.id, { onDelete: "cascade" }),
+    role: reviewChatMessageRoleEnum("role").notNull(),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("review_chat_messages_draft_id_idx").on(table.draftId)],
 );
 
 // ── Push Subscriptions (Web Push API) ────────────────────────────────────────

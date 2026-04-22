@@ -1117,11 +1117,21 @@ export function startTaskWorker() {
           );
           log.info({ prUrl: detectedPrUrl }, "PR opened");
         } else if (result.success || isReviewTask) {
-          // For pr_review tasks, parse the structured review output before cleanup
+          // For pr_review tasks, parse the structured review output before cleanup.
+          // Chat-turn tasks (metadata.reviewChatTurn) route to a different
+          // handler that appends to review_chat_messages instead.
           if (task.taskType === "pr_review") {
+            const isChatTurn =
+              (task.metadata as Record<string, unknown> | null)?.reviewChatTurn === true;
             try {
-              const { parseReviewOutput } = await import("../services/pr-review-service.js");
-              await parseReviewOutput(taskId);
+              if (isChatTurn) {
+                const { appendChatReplyFromOutput } =
+                  await import("../services/pr-review-service.js");
+                await appendChatReplyFromOutput(taskId);
+              } else {
+                const { parseReviewOutput } = await import("../services/pr-review-service.js");
+                await parseReviewOutput(taskId);
+              }
             } catch (err) {
               log.warn({ err }, "Failed to parse pr_review output — draft may need manual editing");
             }

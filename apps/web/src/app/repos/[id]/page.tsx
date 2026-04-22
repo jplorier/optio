@@ -84,6 +84,17 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
   const [reviewModel, setReviewModel] = useState("sonnet");
   const [reviewPromptTemplate, setReviewPromptTemplate] = useState("");
   const [showReviewPrompt, setShowReviewPrompt] = useState(false);
+  // External (non-optio-authored) PR auto-review
+  const [externalReviewMode, setExternalReviewMode] = useState<
+    "off" | "on_request" | "on_pr_hold" | "on_pr_post"
+  >("off");
+  const [externalReviewWaitForCi, setExternalReviewWaitForCi] = useState(true);
+  const [externalReviewSkipDrafts, setExternalReviewSkipDrafts] = useState(true);
+  const [externalReviewSkipOptioAuthored, setExternalReviewSkipOptioAuthored] = useState(true);
+  const [externalReviewExcludeAuthors, setExternalReviewExcludeAuthors] = useState("");
+  const [externalReviewIncludeAuthors, setExternalReviewIncludeAuthors] = useState("");
+  const [externalReviewExcludeLabels, setExternalReviewExcludeLabels] = useState("");
+  const [externalReviewIncludeLabels, setExternalReviewIncludeLabels] = useState("");
   const [sessions, setSessions] = useState<any[]>([]);
   const [sessionCount, setSessionCount] = useState(0);
   const [creatingSession, setCreatingSession] = useState(false);
@@ -155,6 +166,15 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         setReviewModel(r.reviewModel ?? "sonnet");
         setReviewPromptTemplate(r.reviewPromptTemplate ?? "");
         if (r.reviewPromptTemplate) setShowReviewPrompt(true);
+        setExternalReviewMode(r.externalReviewMode ?? "off");
+        setExternalReviewWaitForCi(r.externalReviewWaitForCi ?? true);
+        const filters = r.externalReviewFilters ?? {};
+        setExternalReviewSkipDrafts(filters.skipDrafts ?? true);
+        setExternalReviewSkipOptioAuthored(filters.skipOptioAuthored ?? true);
+        setExternalReviewIncludeAuthors((filters.includeAuthors ?? []).join(", "));
+        setExternalReviewExcludeAuthors((filters.excludeAuthors ?? []).join(", "));
+        setExternalReviewIncludeLabels((filters.includeLabels ?? []).join(", "));
+        setExternalReviewExcludeLabels((filters.excludeLabels ?? []).join(", "));
         if (r.promptTemplateOverride) {
           setUseCustomPrompt(true);
           setPromptOverride(r.promptTemplateOverride);
@@ -234,6 +254,28 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
         testCommand,
         reviewModel,
         reviewPromptTemplate: showReviewPrompt ? reviewPromptTemplate : null,
+        externalReviewMode,
+        externalReviewWaitForCi,
+        externalReviewFilters: {
+          skipDrafts: externalReviewSkipDrafts,
+          skipOptioAuthored: externalReviewSkipOptioAuthored,
+          includeAuthors: externalReviewIncludeAuthors
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+          excludeAuthors: externalReviewExcludeAuthors
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+          includeLabels: externalReviewIncludeLabels
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+          excludeLabels: externalReviewExcludeLabels
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean),
+        },
         cpuRequest: cpuRequest || null,
         cpuLimit: cpuLimit || null,
         memoryRequest: memoryRequest || null,
@@ -832,6 +874,122 @@ export default function RepoDetailPage({ params }: { params: Promise<{ id: strin
                           <span className="text-text-muted">Test command configured above</span>
                         </li>
                       </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* External PR auto-review */}
+              <div className="mt-4 pt-4 border-t border-border/50 space-y-3">
+                <div>
+                  <h4 className="text-sm font-medium mb-1">External PR auto-review</h4>
+                  <p className="text-xs text-text-muted">
+                    Review pull requests on this repo that were NOT opened by an Optio task. Optio
+                    polls the platform for open PRs and spawns a review agent per the selected mode.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs text-text-muted mb-1">Mode</label>
+                  <select
+                    value={externalReviewMode}
+                    onChange={(e) =>
+                      setExternalReviewMode(e.target.value as typeof externalReviewMode)
+                    }
+                    className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                  >
+                    <option value="off">Off</option>
+                    <option value="on_request">On request only (manual)</option>
+                    <option value="on_pr_hold">Auto-review on PR open — hold draft in Optio</option>
+                    <option value="on_pr_post">
+                      Auto-review on PR open — post to GitHub/GitLab
+                    </option>
+                  </select>
+                </div>
+
+                {(externalReviewMode === "on_pr_hold" || externalReviewMode === "on_pr_post") && (
+                  <div className="space-y-3">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={externalReviewWaitForCi}
+                        onChange={(e) => setExternalReviewWaitForCi(e.target.checked)}
+                        className="w-4 h-4 rounded"
+                      />
+                      <span className="text-sm">
+                        Wait for CI to finish before starting the review
+                      </span>
+                    </label>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={externalReviewSkipDrafts}
+                          onChange={(e) => setExternalReviewSkipDrafts(e.target.checked)}
+                          className="w-4 h-4 rounded"
+                        />
+                        <span className="text-sm">Skip draft PRs</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={externalReviewSkipOptioAuthored}
+                          onChange={(e) => setExternalReviewSkipOptioAuthored(e.target.checked)}
+                          className="w-4 h-4 rounded"
+                        />
+                        <span className="text-sm">Skip PRs from Optio tasks</span>
+                      </label>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">
+                          Only these authors (comma-separated)
+                        </label>
+                        <input
+                          value={externalReviewIncludeAuthors}
+                          onChange={(e) => setExternalReviewIncludeAuthors(e.target.value)}
+                          placeholder="leave empty for all"
+                          className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">
+                          Skip authors (comma-separated)
+                        </label>
+                        <input
+                          value={externalReviewExcludeAuthors}
+                          onChange={(e) => setExternalReviewExcludeAuthors(e.target.value)}
+                          placeholder="dependabot, renovate"
+                          className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">
+                          Only these labels
+                        </label>
+                        <input
+                          value={externalReviewIncludeLabels}
+                          onChange={(e) => setExternalReviewIncludeLabels(e.target.value)}
+                          placeholder="leave empty for all"
+                          className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs text-text-muted mb-1">
+                          Skip these labels
+                        </label>
+                        <input
+                          value={externalReviewExcludeLabels}
+                          onChange={(e) => setExternalReviewExcludeLabels(e.target.value)}
+                          placeholder="wip, skip-review"
+                          className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                        />
+                      </div>
                     </div>
                   </div>
                 )}
