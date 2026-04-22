@@ -1,15 +1,42 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { AlertTriangle, Check, Copy, ExternalLink, Key, Loader2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 
 const COPY_COMMAND = `security find-generic-password -s "Claude Code-credentials" -w | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" | pbcopy`;
 
+// Module-level presence registry so the global top-of-page banner can hide
+// itself whenever a full inline widget is mounted on the current page.
+let mountedCount = 0;
+const listeners = new Set<() => void>();
+function emit() {
+  for (const l of listeners) l();
+}
+export function useIsTokenRefreshBannerMounted() {
+  return useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => mountedCount > 0,
+    () => false,
+  );
+}
+
 export function TokenRefreshBanner({ onSaved }: { onSaved?: () => void | Promise<void> } = {}) {
   const [token, setToken] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    mountedCount++;
+    emit();
+    return () => {
+      mountedCount--;
+      emit();
+    };
+  }, []);
 
   const handleSave = async () => {
     if (!token.trim()) return;

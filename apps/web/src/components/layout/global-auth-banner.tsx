@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { AlertTriangle } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { useIsTokenRefreshBannerMounted } from "@/components/token-refresh-banner";
 
 /**
  * Global banner shown on all pages when the Claude OAuth token is expired.
@@ -12,6 +13,7 @@ import { api } from "@/lib/api-client";
 export function GlobalAuthBanner() {
   const [expired, setExpired] = useState(false);
   const [lastValidated, setLastValidated] = useState<string | null>(null);
+  const widgetMounted = useIsTokenRefreshBannerMounted();
 
   const checkAuth = useCallback(async () => {
     try {
@@ -50,7 +52,7 @@ export function GlobalAuthBanner() {
     };
   }, [checkAuth]);
 
-  if (!expired) return null;
+  if (!expired || widgetMounted) return null;
 
   const validatedAgo = lastValidated ? formatTimeAgo(lastValidated) : null;
 
