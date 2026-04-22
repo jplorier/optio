@@ -81,6 +81,8 @@ const PUBLIC_AUTH_ROUTES = new Set([
   "/api/auth/google/callback",
   "/api/auth/gitlab/login",
   "/api/auth/gitlab/callback",
+  "/api/auth/oidc/login",
+  "/api/auth/oidc/callback",
   "/api/auth/cli/start",
   "/api/auth/cli/token",
 ]);
