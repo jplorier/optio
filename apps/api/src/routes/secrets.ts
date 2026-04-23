@@ -156,13 +156,16 @@ export async function secretRoutes(rawApp: FastifyInstance) {
       const workspaceId = req.user?.workspaceId ?? null;
       const userId = req.user?.id ?? null;
 
-      // For user-scoped secrets, force userId to the caller's own ID
-      const effectiveUserId = input.scope === "user" ? userId : null;
+      // User-scoped secrets need a caller. In auth-disabled local dev there's
+      // no user, so silently downgrade to global — there's no multi-user
+      // separation to preserve anyway.
+      const effectiveScope = input.scope === "user" && !userId ? "global" : input.scope;
+      const effectiveUserId = effectiveScope === "user" ? userId : null;
 
       await secretService.storeSecret(
         input.name,
         input.value,
-        input.scope,
+        effectiveScope,
         workspaceId,
         effectiveUserId,
       );
