@@ -261,22 +261,33 @@ export function startTaskWorker() {
           ((await retrieveSecretWithFallback("GEMINI_AUTH_MODE", "global", taskWorkspaceId).catch(
             () => null,
           )) as any) ?? "api-key";
-        const googleCloudProject =
-          geminiAuthMode === "vertex-ai"
-            ? (((await retrieveSecretWithFallback(
-                "GOOGLE_CLOUD_PROJECT",
-                "global",
-                taskWorkspaceId,
-              ).catch(() => null)) as any) ?? undefined)
-            : undefined;
-        const googleCloudLocation =
-          geminiAuthMode === "vertex-ai"
-            ? (((await retrieveSecretWithFallback(
-                "GOOGLE_CLOUD_LOCATION",
-                "global",
-                taskWorkspaceId,
-              ).catch(() => null)) as any) ?? undefined)
-            : undefined;
+
+        // GCP config for Vertex AI — resolve per-agent so Claude's vertex config
+        // does not bleed into Gemini tasks (and vice versa) when both are configured.
+        const isClaudeVertex = task.agentType === "claude-code" && claudeAuthMode === "vertex-ai";
+        const isGeminiVertex = task.agentType === "gemini" && geminiAuthMode === "vertex-ai";
+        const needsGcpConfig = isClaudeVertex || isGeminiVertex;
+        const googleCloudProject = needsGcpConfig
+          ? (((await retrieveSecretWithFallback(
+              isClaudeVertex ? "CLAUDE_VERTEX_PROJECT_ID" : "GOOGLE_CLOUD_PROJECT",
+              "global",
+              taskWorkspaceId,
+            ).catch(() => null)) as any) ?? undefined)
+          : undefined;
+        const googleCloudLocation = needsGcpConfig
+          ? (((await retrieveSecretWithFallback(
+              isClaudeVertex ? "CLAUDE_VERTEX_REGION" : "GOOGLE_CLOUD_LOCATION",
+              "global",
+              taskWorkspaceId,
+            ).catch(() => null)) as any) ?? undefined)
+          : undefined;
+        const claudeVertexServiceAccountKey = isClaudeVertex
+          ? (((await retrieveSecretWithFallback(
+              "CLAUDE_VERTEX_SERVICE_ACCOUNT_KEY",
+              "global",
+              taskWorkspaceId,
+            ).catch(() => null)) as any) ?? undefined)
+          : undefined;
         const opencodeDefaultBaseUrl =
           ((await retrieveSecretWithFallback(
             "OPENCODE_DEFAULT_BASE_URL",
@@ -365,6 +376,7 @@ export function startTaskWorker() {
           maxTurnsReview: repoConfig?.maxTurnsReview ?? undefined,
           googleCloudProject,
           googleCloudLocation,
+          claudeVertexServiceAccountKey,
         });
 
         // ── MCP servers & custom skills injection ────────────────────
