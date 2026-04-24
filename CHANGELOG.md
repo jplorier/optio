@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-04-24
+
+### Added
+
+- **External PR auto-review** — review agent for PRs on external repos with chat + one-click merge, lifted into its own primitive alongside task-generated reviews.
+- **Google Vertex AI authentication mode for Claude Code** — route Claude through GCP Vertex AI using `CLAUDE_VERTEX_PROJECT_ID` / `CLAUDE_VERTEX_REGION` and an optional (encrypted, global-scope) service account key, with workload-identity fallback (#478).
+- **Workload identity support** for agent pods, plus fixes to repo pod lifecycle (#486).
+- **User-scoped secrets** — keep identity tokens out of the pod env and scope them per user (#474).
+- **Secrets injected into pod env for setup commands** (#471), and an OAuth refresh widget on `/secrets` that hides the banner when visible.
+- **Resume stopped agents on chat message** — sending a chat message to a stopped task resumes the agent (#488).
+- **Multi-repo + multi-tracker ticket integration** — redesigned setup flow (#489).
+- **Dynamic per-provider model & options picker** with a refresh button for agent settings (#493).
+- **Gemini model options** updated with new preview models (#490).
+- **GKE & Gateway deployment enhancements** in the Helm chart (#461).
+- **Diagnostic logging for raw error detection** in agent adapters (#467).
+
+### Changed
+
+- **PR reviews folded into the Tasks page** — removed the sidebar duplicate; task and PR-review detail views now share primitives (#494, #485, f1a6da4).
+- **Repo settings page** — split external PR review out and tabified agent settings (#487).
+- **Standalone Tasks pipeline stats bar** restored on the overview page.
+- **Opus model option bumped from 4.6 to 4.7** (#491).
+
+### Fixed
+
+- Reconciler: guard PR-reactive actions (auto-merge, complete-on-merge, review launch) to coding tasks only so external PR reviews don't trip them (#480).
+- Reviews: stop writing external PR URLs to `pr_review` task rows (#481).
+- Secrets: downgrade `scope='user'` to `'global'` when auth is disabled.
+- API: derive Claude/Codex/Gemini mode from secret names on public `/setup/status` (#477).
+- Auth: add OIDC routes to public auth routes so login works before a session exists (#479).
+- Helm: restore `chown` capabilities in postgres init containers (#482); fix postgres volume permissions and decouple `isSetUp` from runtime health (#472).
+- Images: change agent user UID from 1000 to 1001 to avoid conflicts on managed node images (#466).
+- Gemini agent: settings validation, parser crash, and exit-code inference (#463).
+- Correct sub-hour timezone drift in `getETDate` (#462).
+
 ## [0.3.1] - 2026-04-20
 
 ### Fixed
