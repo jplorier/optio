@@ -1,12 +1,11 @@
 name: Deploy Site
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/site/**"
-      - ".github/workflows/deploy-site.yml"
   workflow_dispatch:
+    inputs:
+      _disabled:
+        description: "This workflow is disabled in favor of publish-helm-pages.yml"
+        required: false
 
 permissions:
   contents: read
