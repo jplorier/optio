@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import Fastify from "fastify";
+import { buildRouteTestApp } from "../test-utils/build-route-test-app.js";
 import type { FastifyInstance } from "fastify";
 
 // ─── Mocks ───
@@ -31,16 +31,18 @@ import { setupRoutes } from "./setup.js";
 // ─── Helpers ───
 
 async function buildTestApp(user?: { workspaceRole: string } | null): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
-  app.decorateRequest("user", undefined as any);
-  if (user !== undefined) {
-    app.addHook("onRequest", async (req) => {
-      (req as any).user = user;
-    });
-  }
-  await setupRoutes(app);
-  await app.ready();
-  return app;
+  return buildRouteTestApp(setupRoutes, {
+    user:
+      user === undefined
+        ? undefined
+        : user === null
+          ? null
+          : {
+              id: "u1",
+              workspaceId: "ws-1",
+              workspaceRole: user.workspaceRole as "admin" | "member" | "viewer",
+            },
+  });
 }
 
 describe("GET /api/setup/status", () => {
@@ -62,9 +64,23 @@ describe("GET /api/setup/status", () => {
     const body = res.json();
     expect(body.isSetUp).toBe(true);
     expect(body.steps.runtime.done).toBe(true);
-    expect(body.steps.githubToken.done).toBe(true);
+    expect(body.steps.gitToken.done).toBe(true);
     expect(body.steps.anthropicKey.done).toBe(true);
     expect(body.steps.anyAgentKey.done).toBe(true);
+  });
+
+  it("returns fully set up when using GitLab token", async () => {
+    mockListSecrets.mockResolvedValue([{ name: "ANTHROPIC_API_KEY" }, { name: "GITLAB_TOKEN" }]);
+    mockRetrieveSecret.mockRejectedValue(new Error("not found"));
+    mockCheckRuntimeHealth.mockResolvedValue(true);
+
+    const res = await app.inject({ method: "GET", url: "/api/setup/status" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.isSetUp).toBe(true);
+    expect(body.steps.gitToken.done).toBe(true);
+    expect(body.steps.anthropicKey.done).toBe(true);
   });
 
   it("returns not set up when no agent key exists", async () => {
@@ -79,14 +95,14 @@ describe("GET /api/setup/status", () => {
     expect(res.json().steps.anyAgentKey.done).toBe(false);
   });
 
-  it("returns not set up when runtime is unhealthy", async () => {
+  it("stays set up when runtime is unhealthy but keys exist", async () => {
     mockListSecrets.mockResolvedValue([{ name: "ANTHROPIC_API_KEY" }, { name: "GITHUB_TOKEN" }]);
     mockRetrieveSecret.mockRejectedValue(new Error("not found"));
     mockCheckRuntimeHealth.mockResolvedValue(false);
 
     const res = await app.inject({ method: "GET", url: "/api/setup/status" });
 
-    expect(res.json().isSetUp).toBe(false);
+    expect(res.json().isSetUp).toBe(true);
     expect(res.json().steps.runtime.done).toBe(false);
   });
 
@@ -104,6 +120,57 @@ describe("GET /api/setup/status", () => {
     const res = await app.inject({ method: "GET", url: "/api/setup/status" });
 
     expect(res.json().isSetUp).toBe(true);
+    expect(res.json().steps.anyAgentKey.done).toBe(true);
+  });
+
+  it("detects OAuth token mode by name when CLAUDE_AUTH_MODE cannot be decrypted", async () => {
+    // Regression: public setup/status has no req.user context, so it can't
+    // build the AAD that workspace-scoped CLAUDE_AUTH_MODE rows need.
+    // The endpoint must infer the mode from CLAUDE_CODE_OAUTH_TOKEN's presence
+    // in the secret names rather than calling retrieveSecret.
+    mockListSecrets.mockResolvedValue([
+      { name: "GITHUB_TOKEN" },
+      { name: "CLAUDE_AUTH_MODE" },
+      { name: "CLAUDE_CODE_OAUTH_TOKEN" },
+    ]);
+    mockRetrieveSecret.mockRejectedValue(new Error("decrypt failed: AAD mismatch"));
+    mockCheckRuntimeHealth.mockResolvedValue(true);
+
+    const res = await app.inject({ method: "GET", url: "/api/setup/status" });
+
+    expect(res.json().isSetUp).toBe(true);
+    expect(res.json().steps.anyAgentKey.done).toBe(true);
+  });
+
+  it("detects Codex app-server mode by name when CODEX_AUTH_MODE cannot be decrypted", async () => {
+    mockListSecrets.mockResolvedValue([
+      { name: "GITHUB_TOKEN" },
+      { name: "CODEX_AUTH_MODE" },
+      { name: "CODEX_APP_SERVER_URL" },
+    ]);
+    mockRetrieveSecret.mockRejectedValue(new Error("decrypt failed: AAD mismatch"));
+    mockCheckRuntimeHealth.mockResolvedValue(true);
+
+    const res = await app.inject({ method: "GET", url: "/api/setup/status" });
+
+    expect(res.json().isSetUp).toBe(true);
+    expect(res.json().steps.codexAppServer.done).toBe(true);
+    expect(res.json().steps.anyAgentKey.done).toBe(true);
+  });
+
+  it("detects Gemini Vertex AI mode by name when GEMINI_AUTH_MODE cannot be decrypted", async () => {
+    mockListSecrets.mockResolvedValue([
+      { name: "GITHUB_TOKEN" },
+      { name: "GEMINI_AUTH_MODE" },
+      { name: "GOOGLE_CLOUD_PROJECT" },
+    ]);
+    mockRetrieveSecret.mockRejectedValue(new Error("decrypt failed: AAD mismatch"));
+    mockCheckRuntimeHealth.mockResolvedValue(true);
+
+    const res = await app.inject({ method: "GET", url: "/api/setup/status" });
+
+    expect(res.json().isSetUp).toBe(true);
+    expect(res.json().steps.geminiKey.done).toBe(true);
     expect(res.json().steps.anyAgentKey.done).toBe(true);
   });
 });
@@ -128,7 +195,9 @@ describe("POST /api/setup/validate/github-token", () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().valid).toBe(false);
+    // After type-provider migration, the 400 envelope is { error, details }
+    // rather than { valid: false }
+    expect(res.json().error).toBe("Validation error");
   });
 
   it("validates a valid GitHub token", async () => {

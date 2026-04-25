@@ -279,7 +279,238 @@
       "idx": 39,
       "version": "7",
       "when": 1776355200000,
+      "tag": "0039_add_git_platform",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1776441600000,
       "tag": "0039_cautious_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1776528000000,
+      "tag": "0040_workspace_allow_dind",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1776614400000,
+      "tag": "0041_encryption_alg_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1776700800000,
+      "tag": "0042_opencode_repo_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1776787200000,
+      "tag": "0042_task_messages",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1776873600000,
+      "tag": "0044_push_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1776873600000,
+      "tag": "0043_gemini_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1776960000000,
+      "tag": "0045_stall_detection",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1777046400000,
+      "tag": "0046_repo_shared_directories",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1775613995000,
+      "tag": "1775613995_repair_duplicate_migrations",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1775627754000,
+      "tag": "1775627754_api_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1775791846000,
+      "tag": "1775791846_replace_workflow_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1775792368000,
+      "tag": "1775792368_workflow_pods",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1775792464000,
+      "tag": "1775792464_workflow_run_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1775794444000,
+      "tag": "1775794444_workflow_trigger_schedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1775793000000,
+      "tag": "1775793000_workflow_run_logs",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1775795000000,
+      "tag": "1775795000_auth_events",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1775809203000,
+      "tag": "1775809203_planning_mode_enabled",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1775855324000,
+      "tag": "1775855324_openclaw_repo_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1775971783000,
+      "tag": "1775971783_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1776045285000,
+      "tag": "1776045285_statefulset_job_support",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1776050234000,
+      "tag": "1776050234_auth_events_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1776281186000,
+      "tag": "1776281186_opencode_base_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1776396730000,
+      "tag": "1776396730_generic_trigger_target",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1776397040000,
+      "tag": "1776397040_task_configs",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1776398039000,
+      "tag": "1776398039_template_kind",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1776410298000,
+      "tag": "1776410298_ticket_provider_error_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1776686400000,
+      "tag": "1776686400_reconcile_columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1776686500000,
+      "tag": "1776686500_workflow_pod_pooling",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1776825057000,
+      "tag": "1776825057_external_pr_auto_review",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1777012800000,
+      "tag": "1777012800_user_scoped_secrets",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1777094400000,
+      "tag": "1777094400_pr_review_primitive",
+      "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1777100000000,
+      "tag": "1777100000_backfill_pr_review_pr_url",
       "breakpoints": true
     }
   ]

@@ -230,9 +230,21 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
     podSpec.restartPolicy = "Never";
     podSpec.volumes = volumes.length > 0 ? volumes : undefined;
 
+    if (spec.terminationGracePeriodSeconds !== undefined) {
+      podSpec.terminationGracePeriodSeconds = spec.terminationGracePeriodSeconds;
+    }
+
     // User namespace isolation (K8s 1.33+)
     if (spec.hostUsers === false) {
       podSpec.hostUsers = false;
+    }
+
+    // Node scheduling constraints (e.g. pin agent pods to a dedicated node pool)
+    if (spec.nodeSelector && Object.keys(spec.nodeSelector).length > 0) {
+      podSpec.nodeSelector = spec.nodeSelector;
+    }
+    if (spec.tolerations && spec.tolerations.length > 0) {
+      podSpec.tolerations = spec.tolerations as V1PodSpec["tolerations"];
     }
 
     const metadata = new V1ObjectMeta();
@@ -242,6 +254,9 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
       ...spec.labels,
       "app.kubernetes.io/managed-by": "optio",
     };
+    if (spec.annotations && Object.keys(spec.annotations).length > 0) {
+      metadata.annotations = spec.annotations;
+    }
 
     const pod = new V1Pod();
     pod.apiVersion = "v1";
@@ -376,6 +391,13 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
       write(chunk, _encoding, callback) {
         stdinStream.write(chunk, callback);
       },
+      // Propagate `.end()` to the underlying k8s exec stdin stream so that
+      // callers can signal EOF to the in-container process (e.g. claude with
+      // --input-format stream-json exits cleanly only after stdin closes).
+      final(callback) {
+        stdinStream.end();
+        callback();
+      },
     });
 
     return {
@@ -427,7 +449,12 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
     try {
       await this.coreApi.listNamespacedPod({ namespace: this.namespace, limit: 1 });
       return true;
-    } catch {
+    } catch (err: unknown) {
+      // 403 Forbidden means the K8s API is reachable but we lack permission
+      // (e.g. no ClusterRole). The runtime is still available.
+      if (this.isForbiddenError(err)) {
+        return true;
+      }
       return false;
     }
   }
@@ -475,6 +502,13 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
       this.namespaceEnsured = true;
       return;
     } catch (err: unknown) {
+      // 403 Forbidden means we lack cluster-level namespace read permission
+      // (no ClusterRole). Since the pod is already running in this namespace,
+      // it must exist — skip namespace creation and cache the result.
+      if (this.isForbiddenError(err)) {
+        this.namespaceEnsured = true;
+        return;
+      }
       if (!this.isNotFoundError(err)) {
         throw err;
       }
@@ -608,6 +642,23 @@ export class KubernetesContainerRuntime implements ContainerRuntime {
         typeof err.response === "object" &&
         "httpStatusCode" in err.response &&
         (err.response as { httpStatusCode: number }).httpStatusCode === 404
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isForbiddenError(err: unknown): boolean {
+    if (err && typeof err === "object") {
+      if ("statusCode" in err && (err as { statusCode: number }).statusCode === 403) return true;
+      if ("code" in err && (err as { code: number }).code === 403) return true;
+      if (
+        "response" in err &&
+        err.response &&
+        typeof err.response === "object" &&
+        "httpStatusCode" in err.response &&
+        (err.response as { httpStatusCode: number }).httpStatusCode === 403
       ) {
         return true;
       }

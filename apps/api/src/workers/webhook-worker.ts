@@ -6,13 +6,14 @@ import {
   getWebhook,
   type WebhookEvent,
 } from "../services/webhook-service.js";
+import { recordWebhookDelivery } from "../telemetry/metrics.js";
+import { emitWebhookDeliveryFailureLog } from "../telemetry/logs.js";
+import { instrumentWorkerProcessor } from "../telemetry/instrument-worker.js";
+import { injectTraceContextIntoJob } from "../telemetry/spans.js";
 
-const redisConnection = {
-  url: process.env.REDIS_URL ?? "redis://localhost:6379",
-  maxRetriesPerRequest: null,
-};
+import { getBullMQConnectionOptions } from "../services/redis-config.js";
 
-const webhookQueue = new Queue("webhooks", { connection: redisConnection });
+const webhookQueue = new Queue("webhooks", { connection: getBullMQConnectionOptions() });
 
 /**
  * Enqueue a webhook delivery job for all active webhooks that subscribe to the event.
@@ -24,7 +25,7 @@ export async function enqueueWebhookEvent(event: WebhookEvent, data: Record<stri
   for (const webhook of matchingWebhooks) {
     await webhookQueue.add(
       "deliver",
-      { webhookId: webhook.id, event, data },
+      injectTraceContextIntoJob({ webhookId: webhook.id, event, data }),
       {
         attempts: 3,
         backoff: { type: "exponential", delay: 5000 }, // 5s, 10s, 20s
@@ -43,7 +44,7 @@ export async function enqueueWebhookEvent(event: WebhookEvent, data: Record<stri
 export function startWebhookWorker() {
   const worker = new Worker(
     "webhooks",
-    async (job) => {
+    instrumentWorkerProcessor("webhook-worker", async (job) => {
       const { webhookId, event, data } = job.data as {
         webhookId: string;
         event: WebhookEvent;
@@ -60,16 +61,19 @@ export function startWebhookWorker() {
       const delivery = await deliverWebhook(webhook, event, data, attempt);
 
       if (!delivery.success) {
+        recordWebhookDelivery(event, false);
+        emitWebhookDeliveryFailureLog(webhookId, event, delivery.statusCode ?? 0);
         throw new Error(delivery.error ?? `Delivery failed with status ${delivery.statusCode}`);
       }
 
+      recordWebhookDelivery(event, true);
       logger.info(
         { webhookId, event, statusCode: delivery.statusCode },
         "Webhook delivered successfully",
       );
-    },
+    }),
     {
-      connection: redisConnection,
+      connection: getBullMQConnectionOptions(),
       concurrency: 10,
     },
   );

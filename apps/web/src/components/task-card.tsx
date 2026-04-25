@@ -7,7 +7,16 @@ import { StateBadge } from "./state-badge";
 import { classifyError } from "@optio/shared";
 import { api } from "@/lib/api-client";
 import { formatRelativeTime } from "@/lib/utils";
-import { ExternalLink, RotateCcw, Bot, Link2, Clock, Moon, Play } from "lucide-react";
+import {
+  ExternalLink,
+  RotateCcw,
+  Bot,
+  Link2,
+  Clock,
+  Moon,
+  Play,
+  AlertTriangle,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useOptioChatStore } from "@/hooks/use-optio-chat";
 
@@ -17,6 +26,8 @@ function formatAttentionReason(reason: string): string {
   if (reason.includes("ci_failing") || reason.includes("CI checks")) return "CI checks failing";
   if (reason.includes("merge_conflicts") || reason.includes("conflicts")) return "Merge conflicts";
   if (reason.includes("changes_requested") || reason.includes("review")) return "Changes requested";
+  if (reason.includes("completed_without_pr") || reason.includes("did not open a pull request"))
+    return "Completed without PR";
   return reason.length > 60 ? reason.slice(0, 60) + "..." : reason;
 }
 
@@ -32,6 +43,9 @@ interface TaskSummary {
   taskType?: string;
   parentTaskId?: string;
   pendingReason?: string | null;
+  lastActivityAt?: string;
+  activitySubstate?: string;
+  isStalled?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -67,12 +81,6 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
                   Automatic Review
                 </span>
               )}
-              {task.taskType === "pr_review" && (
-                <span className="shrink-0 flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary">
-                  <Bot className="w-3 h-3" />
-                  Review Assistant
-                </span>
-              )}
             </div>
             {/* Metadata row */}
             <div className="flex items-center gap-1.5 mt-2 text-xs text-text-muted">
@@ -88,7 +96,7 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
                 ${parseFloat(task.costUsd).toFixed(2)}
               </span>
             )}
-            <StateBadge state={task.state} />
+            <StateBadge state={task.state} isStalled={task.isStalled} />
           </div>
         </div>
 
@@ -137,6 +145,17 @@ export const TaskCard = React.memo(function TaskCard({ task, subtasks }: TaskCar
               <Play className="w-3 h-3" />
               Run Now
             </button>
+          </div>
+        )}
+
+        {/* Stall indicator */}
+        {task.state === "running" && task.isStalled && (
+          <div className="mt-3 px-3 py-2 rounded-lg bg-warning/5 border border-warning/10 flex items-center gap-2">
+            <AlertTriangle className="w-3 h-3 text-warning/60 shrink-0" />
+            <span className="text-xs text-warning/70">
+              No activity for{" "}
+              {task.lastActivityAt ? formatRelativeTime(task.lastActivityAt) : "a while"}
+            </span>
           </div>
         )}
 

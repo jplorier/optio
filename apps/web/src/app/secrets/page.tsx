@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { api } from "@/lib/api-client";
 import { toast } from "sonner";
 import { Loader2, Plus, Trash2, KeyRound, Globe, FolderGit2, Filter } from "lucide-react";
+import { TokenRefreshBanner } from "@/components/token-refresh-banner";
 
 export default function SecretsPage() {
   usePageTitle("Secrets");
@@ -15,6 +16,28 @@ export default function SecretsPage() {
   const [form, setForm] = useState({ name: "", value: "", scope: "global" });
   const [submitting, setSubmitting] = useState(false);
   const [scopeFilter, setScopeFilter] = useState<string>("all");
+  const [claudeExpired, setClaudeExpired] = useState(false);
+
+  const checkClaudeAuth = useCallback(async () => {
+    try {
+      const res = await api.getAuthStatus();
+      setClaudeExpired(res.subscription.expired === true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    checkClaudeAuth();
+    const onChanged = () => checkClaudeAuth();
+    const onFailed = () => setClaudeExpired(true);
+    window.addEventListener("optio:auth-status-changed", onChanged);
+    window.addEventListener("optio:auth-failed", onFailed);
+    return () => {
+      window.removeEventListener("optio:auth-status-changed", onChanged);
+      window.removeEventListener("optio:auth-failed", onFailed);
+    };
+  }, [checkClaudeAuth]);
 
   const loadSecrets = () => {
     const scope = scopeFilter === "all" ? undefined : scopeFilter;
@@ -88,6 +111,12 @@ export default function SecretsPage() {
           Add Secret
         </button>
       </div>
+
+      {claudeExpired && (
+        <div className="mb-6">
+          <TokenRefreshBanner onSaved={checkClaudeAuth} />
+        </div>
+      )}
 
       {showForm && (
         <form

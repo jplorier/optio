@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { z } from "zod";
 import { getRuntime } from "../services/container-service.js";
 import { getSession } from "../services/interactive-session-service.js";
 import { getSettings } from "../services/optio-settings-service.js";
@@ -51,7 +52,7 @@ export async function sessionChatWs(app: FastifyInstance) {
       return;
     }
 
-    const { sessionId } = req.params as { sessionId: string };
+    const { sessionId } = z.object({ sessionId: z.string() }).parse(req.params);
     const log = logger.child({ sessionId, ws: "session-chat" });
 
     // Extract the user's raw session token for auth passthrough.
@@ -89,7 +90,13 @@ export async function sessionChatWs(app: FastifyInstance) {
     // Get pod info
     const [pod] = await db.select().from(repoPods).where(eq(repoPods.id, session.podId));
     if (!pod || !pod.podName) {
-      socket.send(JSON.stringify({ type: "error", message: "Pod not found or not ready" }));
+      socket.send(
+        JSON.stringify({
+          type: "error",
+          message:
+            "Session pod was cleaned up due to inactivity. Please end this session and start a new one.",
+        }),
+      );
       releaseConnection(clientIp);
       socket.close();
       return;
@@ -116,7 +123,7 @@ export async function sessionChatWs(app: FastifyInstance) {
     let promptCount = 0;
 
     // Resolve auth env vars for the claude process
-    const authEnv = await buildAuthEnv(log);
+    const authEnv = await buildAuthEnv(log, user.id);
 
     const send = (msg: Record<string, unknown>) => {
       if (socket.readyState === 1) {
@@ -336,17 +343,24 @@ export async function sessionChatWs(app: FastifyInstance) {
 }
 
 /** Build auth environment variables for the claude process in the pod. */
-async function buildAuthEnv(log: {
-  warn: (obj: any, msg: string) => void;
-}): Promise<Record<string, string>> {
+async function buildAuthEnv(
+  log: { warn: (obj: any, msg: string) => void },
+  userId?: string | null,
+): Promise<Record<string, string>> {
   const env: Record<string, string> = {};
 
   try {
-    const { retrieveSecret } = await import("../services/secret-service.js");
+    const { retrieveSecret, retrieveSecretWithFallback } =
+      await import("../services/secret-service.js");
     const authMode = (await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null)) as string | null;
 
     if (authMode === "api-key") {
-      const apiKey = await retrieveSecret("ANTHROPIC_API_KEY").catch(() => null);
+      const apiKey = await retrieveSecretWithFallback(
+        "ANTHROPIC_API_KEY",
+        "global",
+        undefined,
+        userId,
+      ).catch(() => null);
       if (apiKey) {
         env.ANTHROPIC_API_KEY = apiKey as string;
       }
@@ -357,7 +371,12 @@ async function buildAuthEnv(log: {
         env.CLAUDE_CODE_OAUTH_TOKEN = result.token;
       }
     } else if (authMode === "oauth-token") {
-      const token = await retrieveSecret("CLAUDE_CODE_OAUTH_TOKEN").catch(() => null);
+      const token = await retrieveSecretWithFallback(
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "global",
+        undefined,
+        userId,
+      ).catch(() => null);
       if (token) {
         env.CLAUDE_CODE_OAUTH_TOKEN = token as string;
       }

@@ -1,17 +1,21 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useState, useEffect } from "react";
 import { usePageTitle } from "@/hooks/use-page-title";
 import { useTask } from "@/hooks/use-task";
 import { LogViewer } from "@/components/log-viewer";
 import { PipelineTimeline } from "@/components/pipeline-timeline";
 import { ActivityFeed } from "@/components/activity-feed";
+import { DetailHeader } from "@/components/detail-header";
+import { PrStatusBar } from "@/components/pr-status-bar";
+import { ChatComposer } from "@/components/chat-box";
 import { StateBadge } from "@/components/state-badge";
+import { TokenRefreshBanner } from "@/components/token-refresh-banner";
 import { api } from "@/lib/api-client";
 import { ErrorBoundary } from "@/components/error-boundary";
 import { classifyError } from "@optio/shared";
-import { ReviewDraftPanel } from "@/components/review-draft-panel";
 import { cn, formatRelativeTime } from "@/lib/utils";
 import {
   Loader2,
@@ -26,13 +30,11 @@ import {
   Bot,
   Send,
   AlertCircle,
+  AlertTriangle,
   Eye,
-  Key,
-  Check,
-  Copy,
   Plus,
   X,
-  Link2,
+  CheckCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useOptioChatStore } from "@/hooks/use-optio-chat";
@@ -40,16 +42,36 @@ import { AddDependencyDialog } from "@/components/add-dependency-dialog";
 
 export default function TaskDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { task, events, pendingReason, pipelineProgress, loading, error, refresh } = useTask(id);
+  const router = useRouter();
+  const { task, events, pendingReason, pipelineProgress, stallInfo, loading, error, refresh } =
+    useTask(id);
   usePageTitle(task?.title ?? "Task");
+
+  // Legacy redirect: /tasks/:id URLs that resolve to a pr_reviews row are
+  // PR reviews — send the user to the /reviews/:id detail page.
+  useEffect(() => {
+    if (!error) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.getPrReview(id);
+        if (!cancelled && res?.review) {
+          router.replace(`/reviews/${id}`);
+        }
+      } catch {
+        // Not a PR review — leave the error UI in place.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [error, id, router]);
   const [actionLoading, setActionLoading] = useState(false);
   const [resumePrompt, setResumePrompt] = useState("");
   const [showTimeline, setShowTimeline] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"pipeline" | "activity">("pipeline");
   const [subtasks, setSubtasks] = useState<any[]>([]);
   const [dependencies, setDependencies] = useState<any[]>([]);
-  const [tokenInput, setTokenInput] = useState("");
-  const [tokenSaving, setTokenSaving] = useState(false);
   const [dependents, setDependents] = useState<any[]>([]);
   const [showCreateSubtask, setShowCreateSubtask] = useState(false);
   const [showAddDependency, setShowAddDependency] = useState(false);
@@ -121,6 +143,38 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
     setActionLoading(false);
   };
 
+  const [messageInput, setMessageInput] = useState("");
+  const [messageSending, setMessageSending] = useState(false);
+  const [userMessages, setUserMessages] = useState<
+    { text: string; timestamp: string; status: "sending" | "sent" | "failed" }[]
+  >([]);
+
+  const handleSendMessage = async (mode: "soft" | "interrupt" = "soft") => {
+    if (!messageInput.trim()) return;
+    const text = messageInput;
+    setMessageSending(true);
+    setUserMessages((prev) => [
+      ...prev,
+      { text, timestamp: new Date().toISOString(), status: "sending" },
+    ]);
+    try {
+      await api.sendTaskMessage(id, text, mode);
+      setMessageInput("");
+      setUserMessages((prev) =>
+        prev.map((m) => (m.text === text && m.status === "sending" ? { ...m, status: "sent" } : m)),
+      );
+      toast.success(mode === "interrupt" ? "Interrupt sent" : "Message sent");
+    } catch (err) {
+      setUserMessages((prev) =>
+        prev.map((m) =>
+          m.text === text && m.status === "sending" ? { ...m, status: "failed" } : m,
+        ),
+      );
+      toast.error(err instanceof Error ? err.message : "Failed to send message");
+    }
+    setMessageSending(false);
+  };
+
   const handleResume = async () => {
     if (!resumePrompt.trim()) return;
     setActionLoading(true);
@@ -129,6 +183,20 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       setResumePrompt("");
       await refresh();
     } catch {}
+    setActionLoading(false);
+  };
+
+  const handleApprovePlan = async () => {
+    setActionLoading(true);
+    try {
+      await api.resumeTask(
+        id,
+        "Plan approved. Proceed with implementation following your plan above.",
+      );
+      await refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to approve plan");
+    }
     setActionLoading(false);
   };
 
@@ -190,38 +258,56 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
   const canCancel = ["running", "queued", "provisioning", "needs_attention"].includes(task.state);
   const canRetry = ["failed", "cancelled"].includes(task.state);
   const canResume = ["needs_attention", "failed"].includes(task.state) && !!task.sessionId;
+  // Chat composer shows whenever the message endpoint will accept a message:
+  // - running + claude-code (mid-turn delivery via stream-json stdin), or
+  // - stopped-but-resumable (needs_attention / pr_opened / failed / cancelled)
+  //   — the message becomes the resume prompt for any agent type.
+  const canMessageRunning = task.state === "running" && task.agentType === "claude-code";
+  const canMessageStopped = ["needs_attention", "pr_opened", "failed", "cancelled"].includes(
+    task.state,
+  );
+  const canMessage = canMessageRunning || canMessageStopped;
   const canForceRestart = ["needs_attention", "failed", "pr_opened"].includes(task.state);
+
+  // Detect plan review state: needs_attention with plan_review trigger
+  const isPlanReview =
+    task.state === "needs_attention" &&
+    events.length > 0 &&
+    events[events.length - 1]?.trigger === "plan_review";
 
   // (log filtering is handled by LogViewer component)
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="shrink-0 p-4 border-b border-border bg-bg-card">
-        <div className="flex flex-col gap-3 max-w-5xl mx-auto">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-lg font-bold tracking-tight">{task.title}</h1>
-                <StateBadge state={task.state} />
-              </div>
-              <div className="flex items-center gap-4 mt-2 text-xs text-text-muted flex-wrap">
-                <span className="flex items-center gap-1">
-                  <GitBranch className="w-3 h-3" />
-                  {repoName}
-                </span>
-                <span className="flex items-center gap-1 capitalize">
-                  <Bot className="w-3 h-3" />
-                  {task.agentType.replace("-", " ")}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {formatRelativeTime(task.createdAt)}
-                </span>
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
+      <DetailHeader
+        title={task.title}
+        state={task.state}
+        isStalled={stallInfo?.isStalled}
+        metaItems={[
+          <>
+            <GitBranch className="w-3 h-3" />
+            {repoName}
+          </>,
+          <span className="flex items-center gap-1 capitalize">
+            <Bot className="w-3 h-3" />
+            {task.agentType.replace("-", " ")}
+          </span>,
+          <>
+            <Clock className="w-3 h-3" />
+            {formatRelativeTime(task.createdAt)}
+          </>,
+        ]}
+        rightSlot={
+          <button
+            onClick={refresh}
+            className="p-1.5 rounded-md hover:bg-bg-hover text-text-muted transition-colors"
+            title="Refresh"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        }
+        actions={
+          <>
             {task.prUrl && (
               <a
                 href={task.prUrl}
@@ -286,16 +372,9 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
               <Bot className="w-3 h-3" />
               Ask Optio
             </button>
-            <button
-              onClick={refresh}
-              className="p-1.5 rounded-md hover:bg-bg-hover text-text-muted transition-colors"
-              title="Refresh"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Pending reason */}
       {pendingReason && (
@@ -338,6 +417,36 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                 Run Now
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Stall warning banner */}
+      {stallInfo?.isStalled && task?.state === "running" && (
+        <div className="shrink-0 border-b border-warning/20 bg-warning/5">
+          <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center gap-2 text-xs">
+            <AlertTriangle className="w-3.5 h-3.5 text-warning shrink-0" />
+            <span className="text-warning/80">
+              Agent looks stuck. No activity for{" "}
+              {stallInfo.silentForMs >= 60000
+                ? `${Math.floor(stallInfo.silentForMs / 60000)}m ${Math.floor((stallInfo.silentForMs % 60000) / 1000)}s`
+                : `${Math.floor(stallInfo.silentForMs / 1000)}s`}
+              .{stallInfo.lastLogSummary ? ` Last action: ${stallInfo.lastLogSummary}` : ""}
+            </span>
+            <span
+              className="ml-auto flex items-center gap-1 px-2 py-1 rounded-md bg-text-muted/10 text-text-muted/50 text-[10px] cursor-not-allowed"
+              title="Coming soon — depends on interactive messaging feature"
+            >
+              Send a nudge
+            </span>
+            <button
+              disabled={actionLoading}
+              onClick={handleCancel}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-error/10 text-error hover:bg-error/20 transition-all shrink-0"
+            >
+              <XCircle className="w-3 h-3" />
+              Force fail
+            </button>
           </div>
         </div>
       )}
@@ -386,11 +495,22 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
         </div>
       )}
 
-      {/* Error panel */}
+      {/* Error panel — only for terminal failures and needs_attention. A task
+          in pr_opened state is healthy (the PR is being monitored); a stale
+          errorMessage there shouldn't paint it red. */}
       {task.errorMessage &&
-        (isTerminal || task.state === "needs_attention" || task.state === "pr_opened") &&
+        (isTerminal || task.state === "needs_attention") &&
         (() => {
           const classified = classifyError(task.errorMessage);
+          if (classified.category === "auth") {
+            return (
+              <div className="shrink-0 border-b border-border bg-bg-card">
+                <div className="max-w-5xl mx-auto px-4 py-3">
+                  <TokenRefreshBanner onSaved={refresh} />
+                </div>
+              </div>
+            );
+          }
           return (
             <div className="shrink-0 border-b border-error/20 bg-error/5">
               <div className="max-w-5xl mx-auto px-4 py-3">
@@ -401,81 +521,14 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                       <h3 className="text-sm font-medium text-error">{classified.title}</h3>
                       <p className="text-xs text-error/70 mt-0.5">{classified.description}</p>
                     </div>
-                    {classified.category === "auth" ? (
-                      <div className="space-y-2">
-                        <div className="p-2.5 rounded-md bg-bg/50 border border-border">
-                          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">
-                            1. Copy your token
-                          </div>
-                          <div className="relative group">
-                            <pre className="text-[11px] text-text/80 whitespace-pre-wrap font-mono bg-bg-card rounded px-2.5 py-2 border border-border select-all break-all">
-                              {`security find-generic-password -s "Claude Code-credentials" -w | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" | pbcopy`}
-                            </pre>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(
-                                  `security find-generic-password -s "Claude Code-credentials" -w | python3 -c "import sys,json; print(json.load(sys.stdin)['claudeAiOauth']['accessToken'])" | pbcopy`,
-                                );
-                                toast.success("Command copied");
-                              }}
-                              className="absolute top-1 right-1 p-1 rounded bg-bg-hover text-text-muted hover:text-text opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <Copy className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-                        <div className="p-2.5 rounded-md bg-bg/50 border border-border">
-                          <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1.5">
-                            2. Paste new token
-                          </div>
-                          <div className="flex gap-2">
-                            <input
-                              type="password"
-                              value={tokenInput}
-                              onChange={(e) => setTokenInput(e.target.value)}
-                              placeholder="Paste token here"
-                              className="flex-1 px-2.5 py-1.5 rounded-md bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary"
-                            />
-                            <button
-                              onClick={async () => {
-                                if (!tokenInput.trim()) return;
-                                setTokenSaving(true);
-                                try {
-                                  await api.createSecret({
-                                    name: "CLAUDE_CODE_OAUTH_TOKEN",
-                                    value: tokenInput.trim(),
-                                  });
-                                  toast.success("Token updated");
-                                  setTokenInput("");
-                                } catch (err) {
-                                  toast.error("Failed to save token");
-                                }
-                                setTokenSaving(false);
-                              }}
-                              disabled={!tokenInput.trim() || tokenSaving}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-white text-xs hover:bg-primary-hover disabled:opacity-50 btn-press transition-all"
-                            >
-                              {tokenSaving ? (
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                              ) : (
-                                <Key className="w-3 h-3" />
-                              )}
-                              Update
-                            </button>
-                          </div>
-                        </div>
+                    <div className="p-2.5 rounded-md bg-bg/50 border border-border">
+                      <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                        Suggested fix
                       </div>
-                    ) : (
-                      <div className="p-2.5 rounded-md bg-bg/50 border border-border">
-                        <div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">
-                          Suggested fix
-                        </div>
-                        <pre className="text-xs text-text/80 whitespace-pre-wrap font-mono">
-                          {classified.remedy}
-                        </pre>
-                      </div>
-                    )}
+                      <pre className="text-xs text-text/80 whitespace-pre-wrap font-mono">
+                        {classified.remedy}
+                      </pre>
+                    </div>
                     <div className="flex items-center gap-2">
                       {classified.retryable && canRetry && (
                         <button
@@ -498,80 +551,27 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
           );
         })()}
 
-      {/* PR Status */}
-      {task.prUrl &&
-        ((task.prChecksStatus && task.prChecksStatus !== "none") ||
-          (task.prReviewStatus && task.prReviewStatus !== "none") ||
-          (task.prState && task.prState !== "open")) && (
-          <div className="shrink-0 border-b border-border bg-bg-card px-4 py-3">
-            <div className="max-w-5xl mx-auto">
-              <div className="flex items-center gap-4 text-xs">
-                {/* CI Checks */}
-                {task.prChecksStatus && task.prChecksStatus !== "none" && (
-                  <span
-                    className={cn(
-                      "flex items-center gap-1",
-                      task.prChecksStatus === "passing"
-                        ? "text-success"
-                        : task.prChecksStatus === "failing"
-                          ? "text-error"
-                          : "text-warning",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "w-2 h-2 rounded-full",
-                        task.prChecksStatus === "passing"
-                          ? "bg-success"
-                          : task.prChecksStatus === "failing"
-                            ? "bg-error"
-                            : "bg-warning",
-                      )}
-                    />
-                    CI: {task.prChecksStatus}
-                  </span>
-                )}
-
-                {/* Review Status */}
-                {task.prReviewStatus && task.prReviewStatus !== "none" && (
-                  <span
-                    className={cn(
-                      "flex items-center gap-1",
-                      task.prReviewStatus === "approved"
-                        ? "text-success"
-                        : task.prReviewStatus === "changes_requested"
-                          ? "text-warning"
-                          : "text-text-muted",
-                    )}
-                  >
-                    Review:{" "}
-                    {task.prReviewStatus === "changes_requested"
-                      ? "changes requested"
-                      : task.prReviewStatus}
-                  </span>
-                )}
-
-                {/* PR State */}
-                {task.prState && task.prState !== "open" && (
-                  <span className={task.prState === "merged" ? "text-success" : "text-text-muted"}>
-                    {task.prState}
-                  </span>
-                )}
-
-                {/* Cost */}
+      {/* PR Status — also hosts the Timeline toggle so both pages put it in
+          the same place. The row always renders to give Timeline a stable home. */}
+      <div className="shrink-0 border-b border-border bg-bg-card px-4 py-2">
+        <div className="max-w-5xl mx-auto">
+          <PrStatusBar
+            checksStatus={task.prChecksStatus}
+            reviewStatus={task.prReviewStatus}
+            prState={task.prState}
+            actions={
+              <>
                 {task.costUsd && (
-                  <span className="text-text-muted ml-auto">
+                  <span className="text-text-muted">
                     Cost: ${parseFloat(task.costUsd).toFixed(4)}
                   </span>
                 )}
-
-                {/* Request Review */}
                 {task.state === "pr_opened" && (
                   <button
                     onClick={async () => {
                       setActionLoading(true);
                       try {
-                        const res = await api.launchReview(id);
+                        await api.launchReview(id);
                         toast.success("Review agent launched");
                         refresh();
                       } catch (err) {
@@ -580,24 +580,34 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
                       setActionLoading(false);
                     }}
                     disabled={actionLoading}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 disabled:opacity-50 ml-auto"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 disabled:opacity-50"
                   >
                     <Eye className="w-3 h-3" />
                     Request Review
                   </button>
                 )}
-              </div>
-
-              {/* Review comments if changes requested */}
-              {task.prReviewStatus === "changes_requested" && task.prReviewComments && (
-                <div className="mt-2 p-2 rounded-md bg-warning/5 border border-warning/20 text-xs">
-                  <div className="font-medium text-warning mb-1">Review feedback:</div>
-                  <pre className="text-text-muted whitespace-pre-wrap">{task.prReviewComments}</pre>
-                </div>
-              )}
+                <button
+                  onClick={() => setShowTimeline(!showTimeline)}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-xs transition-colors",
+                    showTimeline
+                      ? "bg-primary/10 text-primary"
+                      : "text-text-muted hover:bg-bg-hover",
+                  )}
+                >
+                  Timeline
+                </button>
+              </>
+            }
+          />
+          {task.prReviewStatus === "changes_requested" && task.prReviewComments && (
+            <div className="mt-2 p-2 rounded-md bg-warning/5 border border-warning/20 text-xs">
+              <div className="font-medium text-warning mb-1">Review feedback:</div>
+              <pre className="text-text-muted whitespace-pre-wrap">{task.prReviewComments}</pre>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      </div>
 
       {/* Dependencies */}
       <div className="shrink-0 border-b border-border bg-bg px-4 py-2.5">
@@ -845,75 +855,118 @@ export default function TaskDetailPage({ params }: { params: Promise<{ id: strin
       <div className="flex-1 flex overflow-hidden">
         {/* Log panel */}
         <div className="flex-1 min-w-0 flex flex-col">
-          {/* Log viewer + events toggle */}
-          <div className="shrink-0 flex items-center justify-end px-4 py-1 border-b border-border bg-bg">
-            <button
-              onClick={() => setShowTimeline(!showTimeline)}
-              className={cn(
-                "px-2 py-0.5 rounded text-xs transition-colors",
-                showTimeline ? "bg-primary/10 text-primary" : "text-text-muted hover:bg-bg-hover",
-              )}
-            >
-              Timeline
-            </button>
-          </div>
-
-          {/* Review Draft Panel (for pr_review tasks) */}
-          {task?.taskType === "pr_review" && (
-            <div className="shrink-0 px-4 pt-4">
-              <ReviewDraftPanel taskId={id} taskState={task.state} />
-            </div>
-          )}
-
           {/* Log content via LogViewer */}
           <div className="flex-1 overflow-hidden">
             <ErrorBoundary label="Log viewer">
-              <LogViewer taskId={id} />
+              <LogViewer taskId={id} userMessages={userMessages} />
             </ErrorBoundary>
           </div>
 
-          {/* Resume / interact bar */}
+          {/* Message / Resume bar */}
           <div className="shrink-0 border-t border-border bg-bg-card px-4 py-2.5">
-            <div className="flex gap-2 items-center">
-              <input
-                value={resumePrompt}
-                onChange={(e) => setResumePrompt(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleResume()}
+            {canMessage ? (
+              /* Unified chat bar. For running claude-code tasks the message is
+                 delivered mid-turn via stream-json stdin; for stopped tasks
+                 (needs_attention / pr_opened / failed / cancelled) it resumes
+                 the agent with the message as the new prompt. */
+              <ChatComposer
+                value={messageInput}
+                onChange={setMessageInput}
+                onSend={() => handleSendMessage("soft")}
+                onInterrupt={canMessageRunning ? () => handleSendMessage("interrupt") : undefined}
+                sending={messageSending}
                 placeholder={
-                  canResume
-                    ? "Send follow-up instructions to the agent..."
-                    : isActive
-                      ? "Agent is running..."
-                      : "Task has ended"
+                  canMessageRunning
+                    ? "Send a message to the running agent..."
+                    : "Resume the agent with a message..."
                 }
-                disabled={!canResume}
-                className="flex-1 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                sendLabel={canMessageRunning ? "Send" : "Resume"}
+                interruptLabel="Stop"
               />
-              <button
-                onClick={handleResume}
-                disabled={!canResume || !resumePrompt.trim() || actionLoading}
-                title={
-                  !task.sessionId && isTerminal
-                    ? "No session to resume — the agent didn't produce a session ID"
-                    : canResume
-                      ? "Resume the agent with these instructions"
-                      : "Task must be in a resumable state"
-                }
-                className={cn(
-                  "px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
-                  canResume
-                    ? "bg-primary text-white hover:bg-primary-hover"
-                    : "bg-bg-hover text-text-muted",
-                )}
-              >
-                {actionLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-              </button>
-            </div>
-            {isTerminal && !task.sessionId && (
+            ) : isPlanReview && canResume ? (
+              /* Plan review bar */
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-primary/5 border border-primary/20 text-sm">
+                  <Eye className="w-4 h-4 text-primary shrink-0" />
+                  <span className="text-primary font-medium">
+                    Plan ready for review — check the agent output above
+                  </span>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <input
+                    value={resumePrompt}
+                    onChange={(e) => setResumePrompt(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleResume()}
+                    placeholder="Send feedback or modifications to the plan..."
+                    className="flex-1 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+                  />
+                  <button
+                    onClick={handleResume}
+                    disabled={!resumePrompt.trim() || actionLoading}
+                    title="Send feedback to the agent"
+                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors bg-bg-hover text-text hover:bg-bg-hover/80 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span className="hidden sm:inline">Send Feedback</span>
+                  </button>
+                  <button
+                    onClick={handleApprovePlan}
+                    disabled={actionLoading}
+                    title="Approve the plan and start implementation"
+                    className="px-3 py-2 rounded-md text-sm font-medium transition-colors bg-success text-white hover:bg-success/90 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1.5"
+                  >
+                    {actionLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <CheckCircle className="w-4 h-4" />
+                    )}
+                    <span className="hidden sm:inline">Approve & Execute</span>
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Resume bar (for non-running or resumable tasks) */
+              <div className="flex gap-2 items-center">
+                <input
+                  value={resumePrompt}
+                  onChange={(e) => setResumePrompt(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleResume()}
+                  placeholder={
+                    canResume
+                      ? "Send follow-up instructions to the agent..."
+                      : isActive
+                        ? "Agent is running..."
+                        : "Task has ended"
+                  }
+                  disabled={!canResume}
+                  className="flex-1 px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 disabled:opacity-40 disabled:cursor-not-allowed"
+                />
+                <button
+                  onClick={handleResume}
+                  disabled={!canResume || !resumePrompt.trim() || actionLoading}
+                  title={
+                    !task.sessionId && isTerminal
+                      ? "No session to resume — the agent didn't produce a session ID"
+                      : canResume
+                        ? "Resume the agent with these instructions"
+                        : "Task must be in a resumable state"
+                  }
+                  className={cn(
+                    "px-3 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-30 disabled:cursor-not-allowed",
+                    canResume
+                      ? "bg-primary text-white hover:bg-primary-hover"
+                      : "bg-bg-hover text-text-muted",
+                  )}
+                >
+                  {actionLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                </button>
+              </div>
+            )}
+            {isTerminal && !task.sessionId && !canMessage && (
               <p className="text-[10px] text-text-muted/50 mt-1">
                 Resume unavailable — no session was captured for this task.
               </p>

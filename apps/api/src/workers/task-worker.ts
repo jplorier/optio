@@ -10,26 +10,49 @@ import {
   type PresetImageId,
   msUntilOffPeak,
   classifyError,
+  parseRepoUrl,
+  parsePrUrl,
+  parseIntEnv,
 } from "@optio/shared";
 import { getAdapter } from "@optio/agent-adapters";
 import { parseClaudeEvent } from "../services/agent-event-parser.js";
 import { parseCodexEvent } from "../services/codex-event-parser.js";
 import { parseCopilotEvent } from "../services/copilot-event-parser.js";
-import { checkExistingPr } from "../services/pr-detection-service.js";
+import { parseOpenCodeEvent } from "../services/opencode-event-parser.js";
+import { parseGeminiEvent } from "../services/gemini-event-parser.js";
+import { parseOpenClawEvent } from "../services/openclaw-event-parser.js";
+import { checkExistingPr, type ExistingPr } from "../services/pr-detection-service.js";
 import { db } from "../db/client.js";
 import { tasks } from "../db/schema.js";
 import { eq, sql } from "drizzle-orm";
 import * as taskService from "../services/task-service.js";
 import * as repoPool from "../services/repo-pool-service.js";
 import { publishEvent } from "../services/event-bus.js";
-import { resolveSecretsForTask, retrieveSecretWithFallback } from "../services/secret-service.js";
+import {
+  resolveSecretsForTask,
+  resolveSecretsForSetup,
+  retrieveSecretWithFallback,
+} from "../services/secret-service.js";
 import { getPromptTemplate } from "../services/prompt-template-service.js";
 import { isGitHubAppConfigured } from "../services/github-app-service.js";
 import { getCredentialSecret } from "../services/credential-secret-service.js";
+import { subscribeToTaskMessages } from "../services/task-message-bus.js";
+import * as messageService from "../services/task-message-service.js";
+import { detectAuthFailureInLogs, recordAuthEvent } from "../services/auth-failure-detector.js";
 import { logger } from "../logger.js";
+import {
+  recordTaskComplete,
+  recordTaskDuration,
+  recordTaskCost,
+  recordTaskTokens,
+} from "../telemetry/metrics.js";
+import { emitCostReportLog } from "../telemetry/logs.js";
+import { withSpan, injectTraceContextIntoJob } from "../telemetry/spans.js";
+import { instrumentWorkerProcessor } from "../telemetry/instrument-worker.js";
 
-const redisUrl = process.env.REDIS_URL ?? "redis://localhost:6379";
-const connectionOpts = { url: redisUrl, maxRetriesPerRequest: null };
+import { getBullMQConnectionOptions } from "../services/redis-config.js";
+
+const connectionOpts = getBullMQConnectionOptions();
 
 export const taskQueue = new Queue("tasks", { connection: connectionOpts });
 
@@ -56,7 +79,7 @@ function withClaimLock<T>(fn: () => Promise<T>): Promise<T> {
 export function startTaskWorker() {
   const worker = new Worker(
     "tasks",
-    async (job) => {
+    instrumentWorkerProcessor("task-worker", async (job) => {
       const {
         taskId,
         resumeSessionId,
@@ -161,7 +184,7 @@ export function startTaskWorker() {
         const effectiveRepoConcurrency = maxAgentsPerPod * maxPodInstances;
 
         const claimed = await withClaimLock(async () => {
-          const globalMax = parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10);
+          const globalMax = parseIntEnv("OPTIO_MAX_CONCURRENT", 5);
 
           // Global concurrency check
           const [{ count: activeCount }] = await db
@@ -199,11 +222,15 @@ export function startTaskWorker() {
 
         if (!claimed) {
           const jitter = Math.floor(Math.random() * 5000);
-          await taskQueue.add("process-task", job.data, {
-            jobId: `${taskId}-delayed-${Date.now()}`,
-            priority: currentTask.priority ?? 100,
-            delay: 10000 + jitter,
-          });
+          await taskQueue.add(
+            "process-task",
+            injectTraceContextIntoJob(job.data as Record<string, unknown>),
+            {
+              jobId: `${taskId}-delayed-${Date.now()}`,
+              priority: currentTask.priority ?? 100,
+              delay: 10000 + jitter,
+            },
+          );
           return;
         }
         log.info("Provisioning");
@@ -230,6 +257,49 @@ export function startTaskWorker() {
                 taskWorkspaceId,
               ).catch(() => null)) as any) ?? undefined)
             : undefined;
+        const geminiAuthMode =
+          ((await retrieveSecretWithFallback("GEMINI_AUTH_MODE", "global", taskWorkspaceId).catch(
+            () => null,
+          )) as any) ?? "api-key";
+
+        // GCP config for Vertex AI — resolve per-agent so Claude's vertex config
+        // does not bleed into Gemini tasks (and vice versa) when both are configured.
+        const isClaudeVertex = task.agentType === "claude-code" && claudeAuthMode === "vertex-ai";
+        const isGeminiVertex = task.agentType === "gemini" && geminiAuthMode === "vertex-ai";
+        const needsGcpConfig = isClaudeVertex || isGeminiVertex;
+        const googleCloudProject = needsGcpConfig
+          ? (((await retrieveSecretWithFallback(
+              isClaudeVertex ? "CLAUDE_VERTEX_PROJECT_ID" : "GOOGLE_CLOUD_PROJECT",
+              "global",
+              taskWorkspaceId,
+            ).catch(() => null)) as any) ?? undefined)
+          : undefined;
+        const googleCloudLocation = needsGcpConfig
+          ? (((await retrieveSecretWithFallback(
+              isClaudeVertex ? "CLAUDE_VERTEX_REGION" : "GOOGLE_CLOUD_LOCATION",
+              "global",
+              taskWorkspaceId,
+            ).catch(() => null)) as any) ?? undefined)
+          : undefined;
+        const claudeVertexServiceAccountKey = isClaudeVertex
+          ? (((await retrieveSecretWithFallback(
+              "CLAUDE_VERTEX_SERVICE_ACCOUNT_KEY",
+              "global",
+              taskWorkspaceId,
+            ).catch(() => null)) as any) ?? undefined)
+          : undefined;
+        const opencodeDefaultBaseUrl =
+          ((await retrieveSecretWithFallback(
+            "OPENCODE_DEFAULT_BASE_URL",
+            "global",
+            taskWorkspaceId,
+          ).catch(() => null)) as any) ?? undefined;
+        const opencodeDefaultModel =
+          ((await retrieveSecretWithFallback(
+            "OPENCODE_DEFAULT_MODEL",
+            "global",
+            taskWorkspaceId,
+          ).catch(() => null)) as any) ?? undefined;
         const optioApiUrl = `http://${process.env.API_HOST ?? "host.docker.internal"}:${process.env.API_PORT ?? "4000"}`;
 
         // Load and render prompt template
@@ -237,9 +307,17 @@ export function startTaskWorker() {
 
         // repoConfig already loaded above for concurrency check
 
-        const repoName = task.repoUrl.replace(/.*github\.com[/:]/, "").replace(/\.git$/, "");
+        const parsedRepo = parseRepoUrl(task.repoUrl);
+        const repoName = parsedRepo
+          ? `${parsedRepo.owner}/${parsedRepo.repo}`
+          : task.repoUrl.replace(/.*[/:]([^/]+\/[^/.]+).*/, "$1");
+        const isGitLab = parsedRepo?.platform === "gitlab";
         const branchName = `${TASK_BRANCH_PREFIX}${task.id}`;
         const taskFilePath = TASK_FILE_PATH;
+
+        // Enable planning mode for fresh runs (not resumed) when repo has it enabled
+        const isPlanningRun =
+          !!repoConfig?.planningModeEnabled && !resumeSessionId && !reviewOverride;
 
         const renderedPrompt = renderPromptTemplate(promptConfig.template, {
           TASK_FILE: taskFilePath,
@@ -250,6 +328,8 @@ export function startTaskWorker() {
           AUTO_MERGE: String(promptConfig.autoMerge),
           DRAFT_PR: String(promptConfig.cautiousMode),
           ISSUE_NUMBER: task.ticketExternalId ?? "",
+          GIT_PLATFORM_GITLAB: isGitLab ? "true" : "",
+          PLANNING_MODE: isPlanningRun ? "true" : "",
         });
 
         const taskFileContent = renderTaskFile({
@@ -285,6 +365,18 @@ export function startTaskWorker() {
           claudeEffort: repoConfig?.claudeEffort ?? undefined,
           copilotModel: repoConfig?.copilotModel ?? undefined,
           copilotEffort: repoConfig?.copilotEffort ?? undefined,
+          opencodeModel: repoConfig?.opencodeModel ?? opencodeDefaultModel,
+          opencodeAgent: repoConfig?.opencodeAgent ?? undefined,
+          opencodeBaseUrl: repoConfig?.opencodeBaseUrl ?? opencodeDefaultBaseUrl,
+          geminiAuthMode,
+          geminiModel: repoConfig?.geminiModel ?? undefined,
+          geminiApprovalMode:
+            (repoConfig?.geminiApprovalMode as "default" | "auto_edit" | "yolo") ?? undefined,
+          maxTurnsCoding: repoConfig?.maxTurnsCoding ?? undefined,
+          maxTurnsReview: repoConfig?.maxTurnsReview ?? undefined,
+          googleCloudProject,
+          googleCloudLocation,
+          claudeVertexServiceAccountKey,
         });
 
         // ── MCP servers & custom skills injection ────────────────────
@@ -312,6 +404,148 @@ export function startTaskWorker() {
           log.info({ count: mcpServers.length }, "Injecting MCP servers");
         }
 
+        // ── Connection-based MCP injection ─────────────────────────
+        const { getConnectionsForTask } = await import("../services/connection-service.js");
+        const resolvedConnections = await getConnectionsForTask(
+          task.repoUrl,
+          task.agentType,
+          taskWorkspaceId,
+        );
+        if (resolvedConnections.length > 0) {
+          // Build MCP entries from connections and merge into .mcp.json
+          const connectionMcpEntries: Record<
+            string,
+            { command: string; args: string[]; env?: Record<string, string> }
+          > = {};
+          const connectionInstallCommands: string[] = [];
+
+          for (const conn of resolvedConnections) {
+            if (!conn.mcpConfig) continue;
+            const mcpCfg = conn.mcpConfig;
+
+            // Resolve env vars by mapping config values through envMapping
+            const resolvedEnv: Record<string, string> = {};
+            for (const [envKey, configKey] of Object.entries(mcpCfg.envMapping)) {
+              const value = conn.config[configKey];
+              if (typeof value === "string") {
+                // Check if it's a secret reference
+                if (value.startsWith("${{") && value.endsWith("}}")) {
+                  const secretName = value.slice(3, -2).trim();
+                  try {
+                    let secretValue: string;
+                    try {
+                      secretValue = await retrieveSecretWithFallback(
+                        secretName,
+                        task.repoUrl,
+                        taskWorkspaceId,
+                      );
+                    } catch {
+                      secretValue = await retrieveSecretWithFallback(
+                        secretName,
+                        "global",
+                        taskWorkspaceId,
+                      );
+                    }
+                    resolvedEnv[envKey] = secretValue;
+                  } catch {
+                    // Secret not found — try the config key as a secret name directly
+                    try {
+                      resolvedEnv[envKey] = await retrieveSecretWithFallback(
+                        configKey,
+                        task.repoUrl,
+                        taskWorkspaceId,
+                      );
+                    } catch {
+                      try {
+                        resolvedEnv[envKey] = await retrieveSecretWithFallback(
+                          configKey,
+                          "global",
+                          taskWorkspaceId,
+                        );
+                      } catch {
+                        // Leave unresolved
+                      }
+                    }
+                  }
+                } else {
+                  resolvedEnv[envKey] = value;
+                }
+              } else {
+                // Try resolving the config key as a secret name
+                try {
+                  resolvedEnv[envKey] = await retrieveSecretWithFallback(
+                    configKey,
+                    task.repoUrl,
+                    taskWorkspaceId,
+                  );
+                } catch {
+                  try {
+                    resolvedEnv[envKey] = await retrieveSecretWithFallback(
+                      configKey,
+                      "global",
+                      taskWorkspaceId,
+                    );
+                  } catch {
+                    // Leave unresolved
+                  }
+                }
+              }
+            }
+
+            // Resolve template args (e.g., {{ROOT_PATH}})
+            const resolvedArgs = mcpCfg.args.map((arg) =>
+              arg.replace(/\{\{(\w+)\}\}/g, (_match, key) => {
+                const val = conn.config[key];
+                return typeof val === "string" ? val : arg;
+              }),
+            );
+
+            connectionMcpEntries[conn.connectionName] = {
+              command: mcpCfg.command,
+              args: resolvedArgs,
+              ...(Object.keys(resolvedEnv).length > 0 ? { env: resolvedEnv } : {}),
+            };
+
+            if (mcpCfg.installCommand) {
+              connectionInstallCommands.push(mcpCfg.installCommand);
+            }
+          }
+
+          if (Object.keys(connectionMcpEntries).length > 0) {
+            // Find existing .mcp.json in setup files and merge, or create new
+            agentConfig.setupFiles = agentConfig.setupFiles ?? [];
+            const existingIdx = agentConfig.setupFiles.findIndex((f) => f.path === ".mcp.json");
+
+            if (existingIdx >= 0) {
+              // Merge with existing MCP servers
+              const existing = JSON.parse(agentConfig.setupFiles[existingIdx].content);
+              existing.mcpServers = {
+                ...existing.mcpServers,
+                ...connectionMcpEntries,
+              };
+              agentConfig.setupFiles[existingIdx].content = JSON.stringify(existing, null, 2);
+            } else {
+              agentConfig.setupFiles.push({
+                path: ".mcp.json",
+                content: JSON.stringify({ mcpServers: connectionMcpEntries }, null, 2),
+              });
+            }
+
+            // Merge install commands
+            if (connectionInstallCommands.length > 0) {
+              const existing = agentConfig.env.OPTIO_MCP_INSTALL_COMMANDS;
+              agentConfig.env.OPTIO_MCP_INSTALL_COMMANDS = existing
+                ? `${existing} && ${connectionInstallCommands.join(" && ")}`
+                : connectionInstallCommands.join(" && ");
+            }
+
+            log.info(
+              { count: Object.keys(connectionMcpEntries).length },
+              "Injecting connections as MCP servers",
+            );
+          }
+        }
+
         const skills = await getSkillsForTask(task.repoUrl, taskWorkspaceId);
         if (skills.length > 0) {
           agentConfig.setupFiles = agentConfig.setupFiles ?? [];
@@ -328,14 +562,33 @@ export function startTaskWorker() {
         }
 
         // Resolve secrets (workspace → repo-scoped → global fallback)
-        // Always include GITHUB_TOKEN so repo pods can clone private repos
-        const secretNames = [...new Set([...agentConfig.requiredSecrets, "GITHUB_TOKEN"])];
+        // Only require GITHUB_TOKEN when GitHub App auth is not configured
+        const secretNames = [
+          ...new Set([
+            ...agentConfig.requiredSecrets,
+            ...(!isGitHubAppConfigured() ? ["GITHUB_TOKEN"] : []),
+          ]),
+        ];
+        const taskUserId = task.createdBy ?? null;
         const resolvedSecrets = await resolveSecretsForTask(
           secretNames,
           task.repoUrl,
           taskWorkspaceId,
+          taskUserId,
         );
         const allEnv: Record<string, string> = { ...agentConfig.env, ...resolvedSecrets };
+
+        // Resolve git platform tokens (not part of adapter requiredSecrets since they're infra-level)
+        for (const secretName of ["GITHUB_TOKEN", "GITLAB_TOKEN", "GITLAB_HOST"]) {
+          if (!allEnv[secretName]) {
+            const val = await retrieveSecretWithFallback(
+              secretName,
+              "global",
+              taskWorkspaceId,
+            ).catch(() => null);
+            if (val) allEnv[secretName] = val as string;
+          }
+        }
 
         // Inject credential URLs for dynamic GitHub token resolution.
         // OPTIO_API_INTERNAL_URL is the K8s service URL (set by Helm chart).
@@ -385,10 +638,29 @@ export function startTaskWorker() {
 
         // For oauth-token mode, read the token from the secrets store
         if (claudeAuthMode === "oauth-token") {
+          // Pre-flight: check the cached validation from the background worker
+          // to fail fast before wasting ~10s on pod provisioning + worktree setup
+          try {
+            const { getCachedTokenValidation } = await import("./token-validation-worker.js");
+            const cached = await getCachedTokenValidation();
+            if (cached?.tokenExists && !cached.valid) {
+              throw new Error(
+                "Claude OAuth token is expired (detected by pre-flight validation). " +
+                  "Go to Secrets to update CLAUDE_CODE_OAUTH_TOKEN, or re-run 'claude setup-token'.",
+              );
+            }
+          } catch (preflight) {
+            // Re-throw if it's our own validation error; swallow infra errors
+            if (preflight instanceof Error && preflight.message.includes("pre-flight")) {
+              throw preflight;
+            }
+          }
+
           const oauthToken = await retrieveSecretWithFallback(
             "CLAUDE_CODE_OAUTH_TOKEN",
             "global",
             taskWorkspaceId,
+            taskUserId,
           ).catch(() => null);
           if (oauthToken) {
             allEnv.CLAUDE_CODE_OAUTH_TOKEN = oauthToken as string;
@@ -408,6 +680,8 @@ export function startTaskWorker() {
           OPTIO_GIT_CREDENTIAL_URL: allEnv.OPTIO_GIT_CREDENTIAL_URL,
           OPTIO_CREDENTIAL_SECRET: allEnv.OPTIO_CREDENTIAL_SECRET,
           ...(allEnv.GITHUB_TOKEN ? { GITHUB_TOKEN: allEnv.GITHUB_TOKEN } : {}),
+          ...(allEnv.GITLAB_TOKEN ? { GITLAB_TOKEN: allEnv.GITLAB_TOKEN } : {}),
+          ...(allEnv.GITLAB_HOST ? { GITLAB_HOST: allEnv.GITLAB_HOST } : {}),
           ...(process.env.GITHUB_APP_BOT_NAME
             ? { GITHUB_APP_BOT_NAME: process.env.GITHUB_APP_BOT_NAME }
             : {}),
@@ -421,6 +695,15 @@ export function startTaskWorker() {
             ? { OPTIO_SETUP_COMMANDS: allEnv.OPTIO_SETUP_COMMANDS }
             : {}),
         };
+
+        // Inject secrets into pod env for setup commands (global + repo-scoped).
+        // Repo-scoped secrets override global secrets with the same name.
+        const setupSecrets = await resolveSecretsForSetup(task.repoUrl, taskWorkspaceId);
+        const setupSecretCount = Object.keys(setupSecrets).length;
+        if (setupSecretCount > 0) {
+          Object.assign(podEnv, setupSecrets);
+          log.info({ count: setupSecretCount }, "Injected secrets for setup");
+        }
 
         // Get or create a repo pod (with multi-pod scheduling)
         log.info("Getting repo pod");
@@ -444,6 +727,7 @@ export function startTaskWorker() {
             memoryLimit: repoConfig?.memoryLimit,
             dockerInDocker: repoConfig?.dockerInDocker ?? false,
             secretProxy: repoConfig?.secretProxy ?? false,
+            workspaceId: taskWorkspaceId,
           },
         );
         repoPodId = pod.id;
@@ -457,8 +741,7 @@ export function startTaskWorker() {
         // If a previous run already opened a PR for this task's branch,
         // skip the agent entirely and transition straight to pr_opened.
         // This avoids wasting compute on tasks killed by restarts/reconcile.
-        const isReviewTask0 =
-          !!reviewOverride || task.taskType === "review" || task.taskType === "pr_review";
+        const isReviewTask0 = !!reviewOverride || task.taskType === "review";
         if (!restartFromBranch && !resumeSessionId && !isReviewTask0) {
           const existingPr = await checkExistingPr(task.repoUrl, taskId, taskWorkspaceId);
           if (existingPr) {
@@ -478,9 +761,10 @@ export function startTaskWorker() {
           }
         }
 
-        // Build the agent command based on type
-        const isReviewTask =
-          !!reviewOverride || task.taskType === "review" || task.taskType === "pr_review";
+        // Build the agent command based on type. `pr_review` no longer
+        // exists as a tasks.taskType — external PR reviews run under
+        // pr_review_runs via pr-review-worker.ts.
+        const isReviewTask = !!reviewOverride || task.taskType === "review";
         const agentCommand = buildAgentCommand(task.agentType, allEnv, {
           resumeSessionId,
           resumePrompt,
@@ -496,6 +780,18 @@ export function startTaskWorker() {
           resetWorktree: shouldResetWorktree,
         });
 
+        // Claude runs with `--input-format stream-json`, which means the initial
+        // user message must come in over stdin — the -p/--print positional arg is
+        // ignored in that mode. The pipe buffer holds this line until bash finishes
+        // its setup and execs claude, so it's safe to write immediately.
+        if (task.agentType === "claude-code") {
+          try {
+            execSession.stdin.write(buildInitialClaudeStreamMessage(allEnv.OPTIO_PROMPT ?? ""));
+          } catch (err) {
+            log.warn({ err }, "Failed to write initial prompt to claude stdin");
+          }
+        }
+
         // Stream stdout with structured parsing
         let allLogs = "";
         let sessionId: string | undefined;
@@ -506,8 +802,61 @@ export function startTaskWorker() {
           : undefined;
         let lastHeartbeat = Date.now();
         const HEARTBEAT_INTERVAL_MS = 60_000;
+        // Stall detection: debounced activity timestamp flush
+        let pendingActivityAt: Date | null = null;
+        let lastActivityFlushAt = 0;
+        const ACTIVITY_FLUSH_INTERVAL_MS = 5_000;
         // Buffer for partial NDJSON lines split across chunks
         let lineBuf = "";
+
+        // Subscribe to mid-task messages from users (only for claude-code)
+        let messageSubscription: { unsubscribe: () => void } | undefined;
+        if (task.agentType === "claude-code") {
+          messageSubscription = subscribeToTaskMessages(taskId, async (payload) => {
+            try {
+              // Format the message text — prefix with interrupt marker if needed
+              let text = payload.content;
+              if (payload.mode === "interrupt") {
+                text = `[URGENT INTERRUPT FROM USER — stop what you are doing and address this immediately] ${text}`;
+              }
+
+              // Write stream-json NDJSON line to stdin
+              const streamJsonMsg = JSON.stringify({
+                type: "user",
+                message: {
+                  role: "user",
+                  content: [{ type: "text", text }],
+                },
+              });
+              execSession.stdin.write(streamJsonMsg + "\n");
+
+              // Mark as delivered
+              await messageService.markDelivered(payload.messageId);
+              await publishEvent({
+                type: "task:message_delivered",
+                taskId,
+                messageId: payload.messageId,
+                timestamp: new Date().toISOString(),
+              });
+            } catch (err) {
+              log.warn({ messageId: payload.messageId, err }, "Failed to deliver task message");
+              await messageService
+                .markDeliveryError(
+                  payload.messageId,
+                  err instanceof Error ? err.message : "delivery failed",
+                )
+                .catch(() => {});
+            }
+          });
+        }
+
+        // Capture stderr for diagnostics (e.g. bash parse errors, git warnings)
+        let stderrData = "";
+        (async () => {
+          for await (const chunk of execSession.stderr as AsyncIterable<Buffer>) {
+            stderrData += chunk.toString();
+          }
+        })().catch(() => {});
 
         for await (const chunk of execSession.stdout as AsyncIterable<Buffer>) {
           const text = chunk.toString();
@@ -534,11 +883,29 @@ export function startTaskWorker() {
                 ? parseCodexEvent(line, taskId)
                 : task.agentType === "copilot"
                   ? parseCopilotEvent(line, taskId)
-                  : parseClaudeEvent(line, taskId);
+                  : task.agentType === "opencode"
+                    ? parseOpenCodeEvent(line, taskId)
+                    : task.agentType === "gemini"
+                      ? parseGeminiEvent(line, taskId)
+                      : task.agentType === "openclaw"
+                        ? parseOpenClawEvent(line, taskId)
+                        : parseClaudeEvent(line, taskId);
             if (parsed.sessionId && !sessionId) {
               sessionId = parsed.sessionId;
               await taskService.updateTaskSession(taskId, sessionId);
               log.info({ sessionId }, "Session ID captured");
+            }
+            // Terminal event (e.g. claude's `result` event) means the agent has
+            // finished the turn. With --input-format stream-json claude keeps
+            // stdin open waiting for another user message; closing stdin here
+            // lets it exit cleanly so the task can transition to pr_opened /
+            // completed / failed.
+            if (parsed.isTerminal) {
+              try {
+                execSession.stdin.end();
+              } catch (err) {
+                log.warn({ err }, "Failed to close agent stdin on terminal event");
+              }
             }
             for (const entry of parsed.entries) {
               await taskService.appendTaskLog(
@@ -549,29 +916,35 @@ export function startTaskWorker() {
                 entry.metadata,
               );
 
+              // Stall detection: mark activity on meaningful parsed events
+              if (["text", "tool_use", "tool_result", "thinking", "system"].includes(entry.type)) {
+                pendingActivityAt = new Date();
+              }
+
               // Check for PR URL — only capture the first PR URL from agent output
               // that matches the task's own repo. Without repo validation, the
               // agent referencing another repo's PR (e.g. via gh pr list on a
               // dependency) would store the wrong URL.
               if (!capturedPrUrl) {
-                const prUrlPattern = /https:\/\/github\.com\/[^\s"]+\/pull\/\d+/g;
+                // Match both GitHub PR URLs and GitLab MR URLs (web URLs only, not API URLs)
+                const prUrlPattern =
+                  /https:\/\/(?![\w.-]+\/api\/)[^\s"]+\/(?:pull\/\d+|-\/merge_requests\/\d+)/g;
                 const prMatches = entry.content.match(prUrlPattern);
                 if (prMatches) {
                   const taskBranch = `optio/task-${taskId}`;
                   const content = entry.content.trim();
                   const looksLikeJsonArray =
                     content.startsWith("[") && content.includes('"number"');
-                  // Filter to only URLs matching the task's repo
-                  const expectedRepo = task.repoUrl
-                    .replace(/.*github\.com[/:]/, "")
-                    .replace(/\.git$/, "")
-                    .toLowerCase();
+                  // Filter to only URLs matching the task's repo using parsePrUrl
+                  const taskRepo = parseRepoUrl(task.repoUrl);
                   const repoMatches = prMatches.filter((url) => {
-                    const urlRepo = url
-                      .replace(/.*github\.com\//, "")
-                      .replace(/\/pull\/.*/, "")
-                      .toLowerCase();
-                    return urlRepo === expectedRepo;
+                    const parsed = parsePrUrl(url);
+                    if (!parsed || !taskRepo) return false;
+                    return (
+                      parsed.owner.toLowerCase() === taskRepo.owner.toLowerCase() &&
+                      parsed.repo.toLowerCase() === taskRepo.repo.toLowerCase() &&
+                      parsed.host === taskRepo.host
+                    );
                   });
                   if (repoMatches.length > 0) {
                     if (!looksLikeJsonArray) {
@@ -590,6 +963,19 @@ export function startTaskWorker() {
               }
             }
           }
+
+          // Debounced flush of lastActivityAt to avoid per-event DB writes
+          if (pendingActivityAt && Date.now() - lastActivityFlushAt > ACTIVITY_FLUSH_INTERVAL_MS) {
+            await taskService.updateTaskActivity(taskId, pendingActivityAt);
+            lastActivityFlushAt = Date.now();
+            pendingActivityAt = null;
+          }
+        }
+
+        // Final flush of pending activity timestamp
+        if (pendingActivityAt) {
+          await taskService.updateTaskActivity(taskId, pendingActivityAt);
+          pendingActivityAt = null;
         }
 
         // Flush any remaining partial line in the buffer
@@ -599,7 +985,13 @@ export function startTaskWorker() {
               ? parseCodexEvent(lineBuf, taskId)
               : task.agentType === "copilot"
                 ? parseCopilotEvent(lineBuf, taskId)
-                : parseClaudeEvent(lineBuf, taskId);
+                : task.agentType === "opencode"
+                  ? parseOpenCodeEvent(lineBuf, taskId)
+                  : task.agentType === "gemini"
+                    ? parseGeminiEvent(lineBuf, taskId)
+                    : task.agentType === "openclaw"
+                      ? parseOpenClawEvent(lineBuf, taskId)
+                      : parseClaudeEvent(lineBuf, taskId);
           for (const entry of parsed.entries) {
             await taskService.appendTaskLog(
               taskId,
@@ -611,7 +1003,13 @@ export function startTaskWorker() {
           }
         }
 
+        // Exec finished — clean up message subscription
+        messageSubscription?.unsubscribe();
+
         // Exec finished — determine result
+        if (stderrData) {
+          log.warn({ stderrPreview: stderrData.slice(0, 500) }, "Exec stderr output");
+        }
         // Before processing results, verify this worker still owns the task.
         // A force-redo may have reset the task while we were streaming.
         const taskAfterExec = await taskService.getTask(taskId);
@@ -626,6 +1024,26 @@ export function startTaskWorker() {
         // Detect exit code from logs (agent-type-specific patterns)
         const inferredExitCode = inferExitCode(task.agentType, allLogs);
         const result = adapter.parseResult(inferredExitCode, allLogs);
+
+        // Override a nominally-successful result if the agent emitted an auth
+        // failure mid-run. Many agent CLIs catch 401s internally and exit 0,
+        // which would otherwise mark the task as completed despite no useful
+        // work. Mutating the result here propagates to every downstream branch.
+        const authDetection = detectAuthFailureInLogs(allLogs);
+        if (authDetection.matched && result.success) {
+          log.warn(
+            { pattern: authDetection.pattern, excerpt: authDetection.excerpt },
+            "Auth failure detected in agent output — overriding result",
+          );
+          result.success = false;
+          result.error = `Agent authentication failed: ${authDetection.excerpt ?? authDetection.pattern}`;
+          recordAuthEvent(
+            "claude",
+            authDetection.excerpt ?? authDetection.pattern ?? "auth_failure",
+            "task-worker",
+          ).catch(() => {});
+        }
+
         await taskService.updateTaskResult(taskId, result.summary, result.error);
 
         // Persist cost, token usage, and model data
@@ -638,6 +1056,29 @@ export function startTaskWorker() {
           await db.update(tasks).set(costFields).where(eq(tasks.id, taskId));
         }
 
+        // ── Telemetry: record cost and token metrics ──────────────────
+        const taskAttrs = {
+          agent_type: task.agentType,
+          model: result.model ?? "unknown",
+          repo_url: task.repoUrl,
+        };
+        if (result.costUsd != null) {
+          recordTaskCost(result.costUsd, taskAttrs);
+          emitCostReportLog(
+            taskId,
+            result.costUsd,
+            result.inputTokens ?? 0,
+            result.outputTokens ?? 0,
+            result.model ?? "unknown",
+          );
+        }
+        if (result.inputTokens != null) {
+          recordTaskTokens(result.inputTokens, { ...taskAttrs, direction: "input" });
+        }
+        if (result.outputTokens != null) {
+          recordTaskTokens(result.outputTokens, { ...taskAttrs, direction: "output" });
+        }
+
         // Pick the best PR URL.  Priority:
         //   1. capturedPrUrl — detected during streaming with repo validation
         //      and heuristics (branch matching, JSON-array filtering).
@@ -648,17 +1089,17 @@ export function startTaskWorker() {
         //      inside code the agent wrote, or PRs from other repos).
         let fallbackPrUrl = result.prUrl;
         if (fallbackPrUrl) {
-          const expectedRepo = task.repoUrl
-            .replace(/.*github\.com[/:]/, "")
-            .replace(/\.git$/, "")
-            .toLowerCase();
-          const urlRepo = fallbackPrUrl
-            .replace(/.*github\.com\//, "")
-            .replace(/\/pull\/.*/, "")
-            .toLowerCase();
-          if (urlRepo !== expectedRepo) {
+          const parsedPr = parsePrUrl(fallbackPrUrl);
+          const taskRepo = parseRepoUrl(task.repoUrl);
+          if (
+            !parsedPr ||
+            !taskRepo ||
+            parsedPr.owner.toLowerCase() !== taskRepo.owner.toLowerCase() ||
+            parsedPr.repo.toLowerCase() !== taskRepo.repo.toLowerCase() ||
+            parsedPr.host !== taskRepo.host
+          ) {
             log.info(
-              { resultPrUrl: fallbackPrUrl, expectedRepo },
+              { resultPrUrl: fallbackPrUrl, expectedRepo: task.repoUrl },
               "Ignoring result.prUrl — wrong repo",
             );
             fallbackPrUrl = undefined;
@@ -691,44 +1132,129 @@ export function startTaskWorker() {
           );
           log.info({ prUrl: detectedPrUrl }, "PR opened");
         } else if (result.success || isReviewTask) {
-          // For pr_review tasks, parse the structured review output before cleanup
-          if (task.taskType === "pr_review") {
+          // External PR reviews no longer run here — they execute under
+          // pr_review_runs via pr-review-worker.ts. Subtask reviews
+          // (`taskType === "review"`) still flow through this path and
+          // their result lands in the parent coding task's comments.
+
+          // Planning mode: agent finished planning — wait for human approval
+          if (isPlanningRun && !isReviewTask) {
+            await repoPool.updateWorktreeState(taskId, "preserved");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.NEEDS_ATTENTION,
+              "plan_review",
+              "Agent has created an implementation plan and is waiting for approval",
+            );
+            log.info("Planning phase complete — awaiting human review");
+          } else if (
+            shouldEscalateNoPr({
+              success: result.success,
+              isReviewTask,
+              isPlanningRun,
+              hasRepoUrl: !!task.repoUrl,
+              detectedPrUrl,
+            })
+          ) {
+            // Repo Task completed without opening a PR. Before escalating,
+            // check the API as a fallback — the agent may have pushed a PR
+            // that wasn't captured in log output.
+            let apiFallbackPr: ExistingPr | null = null;
             try {
-              const { parseReviewOutput } = await import("../services/pr-review-service.js");
-              await parseReviewOutput(taskId);
-            } catch (err) {
-              log.warn({ err }, "Failed to parse pr_review output — draft may need manual editing");
+              apiFallbackPr = await checkExistingPr(task.repoUrl, taskId, taskWorkspaceId);
+            } catch {
+              // Non-fatal — proceed with escalation
+            }
+
+            if (apiFallbackPr) {
+              await taskService.updateTaskPr(taskId, apiFallbackPr.url);
+              await repoPool.updateWorktreeState(taskId, "preserved");
+              await taskService.transitionTask(
+                taskId,
+                TaskState.PR_OPENED,
+                "pr_detected_api",
+                apiFallbackPr.url,
+              );
+              log.info(
+                { prUrl: apiFallbackPr.url },
+                "PR found via API fallback after successful agent exit",
+              );
+            } else {
+              await repoPool.updateWorktreeState(taskId, "preserved");
+              await taskService.transitionTask(
+                taskId,
+                TaskState.NEEDS_ATTENTION,
+                "completed_without_pr",
+                "Agent completed successfully but did not open a pull request. " +
+                  "The work may need to be committed and pushed manually, or the agent can be restarted to open a PR.",
+              );
+              log.warn("Repo Task completed without opening a PR — escalating to needs_attention");
+            }
+          } else {
+            await repoPool.updateWorktreeState(taskId, "removed");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.COMPLETED,
+              "agent_success",
+              result.summary,
+            );
+            log.info("Task completed");
+          }
+        } else {
+          // Before failing, check if a PR was actually created via the API.
+          // Log-based PR detection can miss URLs (e.g. agent created a PR but
+          // the URL wasn't in stdout, or repo validation filtered it out).
+          let apiFallbackPr: ExistingPr | null = null;
+          if (!isReviewTask) {
+            try {
+              apiFallbackPr = await checkExistingPr(task.repoUrl, taskId, taskWorkspaceId);
+            } catch {
+              // Non-fatal — proceed with failure
             }
           }
-          await repoPool.updateWorktreeState(taskId, "removed");
-          await taskService.transitionTask(
-            taskId,
-            TaskState.COMPLETED,
-            "agent_success",
-            result.summary,
-          );
-          log.info("Task completed");
-        } else {
-          await repoPool.updateWorktreeState(taskId, "dirty");
-          await taskService.transitionTask(taskId, TaskState.FAILED, "agent_failure", result.error);
-          log.warn({ error: result.error }, "Task failed");
 
-          // Publish global alert for auth failures so the UI can show a banner
-          if (
-            result.error &&
-            /OAuth token|authentication_failed|token.*expired/i.test(result.error)
-          ) {
-            // Invalidate the usage cache so subsequent API calls return fresh data
-            // instead of stale "healthy" results that hide the expiration
-            const { invalidateUsageCache } = await import("../services/auth-service.js");
-            invalidateUsageCache();
+          if (apiFallbackPr) {
+            // PR exists despite agent reporting failure — go to pr_opened so the
+            // PR watcher can track CI/review and auto-resume works correctly.
+            await taskService.updateTaskPr(taskId, apiFallbackPr.url);
+            await repoPool.updateWorktreeState(taskId, "preserved");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.PR_OPENED,
+              "pr_detected_api",
+              apiFallbackPr.url,
+            );
+            log.info(
+              { prUrl: apiFallbackPr.url, inferredError: result.error },
+              "PR found via API fallback — transitioning to pr_opened instead of failed",
+            );
+          } else {
+            await repoPool.updateWorktreeState(taskId, "dirty");
+            await taskService.transitionTask(
+              taskId,
+              TaskState.FAILED,
+              "agent_failure",
+              result.error,
+            );
+            log.warn({ error: result.error }, "Task failed");
 
-            await publishEvent({
-              type: "auth:failed",
-              message:
-                "Claude Code OAuth token has expired. Re-authenticate with 'claude auth login' and retry failed tasks.",
-              timestamp: new Date().toISOString(),
-            });
+            // Publish global alert for auth failures so the UI can show a banner
+            if (
+              result.error &&
+              /OAuth token|authentication_failed|token.*expired/i.test(result.error)
+            ) {
+              // Invalidate the usage cache so subsequent API calls return fresh data
+              // instead of stale "healthy" results that hide the expiration
+              const { invalidateUsageCache } = await import("../services/auth-service.js");
+              invalidateUsageCache();
+
+              await publishEvent({
+                type: "auth:failed",
+                message:
+                  "Claude Code OAuth token has expired. Re-authenticate with 'claude auth login' and retry failed tasks.",
+                timestamp: new Date().toISOString(),
+              });
+            }
           }
         }
 
@@ -756,12 +1282,25 @@ export function startTaskWorker() {
               .cascadeFailure(taskId)
               .catch((err) => log.warn({ err }, "Failed to cascade failure to dependents"));
           }
-          // Update workflow run status if part of a workflow
-          if (completedTask.workflowRunId) {
-            const { checkWorkflowRunCompletion } = await import("../services/workflow-service.js");
-            await checkWorkflowRunCompletion(completedTask.workflowRunId).catch((err) =>
-              log.warn({ err }, "Failed to update workflow run status"),
-            );
+        }
+
+        // ── Telemetry: record task completion metrics ─────────────────
+        if (completedTask) {
+          const terminalState = completedTask.state;
+          recordTaskComplete({
+            state: terminalState,
+            agent_type: task.agentType,
+            model: result.model ?? "unknown",
+            repo_url: task.repoUrl,
+          });
+          // Duration from task creation to terminal state
+          const startedAt = task.startedAt ?? task.createdAt;
+          if (startedAt) {
+            const durationS = (Date.now() - new Date(startedAt).getTime()) / 1000;
+            recordTaskDuration(durationS, {
+              terminal_state: terminalState,
+              agent_type: task.agentType,
+            });
           }
         }
       } catch (err) {
@@ -849,10 +1388,10 @@ export function startTaskWorker() {
           await repoPool.releaseRepoPodTask(repoPodId).catch(() => {});
         }
       }
-    },
+    }),
     {
       connection: connectionOpts,
-      concurrency: parseInt(process.env.OPTIO_MAX_CONCURRENT ?? "5", 10),
+      concurrency: parseIntEnv("OPTIO_MAX_CONCURRENT", 5),
       // Task jobs run for minutes/hours — BullMQ defaults (30s lock, 30s stall
       // check, max 1 stall) are far too aggressive and cause "job stalled" failures.
       lockDuration: 600_000, // 10 min lock
@@ -905,9 +1444,37 @@ export async function reconcileOrphanedTasks() {
     .where(eq(tasks.state, "running" as any));
 
   // Provisioning/running tasks lost their exec session.
-  // Before failing and re-queuing, check if a PR was already opened —
+  // Before failing and re-queuing, kill any orphaned agent processes
+  // left inside repo pods (the API restart severed the exec stream but
+  // kubelet doesn't send SIGHUP to in-pod processes).
+  for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
+    if ((task as any).lastPodId) {
+      try {
+        await repoPool.killOrphanedAgentInPod((task as any).lastPodId, task.id);
+        await repoPool.updateWorktreeState(task.id, "removed");
+      } catch (err) {
+        logger.warn(
+          { err, taskId: task.id, podId: (task as any).lastPodId },
+          "Failed to kill orphaned agent during startup reconciliation",
+        );
+      }
+    }
+  }
+
+  // Check if a PR was already opened —
   // if so, transition directly to pr_opened to avoid redoing work.
   for (const task of [...orphanedProvisioning, ...orphanedRunning]) {
+    // Re-read the task to get its current state — it may have been
+    // completed or cancelled between the initial query and now.
+    const [current] = await db.select().from(tasks).where(eq(tasks.id, task.id));
+    if (!current || (current.state !== "running" && current.state !== "provisioning")) {
+      logger.info(
+        { taskId: task.id, state: current?.state ?? "deleted" },
+        "Skipping reconciliation — task already transitioned",
+      );
+      continue;
+    }
+
     const taskWsId = task.workspaceId ?? null;
     const isReview = task.taskType === "review";
     let existingPr = null;
@@ -919,7 +1486,7 @@ export async function reconcileOrphanedTasks() {
       }
     }
 
-    if (existingPr && task.state === "running") {
+    if (existingPr && current.state === "running") {
       // running → pr_opened is a valid transition
       logger.info(
         { taskId: task.id, prUrl: existingPr.url },
@@ -932,7 +1499,7 @@ export async function reconcileOrphanedTasks() {
         "startup_reconcile",
         existingPr.url,
       );
-    } else if (existingPr && task.state === "provisioning") {
+    } else if (existingPr && current.state === "provisioning") {
       // provisioning → pr_opened is NOT valid; fail → re-queue and
       // the pre-agent PR check will short-circuit it to pr_opened
       logger.info(
@@ -1037,6 +1604,26 @@ export async function reconcileOrphanedTasks() {
   }
 }
 
+/**
+ * Build the initial user message NDJSON line that gets written to claude's stdin
+ * when running with `--input-format stream-json`. In that mode the positional
+ * `-p <prompt>` arg is ignored — the first user message must arrive via stdin.
+ *
+ * The trailing newline is required: stream-json is NDJSON (one JSON object per
+ * line) and claude won't process a message until it sees the line terminator.
+ */
+export function buildInitialClaudeStreamMessage(prompt: string): string {
+  return (
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: prompt }],
+      },
+    }) + "\n"
+  );
+}
+
 export function buildAgentCommand(
   agentType: string,
   env: Record<string, string>,
@@ -1048,9 +1635,14 @@ export function buildAgentCommand(
     maxTurnsReview?: number;
   },
 ): string[] {
-  const prompt = opts?.resumePrompt
-    ? `${opts.resumePrompt}\n\n---\n\nOriginal task prompt for context:\n${env.OPTIO_PROMPT}`
-    : env.OPTIO_PROMPT;
+  // Build the final prompt. For resume, prepend the resume text to the original.
+  // The prompt is passed via $OPTIO_PROMPT env var (set by the base64-decoded env block)
+  // to avoid bash interpreting command substitutions in the prompt text (e.g. heredocs).
+  if (opts?.resumePrompt) {
+    // Override OPTIO_PROMPT with the combined resume + original prompt
+    const combined = `${opts.resumePrompt}\n\n---\n\nOriginal task prompt for context:\n${env.OPTIO_PROMPT}`;
+    env.OPTIO_PROMPT = combined;
+  }
   const maxTurns = opts?.isReview
     ? (opts.maxTurnsReview ?? DEFAULT_MAX_TURNS_REVIEW)
     : (opts?.maxTurnsCoding ?? DEFAULT_MAX_TURNS_CODING);
@@ -1069,15 +1661,30 @@ export function buildAgentCommand(
         ? `--resume ${JSON.stringify(opts.resumeSessionId)}`
         : "";
 
+      // Build --model flag from env vars set by the adapter
+      const modelName = env.OPTIO_CLAUDE_MODEL;
+      const ctxWindow = env.OPTIO_CLAUDE_CONTEXT_WINDOW;
+      let modelFlag = "";
+      if (modelName) {
+        const ctx = ctxWindow === "1m" ? "[1m]" : "";
+        modelFlag = `--model ${modelName}${ctx}`;
+      }
+
       return [
         ...authSetup,
         `echo "[optio] Running Claude Code${opts?.isReview ? " (review)" : ""}..."`,
-        `claude -p ${JSON.stringify(prompt)} \\`,
+        // --input-format stream-json makes claude read user messages from stdin.
+        // In this mode the -p positional arg is ignored, so we intentionally use
+        // the boolean --print flag and deliver the initial prompt to stdin from
+        // the task worker (see writeInitialClaudeMessage).
+        `claude --print \\`,
         `  --dangerously-skip-permissions \\`,
+        `  --input-format stream-json \\`,
         `  --output-format stream-json \\`,
+        `  --replay-user-messages \\`,
         `  --verbose \\`,
         `  --max-turns ${maxTurns} \\`,
-        `  ${resumeFlag}`.trim(),
+        `  ${modelFlag} ${resumeFlag}`.trim(),
       ];
     }
     case "codex": {
@@ -1087,7 +1694,7 @@ export function buildAgentCommand(
           : "";
       return [
         `echo "[optio] Running OpenAI Codex${appServerFlag ? " (app-server)" : ""}..."`,
-        `codex exec --full-auto ${JSON.stringify(prompt)}${appServerFlag} --json`,
+        `codex exec --full-auto "$OPTIO_PROMPT"${appServerFlag} --json`,
       ];
     }
     case "copilot": {
@@ -1097,12 +1704,73 @@ export function buildAgentCommand(
         `echo "[optio] Running GitHub Copilot..."`,
         `copilot --autopilot --yolo --max-autopilot-continues ${maxTurns} \\`,
         `  --output-format json --no-ask-user${modelFlag}${effortFlag} \\`,
-        `  -p ${JSON.stringify(prompt)}`,
+        `  -p "$OPTIO_PROMPT"`,
+      ];
+    }
+    case "opencode": {
+      const modelFlag = env.OPTIO_OPENCODE_MODEL
+        ? ` --model ${JSON.stringify(env.OPTIO_OPENCODE_MODEL)}`
+        : "";
+      const agentFlag = env.OPTIO_OPENCODE_AGENT
+        ? ` --agent ${JSON.stringify(env.OPTIO_OPENCODE_AGENT)}`
+        : "";
+      const resumeFlag = opts?.resumeSessionId
+        ? ` --session ${JSON.stringify(opts.resumeSessionId)}`
+        : "";
+      return [
+        `echo "[optio] Running OpenCode (experimental)..."`,
+        `opencode run --format json${modelFlag}${agentFlag}${resumeFlag} "$OPTIO_PROMPT"`,
+      ];
+    }
+    case "gemini": {
+      const geminiModelFlag = env.OPTIO_GEMINI_MODEL
+        ? ` -m ${JSON.stringify(env.OPTIO_GEMINI_MODEL)}`
+        : "";
+      return [
+        `echo "[optio] Running Gemini..."`,
+        `gemini -p "$OPTIO_PROMPT" \\`,
+        `  --output-format stream-json \\`,
+        `  --approval-mode yolo${geminiModelFlag}`,
+      ];
+    }
+    case "openclaw": {
+      const openclawModelFlag = env.OPTIO_OPENCLAW_MODEL
+        ? ` --model ${JSON.stringify(env.OPTIO_OPENCLAW_MODEL)}`
+        : "";
+      const openclawAgentFlag = env.OPTIO_OPENCLAW_AGENT
+        ? ` --agent ${JSON.stringify(env.OPTIO_OPENCLAW_AGENT)}`
+        : "";
+      return [
+        `echo "[optio] Running OpenClaw (experimental)..."`,
+        `openclaw agent --output-format stream-json${openclawModelFlag}${openclawAgentFlag} "$OPTIO_PROMPT"`,
       ];
     }
     default:
       return [`echo "Unknown agent type: ${agentType}" && exit 1`];
   }
+}
+
+/**
+ * Determines whether a Repo Task that completed successfully should be
+ * escalated to needs_attention because no PR was opened.
+ *
+ * Repo Tasks are expected to produce a PR. If the agent exits cleanly without
+ * opening one, the work didn't ship — the user should be notified so they can
+ * resume or restart the agent.
+ */
+export function shouldEscalateNoPr(opts: {
+  success: boolean;
+  isReviewTask: boolean;
+  isPlanningRun: boolean;
+  hasRepoUrl: boolean;
+  detectedPrUrl: string | undefined | null;
+}): boolean {
+  if (!opts.success) return false;
+  if (opts.isReviewTask) return false;
+  if (opts.isPlanningRun) return false;
+  if (!opts.hasRepoUrl) return false;
+  if (opts.detectedPrUrl) return false;
+  return true;
 }
 
 /** Infer exit code from agent logs based on agent-specific error patterns */
@@ -1135,15 +1803,82 @@ export function inferExitCode(agentType: string, logs: string): number {
         logs.includes("fatal:") || logs.includes("Error: authentication_failed");
       return hasResultError || hasErrorEvent || hasAuthError || hasFatalError ? 1 : 0;
     }
+    case "opencode": {
+      // OpenCode: similar to Codex — look for error events and provider-specific failures
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasApiErrorEnvelope = /"error"\s*:\s*\{\s*"message"/.test(logs);
+      const hasAuthError =
+        /ANTHROPIC_API_KEY|OPENAI_API_KEY|GROQ_API_KEY|invalid.*api.?key|unauthorized|authentication.*failed/i.test(
+          logs,
+        );
+      const hasModelError = /model_not_found|model.*not found|does not exist.*model/i.test(logs);
+      const hasFatalError =
+        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
+      return hasErrorEvent || hasApiErrorEnvelope || hasAuthError || hasModelError || hasFatalError
+        ? 1
+        : 0;
+    }
+    case "gemini": {
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      // Match auth errors by error-descriptive patterns only (not bare env var names which
+      // could appear in diagnostic output and cause false positives).
+      const hasAuthError =
+        /api.?key.*(?:invalid|not valid|missing)|invalid.*api.?key|api_key_invalid|permission denied|unauthorized/i.test(
+          logs,
+        );
+      const hasQuotaError = /quota|resource.?exhausted|rate.?limit/i.test(logs);
+      const hasModelError = /model.*not found|model_not_found|does not exist.*model/i.test(logs);
+      const hasTurnLimit = /turn.?limit|exit:?\s*53\b/i.test(logs);
+      return hasErrorEvent || hasAuthError || hasQuotaError || hasModelError || hasTurnLimit
+        ? 1
+        : 0;
+    }
+    case "openclaw": {
+      // OpenClaw: similar to OpenCode — look for error events and provider-specific failures
+      const hasErrorEvent = logs.includes('"type":"error"') || logs.includes('"type": "error"');
+      const hasApiErrorEnvelope = /"error"\s*:\s*\{\s*"message"/.test(logs);
+      const hasAuthError =
+        /ANTHROPIC_API_KEY|OPENAI_API_KEY|OPENCLAW_API_KEY|invalid.*api.?key|unauthorized|authentication.*failed/i.test(
+          logs,
+        );
+      const hasModelError = /model_not_found|model.*not found|does not exist.*model/i.test(logs);
+      const hasFatalError =
+        logs.includes("fatal:") || logs.includes("Error: authentication_failed");
+      return hasErrorEvent || hasApiErrorEnvelope || hasAuthError || hasModelError || hasFatalError
+        ? 1
+        : 0;
+    }
     case "claude-code":
     default: {
-      // Claude: check for is_error in result event, or fatal errors
-      const hasResultError = logs.includes('"is_error":true');
-      const hasFatalError =
-        logs.includes("fatal:") ||
-        logs.includes("Error: authentication_failed") ||
-        logs.includes("exit 1");
-      return hasResultError || hasFatalError ? 1 : 0;
+      // Parse the NDJSON result event (authoritative source for Claude's exit status).
+      // Raw string matching on the full logs produces false positives — e.g. "fatal:"
+      // appearing in git command output that Claude ran and handled gracefully.
+      for (const line of logs.split("\n")) {
+        try {
+          const ev = JSON.parse(line);
+          if (ev.type === "result") {
+            return ev.is_error ? 1 : 0;
+          }
+        } catch {
+          // Not JSON — skip
+        }
+      }
+      // No result event found — agent likely crashed before emitting one.
+      // Fall back to heuristic checks on raw (non-JSON) output only.
+      for (const line of logs.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          JSON.parse(trimmed);
+          continue; // Skip JSON lines — errors inside tool output are not fatal
+        } catch {
+          // Raw output line — check for fatal errors
+          if (trimmed.includes("fatal:") || trimmed.includes("Error: authentication_failed")) {
+            return 1;
+          }
+        }
+      }
+      return 0;
     }
   }
 }

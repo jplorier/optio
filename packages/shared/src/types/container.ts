@@ -27,6 +27,16 @@ export interface ContainerSpec {
   extraVolumes?: ExtraVolume[];
   /** Optional extra volume mounts for the main container. */
   extraVolumeMounts?: ExtraVolumeMount[];
+  /** Kubernetes nodeSelector for pod scheduling (e.g. pin to a node pool). */
+  nodeSelector?: Record<string, string>;
+  /** Kubernetes tolerations for pod scheduling (raw V1Toleration objects). */
+  tolerations?: unknown[];
+  /** Pod annotations (e.g. karpenter.sh/do-not-disrupt). */
+  annotations?: Record<string, string>;
+  /** Override the default termination grace period (seconds). */
+  terminationGracePeriodSeconds?: number;
+  /** Kubernetes service account name for the pod (for workload identity). */
+  serviceAccountName?: string;
 }
 
 export interface VolumeMount {
