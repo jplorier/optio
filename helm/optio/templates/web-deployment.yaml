@@ -56,6 +56,9 @@ spec:
                 - ALL
           ports:
             - containerPort: {{ .Values.web.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-config
           env:
             - name: INTERNAL_API_URL
               value: "http://{{ .Release.Name }}-api:{{ .Values.api.port }}"

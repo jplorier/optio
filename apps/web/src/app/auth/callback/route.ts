@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 const INTERNAL_API_URL = process.env.INTERNAL_API_URL ?? "http://localhost:4000";
+const PUBLIC_URL = process.env.PUBLIC_URL;
 const SESSION_COOKIE_NAME = "optio_session";
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
@@ -16,12 +17,17 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production";
  *
  * The session token never touches client-side JS.
  */
+function appUrl(path: string, request: NextRequest): URL {
+  const base = PUBLIC_URL ?? request.url;
+  return new URL(path, base);
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get("code");
 
   if (!code) {
-    return NextResponse.redirect(new URL("/login?error=missing_code", request.url));
+    return NextResponse.redirect(appUrl("/login?error=missing_code", request));
   }
 
   try {
@@ -32,12 +38,12 @@ export async function GET(request: NextRequest) {
     });
 
     if (!res.ok) {
-      return NextResponse.redirect(new URL("/login?error=exchange_failed", request.url));
+      return NextResponse.redirect(appUrl("/login?error=exchange_failed", request));
     }
 
     const { token } = (await res.json()) as { token: string };
 
-    const response = NextResponse.redirect(new URL("/", request.url));
+    const response = NextResponse.redirect(appUrl("/", request));
     response.cookies.set(SESSION_COOKIE_NAME, token, {
       path: "/",
       httpOnly: true,
@@ -48,6 +54,6 @@ export async function GET(request: NextRequest) {
 
     return response;
   } catch {
-    return NextResponse.redirect(new URL("/login?error=exchange_failed", request.url));
+    return NextResponse.redirect(appUrl("/login?error=exchange_failed", request));
   }
 }
