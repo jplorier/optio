@@ -20,10 +20,18 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronRight,
+  Trash2,
+  Ticket,
   Github,
   KeyRound,
 } from "lucide-react";
-import { OPTIO_TOOL_CATEGORIES, ALL_OPTIO_TOOL_NAMES } from "@optio/shared";
+import {
+  OPTIO_TOOL_CATEGORIES,
+  ALL_OPTIO_TOOL_NAMES,
+  ANTHROPIC_CATALOG,
+  resolveModelId,
+} from "@optio/shared";
+import { NotificationPreferences } from "@/components/notifications/notification-preferences";
 
 function PromptTemplateEditor() {
   const [template, setTemplate] = useState("");
@@ -196,9 +204,15 @@ function DefaultReviewEditor() {
             onChange={(e) => setReviewModel(e.target.value)}
             className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
           >
-            <option value="sonnet">Sonnet 4.6</option>
-            <option value="opus">Opus 4.6</option>
-            <option value="haiku">Haiku 4.5</option>
+            {Object.keys(ANTHROPIC_CATALOG.aliases).map((alias) => {
+              const id = resolveModelId("anthropic", alias);
+              const label = ANTHROPIC_CATALOG.models.find((m) => m.id === id)?.label ?? alias;
+              return (
+                <option key={alias} value={alias}>
+                  {label}
+                </option>
+              );
+            })}
           </select>
         </div>
       </div>
@@ -851,9 +865,15 @@ function OptioAgentSettings() {
           onChange={(e) => setModel(e.target.value)}
           className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
         >
-          <option value="opus">Opus — most capable, highest cost</option>
-          <option value="sonnet">Sonnet — balanced capability and cost</option>
-          <option value="haiku">Haiku — fastest, lowest cost</option>
+          {Object.keys(ANTHROPIC_CATALOG.aliases).map((alias) => {
+            const id = resolveModelId("anthropic", alias);
+            const label = ANTHROPIC_CATALOG.models.find((m) => m.id === id)?.label ?? alias;
+            return (
+              <option key={alias} value={alias}>
+                {label}
+              </option>
+            );
+          })}
         </select>
       </div>
 
@@ -1179,28 +1199,19 @@ function GitHubTokenManager() {
 
 export default function SettingsPage() {
   usePageTitle("Settings");
-  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [providers, setProviders] = useState<any[]>([]);
+  const [showAddProvider, setShowAddProvider] = useState(false);
+  const [newProviderSource, setNewProviderSource] = useState("github");
+  const [providerConfig, setProviderConfig] = useState<Record<string, string>>({});
+  const [savingProvider, setSavingProvider] = useState(false);
 
   useEffect(() => {
-    if (typeof Notification !== "undefined") {
-      setNotificationsEnabled(Notification.permission === "granted");
-    }
     api
       .listTicketProviders()
       .then((res) => setProviders(res.providers))
       .catch(() => {});
   }, []);
-
-  const requestNotifications = async () => {
-    if (typeof Notification === "undefined") return;
-    const result = await Notification.requestPermission();
-    setNotificationsEnabled(result === "granted");
-    if (result === "granted") {
-      toast.success("Notifications enabled");
-    }
-  };
 
   const handleSync = async () => {
     setSyncing(true);
@@ -1214,6 +1225,71 @@ export default function SettingsPage() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleAddProvider = async () => {
+    setSavingProvider(true);
+    try {
+      const config: Record<string, unknown> = { ...providerConfig, label: "optio" };
+      await api.createTicketProvider({ source: newProviderSource, config });
+      const res = await api.listTicketProviders();
+      setProviders(res.providers);
+      setShowAddProvider(false);
+      setProviderConfig({});
+      setNewProviderSource("github");
+      toast.success("Ticket provider added");
+    } catch (err) {
+      toast.error("Failed to add provider", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setSavingProvider(false);
+    }
+  };
+
+  const handleDeleteProvider = async (id: string) => {
+    if (!confirm("Remove this ticket provider? This cannot be undone.")) return;
+    try {
+      await api.deleteTicketProvider(id);
+      setProviders((prev) => prev.filter((p) => p.id !== id));
+      toast.success("Provider removed");
+    } catch (err) {
+      toast.error("Failed to remove provider");
+    }
+  };
+
+  const handleReEnableProvider = async (id: string) => {
+    try {
+      await api.reEnableTicketProvider(id);
+      const res = await api.listTicketProviders();
+      setProviders(res.providers);
+      toast.success("Provider re-enabled");
+    } catch (err) {
+      toast.error("Failed to re-enable provider", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  };
+
+  const providerFields: Record<string, { key: string; label: string; type?: string }[]> = {
+    github: [
+      { key: "owner", label: "Owner" },
+      { key: "repo", label: "Repository" },
+    ],
+    jira: [
+      { key: "baseUrl", label: "Jira URL (e.g. https://company.atlassian.net)" },
+      { key: "email", label: "Email" },
+      { key: "apiToken", label: "API Token", type: "password" },
+      { key: "projectKey", label: "Project Key (optional)" },
+    ],
+    linear: [
+      { key: "apiKey", label: "API Key", type: "password" },
+      { key: "teamId", label: "Team ID" },
+    ],
+    notion: [
+      { key: "apiKey", label: "Integration Token", type: "password" },
+      { key: "databaseId", label: "Database ID" },
+    ],
   };
 
   return (
@@ -1247,35 +1323,15 @@ export default function SettingsPage() {
       {/* Notifications */}
       <section>
         <h2 className="text-sm font-medium text-text-muted mb-3">Notifications</h2>
-        <div className="p-5 rounded-xl border border-border/50 bg-bg-card">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Bell className="w-5 h-5 text-text-muted" />
-              <div>
-                <p className="text-sm">Browser Notifications</p>
-                <p className="text-xs text-text-muted">
-                  Get notified when tasks complete or need attention
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={requestNotifications}
-              disabled={notificationsEnabled}
-              className={`px-3 py-1.5 rounded-md text-xs ${
-                notificationsEnabled
-                  ? "bg-success/10 text-success"
-                  : "bg-primary text-white hover:bg-primary-hover"
-              }`}
-            >
-              {notificationsEnabled ? "Enabled" : "Enable"}
-            </button>
-          </div>
-        </div>
+        <NotificationPreferences />
       </section>
 
       {/* Ticket Sync */}
       <section>
-        <h2 className="text-sm font-medium text-text-muted mb-3">Ticket Integration</h2>
+        <h2 className="text-sm font-medium text-text-muted mb-3 flex items-center gap-2">
+          <Ticket className="w-4 h-4" />
+          Ticket Integration
+        </h2>
         <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
           <p className="text-xs text-text-muted">
             Sync issues labeled with{" "}
@@ -1285,39 +1341,145 @@ export default function SettingsPage() {
           {providers.length > 0 ? (
             <div className="space-y-2">
               {providers.map((p: any) => (
-                <div key={p.id} className="flex items-center gap-2 text-sm">
-                  <span
-                    className={`w-2 h-2 rounded-full ${p.enabled ? "bg-success" : "bg-text-muted"}`}
-                  />
-                  <span className="capitalize">{p.source}</span>
-                  <span className="text-xs text-text-muted">
-                    {p.source === "github" &&
-                      p.config?.owner &&
-                      `${p.config.owner}/${p.config.repo}`}
-                    {p.source === "notion" &&
-                      p.config?.databaseId &&
-                      `Database: ${p.config.databaseId}`}
-                    {p.source === "linear" && p.config?.teamId && `Team: ${p.config.teamId}`}
-                    {p.source === "jira" && p.config?.baseUrl && `${p.config.baseUrl}`}
-                  </span>
+                <div key={p.id} className="space-y-1">
+                  <div className="flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`w-2 h-2 rounded-full ${p.hasAuthFailure ? "bg-error" : p.enabled ? "bg-success" : "bg-text-muted"}`}
+                      />
+                      <span className="capitalize">{p.source}</span>
+                      {!p.enabled && (
+                        <span className="text-xs text-error font-medium">Disabled</span>
+                      )}
+                      {p.hasAuthFailure && p.enabled && (
+                        <span className="text-xs text-error font-medium">Token invalid</span>
+                      )}
+                      <span className="text-xs text-text-muted">
+                        {p.source === "github" &&
+                          p.config?.owner &&
+                          `${p.config.owner}/${p.config.repo}`}
+                        {p.source === "notion" &&
+                          p.config?.databaseId &&
+                          `Database: ${p.config.databaseId}`}
+                        {p.source === "linear" && p.config?.teamId && `Team: ${p.config.teamId}`}
+                        {p.source === "jira" && p.config?.baseUrl && `${p.config.baseUrl}`}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {(p.hasAuthFailure || !p.enabled) && (
+                        <button
+                          onClick={() => handleReEnableProvider(p.id)}
+                          className="flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                          title="Clear errors and re-enable this provider"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          Re-enable
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDeleteProvider(p.id)}
+                        className="p-1 rounded hover:bg-error/10 text-text-muted hover:text-error transition-colors"
+                        title="Remove provider"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  {p.lastError && (
+                    <div className="ml-4 p-2 rounded bg-error/5 border border-error/20">
+                      <p className="text-xs text-error">{p.lastError}</p>
+                      <p className="text-xs text-text-muted mt-0.5">
+                        {p.lastErrorAt &&
+                          `Last failure: ${new Date(p.lastErrorAt).toLocaleString()}`}
+                        {p.consecutiveFailures > 0 &&
+                          ` (${p.consecutiveFailures} consecutive failures)`}
+                      </p>
+                      <p className="text-xs text-text-muted mt-1">
+                        Refresh your token and click Re-enable to resume syncing.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
           ) : (
             <p className="text-xs text-text-muted">No ticket providers configured.</p>
           )}
-          <button
-            onClick={handleSync}
-            disabled={syncing}
-            className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors disabled:opacity-50"
-          >
-            {syncing ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <RefreshCw className="w-3 h-3" />
-            )}
-            Sync Now
-          </button>
+
+          {showAddProvider ? (
+            <div className="space-y-3 pt-2 border-t border-border/50">
+              <div>
+                <label className="block text-xs text-text-muted mb-1">Provider</label>
+                <select
+                  value={newProviderSource}
+                  onChange={(e) => {
+                    setNewProviderSource(e.target.value);
+                    setProviderConfig({});
+                  }}
+                  className="w-full px-3 py-1.5 rounded-md bg-bg border border-border/50 text-sm"
+                >
+                  <option value="github">GitHub Issues</option>
+                  <option value="jira">Jira</option>
+                  <option value="linear">Linear</option>
+                  <option value="notion">Notion</option>
+                </select>
+              </div>
+              {providerFields[newProviderSource]?.map((field) => (
+                <div key={field.key}>
+                  <label className="block text-xs text-text-muted mb-1">{field.label}</label>
+                  <input
+                    type={field.type || "text"}
+                    value={providerConfig[field.key] || ""}
+                    onChange={(e) =>
+                      setProviderConfig((prev) => ({ ...prev, [field.key]: e.target.value }))
+                    }
+                    className="w-full px-3 py-1.5 rounded-md bg-bg border border-border/50 text-sm"
+                  />
+                </div>
+              ))}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAddProvider}
+                  disabled={savingProvider}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-white text-xs hover:bg-primary-hover transition-colors disabled:opacity-50"
+                >
+                  {savingProvider && <Loader2 className="w-3 h-3 animate-spin" />}
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAddProvider(false);
+                    setProviderConfig({});
+                  }}
+                  className="px-3 py-1.5 rounded-md bg-bg text-text-muted text-xs hover:bg-bg-hover transition-colors"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowAddProvider(true)}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors"
+              >
+                <Plus className="w-3 h-3" />
+                Add Provider
+              </button>
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary/10 text-primary text-xs hover:bg-primary/20 transition-colors disabled:opacity-50"
+              >
+                {syncing ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3" />
+                )}
+                Sync Now
+              </button>
+            </div>
+          )}
         </div>
       </section>
 

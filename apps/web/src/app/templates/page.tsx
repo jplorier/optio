@@ -1,263 +1,363 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { api } from "@/lib/api-client";
-import { NumberInput } from "@/components/number-input";
-import { Loader2, Plus, Trash2, FileText, Pencil } from "lucide-react";
+import { usePageTitle } from "@/hooks/use-page-title";
+import { FileText, Loader2, Plus, Trash2, Eye, X, Save, Pencil } from "lucide-react";
 import { toast } from "sonner";
 
+type TemplateKind = "prompt" | "review" | "job" | "task";
+
+interface Template {
+  id: string;
+  name: string;
+  template: string;
+  kind: TemplateKind;
+  description: string | null;
+  paramsSchema: Record<string, unknown> | null;
+  defaultAgentType: string | null;
+  workspaceId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+const KIND_LABELS: Record<TemplateKind, string> = {
+  prompt: "Coding prompt",
+  review: "Code review",
+  job: "Standalone task prompt",
+  task: "Repo task blueprint",
+};
+
+const KIND_FILTERS: Array<{ value: TemplateKind | "all"; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "prompt", label: "Coding" },
+  { value: "review", label: "Review" },
+  { value: "job", label: "Standalone" },
+  { value: "task", label: "Tasks" },
+];
+
 export default function TemplatesPage() {
-  const [templates, setTemplates] = useState<any[]>([]);
+  usePageTitle("Templates");
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [filter, setFilter] = useState<TemplateKind | "all">("all");
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [repos, setRepos] = useState<any[]>([]);
-  const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    name: "",
-    prompt: "",
-    repoUrl: "",
-    agentType: "claude-code",
-    priority: 100,
-  });
+  const [editing, setEditing] = useState<Template | "new" | null>(null);
 
-  const loadTemplates = () => {
-    api
-      .listTaskTemplates()
-      .then((res) => setTemplates(res.templates))
-      .catch(() => toast.error("Failed to load templates"))
-      .finally(() => setLoading(false));
-  };
-
-  useEffect(() => {
-    loadTemplates();
-    api
-      .listRepos()
-      .then((res) => setRepos(res.repos))
-      .catch(() => {});
-  }, []);
-
-  const resetForm = () => {
-    setForm({ name: "", prompt: "", repoUrl: "", agentType: "claude-code", priority: 100 });
-    setEditingId(null);
-    setShowForm(false);
-  };
-
-  const handleEdit = (template: any) => {
-    setForm({
-      name: template.name,
-      prompt: template.prompt,
-      repoUrl: template.repoUrl ?? "",
-      agentType: template.agentType,
-      priority: template.priority,
-    });
-    setEditingId(template.id);
-    setShowForm(true);
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setSubmitting(true);
+  const load = async () => {
+    setLoading(true);
     try {
-      const data = {
-        name: form.name,
-        prompt: form.prompt,
-        repoUrl: form.repoUrl || undefined,
-        agentType: form.agentType,
-        priority: form.priority,
-      };
-
-      if (editingId) {
-        await api.updateTaskTemplate(editingId, data);
-        toast.success("Template updated");
-      } else {
-        await api.createTaskTemplate(data);
-        toast.success("Template created");
-      }
-      resetForm();
-      loadTemplates();
+      const res = await api.listTemplates();
+      setTemplates(res.templates as Template[]);
     } catch (err) {
-      toast.error(editingId ? "Failed to update template" : "Failed to create template", {
-        description: err instanceof Error ? err.message : undefined,
+      toast.error("Failed to load templates", {
+        description: err instanceof Error ? err.message : "Unknown error",
       });
     } finally {
-      setSubmitting(false);
+      setLoading(false);
     }
   };
 
-  const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Delete template "${name}"?`)) return;
+  useEffect(() => {
+    load();
+  }, []);
+
+  const visible = templates.filter((t) => filter === "all" || t.kind === filter);
+
+  const remove = async (t: Template) => {
+    if (!confirm(`Delete template "${t.name}"?`)) return;
     try {
-      await api.deleteTaskTemplate(id);
-      toast.success("Template deleted");
-      loadTemplates();
-    } catch {
-      toast.error("Failed to delete template");
+      await api.deleteNamedTemplate(t.id);
+      await load();
+    } catch (err) {
+      toast.error("Failed to delete", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
     }
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Task Templates</h1>
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Templates</h1>
+          <p className="text-sm text-text-muted mt-1">
+            Reusable prompt templates. Repo Tasks and Standalone Tasks can reference a template and
+            fill in parameters at runtime.
+          </p>
+        </div>
         <button
-          onClick={() => {
-            if (showForm && !editingId) {
-              resetForm();
-            } else {
-              resetForm();
-              setShowForm(true);
-            }
-          }}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-colors"
+          onClick={() => setEditing("new")}
+          className="flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-colors"
         >
           <Plus className="w-4 h-4" />
           New Template
         </button>
       </div>
 
-      {showForm && (
-        <form
-          onSubmit={handleSubmit}
-          className="mb-6 p-5 rounded-xl border border-border/50 bg-bg-card space-y-3"
-        >
-          <div>
-            <label className="block text-sm text-text-muted mb-1.5">Template Name</label>
-            <input
-              type="text"
-              required
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              placeholder="e.g. Bug fix template"
-              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm text-text-muted mb-1.5">Repository (optional)</label>
-            <select
-              value={form.repoUrl}
-              onChange={(e) => setForm((f) => ({ ...f, repoUrl: e.target.value }))}
-              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
-            >
-              <option value="">Any repository</option>
-              {repos.map((repo: any) => (
-                <option key={repo.id} value={repo.repoUrl}>
-                  {repo.fullName}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm text-text-muted mb-1.5">Prompt</label>
-            <textarea
-              required
-              rows={4}
-              value={form.prompt}
-              onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
-              placeholder="Describe the task for the agent..."
-              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors resize-y"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm text-text-muted mb-1.5">Agent</label>
-              <select
-                value={form.agentType}
-                onChange={(e) => setForm((f) => ({ ...f, agentType: e.target.value }))}
-                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
-              >
-                <option value="claude-code">Claude Code</option>
-                <option value="codex">OpenAI Codex</option>
-                <option value="copilot">GitHub Copilot</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm text-text-muted mb-1.5">Priority</label>
-              <NumberInput
-                min={1}
-                max={1000}
-                value={form.priority}
-                onChange={(v) => setForm((f) => ({ ...f, priority: v }))}
-                fallback={100}
-                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 transition-colors"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-1">
-            <button
-              type="submit"
-              disabled={submitting}
-              className="px-4 py-2 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover transition-colors disabled:opacity-50"
-            >
-              {submitting ? "Saving..." : editingId ? "Update Template" : "Save Template"}
-            </button>
-            <button
-              type="button"
-              onClick={resetForm}
-              className="px-4 py-2 rounded-md bg-bg-hover text-text-muted text-sm font-medium hover:text-text transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </form>
-      )}
+      <div className="flex gap-1 mb-6 border-b border-border">
+        {KIND_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setFilter(f.value)}
+            className={`px-3 py-2 text-sm -mb-px border-b-2 transition-colors ${
+              filter === f.value
+                ? "border-primary text-text"
+                : "border-transparent text-text-muted hover:text-text"
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12 text-text-muted">
-          <Loader2 className="w-5 h-5 animate-spin mr-2" />
-          Loading templates...
+        <div className="flex items-center gap-2 text-text-muted py-8">
+          <Loader2 className="w-4 h-4 animate-spin" /> Loading...
         </div>
-      ) : templates.length === 0 ? (
-        <div className="text-center py-12 text-text-muted border border-dashed border-border rounded-xl">
-          <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          <p>No task templates yet</p>
-          <p className="text-xs mt-1">Create a template to save and reuse task configurations.</p>
+      ) : visible.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border p-10 text-center">
+          <FileText className="w-8 h-8 text-text-muted mx-auto mb-3" />
+          <p className="text-sm text-text-muted">
+            No templates {filter !== "all" && `in "${filter}"`} yet.
+          </p>
         </div>
       ) : (
-        <div className="space-y-2">
-          {templates.map((template) => (
-            <div
-              key={template.id}
-              className="flex items-start justify-between p-4 rounded-xl border border-border/50 bg-bg-card"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm">{template.name}</span>
-                  <span className="text-xs text-text-muted bg-bg-hover px-1.5 py-0.5 rounded">
-                    {template.agentType}
-                  </span>
-                  {template.repoUrl && (
-                    <span className="text-xs text-text-muted bg-bg-hover px-1.5 py-0.5 rounded truncate max-w-[200px]">
-                      {template.repoUrl.replace("https://github.com/", "")}
+        <div className="space-y-3">
+          {visible.map((t) => (
+            <div key={t.id} className="rounded-lg border border-border bg-bg-card p-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-base font-medium truncate">{t.name}</h2>
+                    <span className="px-2 py-0.5 text-xs rounded bg-bg border border-border text-text-muted">
+                      {KIND_LABELS[t.kind] ?? t.kind}
                     </span>
-                  )}
+                    {t.defaultAgentType && (
+                      <span className="text-xs text-text-muted">{t.defaultAgentType}</span>
+                    )}
+                  </div>
+                  {t.description && <p className="text-xs text-text-muted mb-2">{t.description}</p>}
+                  <pre className="text-xs font-mono text-text-muted bg-bg rounded px-2 py-1.5 line-clamp-3 whitespace-pre-wrap">
+                    {t.template}
+                  </pre>
                 </div>
-                <p className="text-xs text-text-muted mt-1 line-clamp-2">{template.prompt}</p>
-              </div>
-              <div className="flex items-center gap-1 ml-3 shrink-0">
-                <button
-                  onClick={() => handleEdit(template)}
-                  className="p-1.5 rounded-md text-text-muted hover:text-text hover:bg-bg-hover transition-colors"
-                  title="Edit"
-                >
-                  <Pencil className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDelete(template.id, template.name)}
-                  className="p-1.5 rounded-md text-text-muted hover:text-error hover:bg-bg-hover transition-colors"
-                  title="Delete"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => setEditing(t)}
+                    title="Edit"
+                    className="p-2 rounded hover:bg-bg-hover text-text-muted hover:text-text transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => remove(t)}
+                    title="Delete"
+                    className="p-2 rounded hover:bg-bg-hover text-text-muted hover:text-danger transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}
         </div>
       )}
+
+      {editing && (
+        <TemplateEditor
+          template={editing === "new" ? null : editing}
+          onClose={() => setEditing(null)}
+          onSaved={() => {
+            setEditing(null);
+            load();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TemplateEditor({
+  template,
+  onClose,
+  onSaved,
+}: {
+  template: Template | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [form, setForm] = useState({
+    name: template?.name ?? "",
+    template: template?.template ?? "",
+    kind: (template?.kind ?? "prompt") as TemplateKind,
+    description: template?.description ?? "",
+    defaultAgentType: template?.defaultAgentType ?? "",
+  });
+  const [previewParams, setPreviewParams] = useState("{}");
+  const [preview, setPreview] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const payload = {
+        name: form.name,
+        template: form.template,
+        kind: form.kind,
+        description: form.description || undefined,
+        defaultAgentType: form.defaultAgentType || undefined,
+      };
+      if (template) {
+        await api.updateNamedTemplate(template.id, payload);
+      } else {
+        await api.createNamedTemplate(payload);
+      }
+      toast.success(template ? "Template updated" : "Template created");
+      onSaved();
+    } catch (err) {
+      toast.error("Save failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePreview = async () => {
+    if (!template) {
+      toast.info("Save the template first to preview.");
+      return;
+    }
+    try {
+      const params = JSON.parse(previewParams);
+      const res = await api.previewTemplate(template.id, params);
+      setPreview(res.rendered);
+    } catch (err) {
+      toast.error("Preview failed", {
+        description: err instanceof Error ? err.message : "Invalid JSON",
+      });
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="bg-bg border border-border rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        <div className="sticky top-0 bg-bg flex items-center justify-between p-4 border-b border-border">
+          <h2 className="text-lg font-semibold">{template ? "Edit Template" : "New Template"}</h2>
+          <button
+            onClick={onClose}
+            className="p-1 rounded hover:bg-bg-hover text-text-muted hover:text-text"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm text-text-muted mb-1.5">Name</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm"
+              />
+            </div>
+            <div>
+              <label className="block text-sm text-text-muted mb-1.5">Kind</label>
+              <select
+                value={form.kind}
+                onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as TemplateKind }))}
+                className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm"
+              >
+                <option value="prompt">Coding prompt</option>
+                <option value="review">Code review</option>
+                <option value="job">Standalone task prompt</option>
+                <option value="task">Repo task blueprint</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-text-muted mb-1.5">Description</label>
+            <input
+              type="text"
+              value={form.description}
+              onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+              placeholder="What is this template for?"
+              className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-text-muted mb-1.5">Default agent type</label>
+            <input
+              type="text"
+              value={form.defaultAgentType}
+              onChange={(e) => setForm((f) => ({ ...f, defaultAgentType: e.target.value }))}
+              placeholder="e.g. claude-code"
+              className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-sm"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm text-text-muted mb-1.5">Template body</label>
+            <textarea
+              rows={10}
+              value={form.template}
+              onChange={(e) => setForm((f) => ({ ...f, template: e.target.value }))}
+              placeholder={
+                "Use {{param}} for substitution.\n{{#if flag}}...{{/if}} for conditionals."
+              }
+              className="w-full px-3 py-2 rounded-lg bg-bg-card border border-border text-xs font-mono"
+            />
+          </div>
+
+          {template && (
+            <div className="border border-border rounded-lg p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">Preview with params</span>
+                <button
+                  onClick={handlePreview}
+                  className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  Render
+                </button>
+              </div>
+              <textarea
+                rows={3}
+                value={previewParams}
+                onChange={(e) => setPreviewParams(e.target.value)}
+                className="w-full px-2 py-1.5 rounded bg-bg-card border border-border text-xs font-mono"
+                placeholder='{"name": "example"}'
+              />
+              {preview !== null && (
+                <pre className="bg-bg rounded px-2 py-1.5 text-xs font-mono whitespace-pre-wrap border border-border">
+                  {preview}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="sticky bottom-0 bg-bg flex items-center justify-end gap-2 p-4 border-t border-border">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm rounded-md border border-border text-text-muted hover:text-text hover:bg-bg-hover"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !form.name || !form.template}
+            className="flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-primary text-white hover:bg-primary-hover disabled:opacity-50"
+          >
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Save
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,11 +1,21 @@
 import { eq, desc, and, or, ilike, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks, taskEvents, taskLogs, users } from "../db/schema.js";
-import { TaskState, transition, normalizeRepoUrl, type CreateTaskInput } from "@optio/shared";
+import { tasks, taskEvents, taskLogs, users, repos } from "../db/schema.js";
+import {
+  TaskState,
+  transition,
+  InvalidTransitionError,
+  normalizeRepoUrl,
+  DEFAULT_STALL_THRESHOLD_MS,
+  parseIntEnv,
+  type CreateTaskInput,
+} from "@optio/shared";
 import { publishEvent } from "./event-bus.js";
 import { logger } from "../logger.js";
 import { enqueueWebhookEvent } from "../workers/webhook-worker.js";
 import type { WebhookEvent } from "./webhook-service.js";
+import { recordStateTransition } from "../telemetry/metrics.js";
+import { emitStateTransitionLog } from "../telemetry/logs.js";
 
 /**
  * Thrown when a state transition fails because another worker changed the
@@ -56,6 +66,19 @@ export async function createTask(input: CreateTaskInput & { workspaceId?: string
 export async function getTask(id: string) {
   const [task] = await db.select().from(tasks).where(eq(tasks.id, id));
   return task ?? null;
+}
+
+/**
+ * No-op shim kept for call-site back-compat. External PR reviews moved off
+ * the `tasks` table into the `pr_reviews` primitive, so there are no
+ * pr_review tasks rows to hydrate anymore. The function returns rows
+ * unchanged and exists only so routes that still call it keep typechecking.
+ * Safe to delete in a follow-up once callers are migrated.
+ */
+export async function hydratePrReviewPrUrls<T extends typeof tasks.$inferSelect>(
+  rows: T[],
+): Promise<T[]> {
+  return rows;
 }
 
 export async function listTasks(opts?: {
@@ -186,7 +209,8 @@ export async function searchTasks(opts: SearchTasksOpts) {
     nextCursor = Buffer.from(`${last.createdAt.toISOString()}|${last.id}`).toString("base64");
   }
 
-  return { tasks: items, nextCursor, hasMore };
+  const hydrated = await hydratePrReviewPrUrls(items);
+  return { tasks: hydrated, nextCursor, hasMore };
 }
 
 export async function transitionTask(
@@ -209,6 +233,14 @@ export async function transitionTask(
 
   if (toState === TaskState.RUNNING && !task.startedAt) {
     updateFields.startedAt = new Date();
+  }
+  // Stall detection: set lastActivityAt when entering running, reset substate when leaving
+  if (toState === TaskState.RUNNING) {
+    updateFields.lastActivityAt = new Date();
+    updateFields.activitySubstate = "active";
+  }
+  if (currentState === TaskState.RUNNING && toState !== TaskState.RUNNING) {
+    updateFields.activitySubstate = "active";
   }
   if (
     toState === TaskState.COMPLETED ||
@@ -258,6 +290,11 @@ export async function transitionTask(
   });
 
   const updatedTask = updated[0];
+
+  // Emit OTel state transition metric and log
+  recordStateTransition(currentState, toState, trigger);
+  emitStateTransitionLog(id, currentState, toState, trigger);
+
   await publishEvent({
     type: "task:state_changed",
     taskId: id,
@@ -272,10 +309,14 @@ export async function transitionTask(
     errorMessage: updatedTask.errorMessage ?? undefined,
   });
 
-  // Close linked GitHub issue when task completes
-  if (toState === TaskState.COMPLETED && task.ticketSource === "github" && task.ticketExternalId) {
-    closeGitHubIssue(task.repoUrl, task.ticketExternalId, task.prUrl).catch((err) =>
-      logger.warn({ err, taskId: id }, "Failed to close linked GitHub issue"),
+  // Close linked issue when task completes (GitHub or GitLab)
+  if (
+    toState === TaskState.COMPLETED &&
+    (task.ticketSource === "github" || task.ticketSource === "gitlab") &&
+    task.ticketExternalId
+  ) {
+    closeIssue(task.repoUrl, task.ticketExternalId, task.prUrl).catch((err) =>
+      logger.warn({ err, taskId: id }, "Failed to close linked issue"),
     );
   }
 
@@ -306,6 +347,13 @@ export async function transitionTask(
     logger.warn({ err, taskId: id }, "Failed to send Slack notification"),
   );
 
+  // Send push notification (fire-and-forget)
+  import("./notification-service.js")
+    .then(({ sendPushNotificationForTransition }) =>
+      sendPushNotificationForTransition(updated[0], toState),
+    )
+    .catch((err) => logger.warn({ err, taskId: id }, "Failed to send push notification"));
+
   // Handle task dependency graph: unblock dependents on completion, cascade on failure
   if (toState === TaskState.COMPLETED) {
     import("./dependency-service.js")
@@ -318,58 +366,43 @@ export async function transitionTask(
       .catch((err) => logger.warn({ err, taskId: id }, "Failed to cascade failure to dependents"));
   }
 
-  // Update workflow run status if this task is part of a workflow
-  if (updated[0].workflowRunId) {
-    import("./workflow-service.js")
-      .then(({ checkWorkflowRunCompletion }) =>
-        checkWorkflowRunCompletion(updated[0].workflowRunId!),
-      )
-      .catch((err) => logger.warn({ err, taskId: id }, "Failed to update workflow run status"));
-  }
+  // Wake the reconciler. Every state change is a signal it may want to act
+  // (capacity opened up, PR-related state changed, dependency cascade, etc).
+  import("./reconcile-queue.js")
+    .then(({ enqueueReconcile }) =>
+      enqueueReconcile({ kind: "repo", id }, { reason: `transition:${currentState}->${toState}` }),
+    )
+    .catch((err) => logger.warn({ err, taskId: id }, "Failed to enqueue reconcile"));
 
   return updated[0];
 }
 
-async function closeGitHubIssue(repoUrl: string, issueNumber: string, prUrl?: string | null) {
-  const { getGitHubToken } = await import("./github-token-service.js");
-  const token = await getGitHubToken({ server: true });
-  const match = repoUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
-  if (!match) return;
-  const [, owner, repo] = match;
+async function closeIssue(repoUrl: string, issueNumber: string, prUrl?: string | null) {
+  const { getGitPlatformForRepo } = await import("./git-token-service.js");
+  const { platform, ri } = await getGitPlatformForRepo(repoUrl, { server: true });
 
   // Post completion comment
   const comment = prUrl
     ? `✅ **Optio** completed this issue. Changes merged in ${prUrl}.`
     : `✅ **Optio** completed this issue.`;
 
-  await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}/comments`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "User-Agent": "Optio",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ body: comment }),
-  });
+  await platform.createIssueComment(ri, parseInt(issueNumber, 10), comment);
+  await platform.closeIssue(ri, parseInt(issueNumber, 10));
 
-  // Close the issue
-  await fetch(`https://api.github.com/repos/${owner}/${repo}/issues/${issueNumber}`, {
-    method: "PATCH",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "User-Agent": "Optio",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ state: "closed", state_reason: "completed" }),
-  });
-
-  logger.info({ owner, repo, issueNumber }, "Closed linked GitHub issue");
+  logger.info({ repoUrl, issueNumber }, "Closed linked issue");
 }
 
 /**
  * Like transitionTask, but returns null instead of throwing when another
  * worker wins the race. Used by the task worker at the critical
  * queued → provisioning claim point.
+ *
+ * Two race shapes are both treated as "lost the race, exit cleanly":
+ *   - StateRaceError: the CAS update returned 0 rows (state changed between
+ *     our read and write of the *same* transition).
+ *   - InvalidTransitionError: another worker advanced the state to the same
+ *     target ahead of us, so the validator throws (e.g. provisioning →
+ *     provisioning when the winner already moved us into provisioning).
  */
 export async function tryTransitionTask(
   id: string,
@@ -381,7 +414,7 @@ export async function tryTransitionTask(
   try {
     return await transitionTask(id, toState, trigger, message, userId);
   } catch (err) {
-    if (err instanceof StateRaceError) {
+    if (err instanceof StateRaceError || err instanceof InvalidTransitionError) {
       return null;
     }
     throw err;
@@ -525,6 +558,27 @@ export async function forceRedoTask(id: string) {
   return await getTask(id);
 }
 
+/**
+ * Record a task event without a state transition (e.g. user_message, user_interrupt).
+ * Uses the task's current state as both fromState and toState.
+ */
+export async function recordTaskEvent(
+  taskId: string,
+  currentState: string,
+  trigger: string,
+  message?: string,
+  userId?: string,
+) {
+  await db.insert(taskEvents).values({
+    taskId,
+    fromState: currentState as any,
+    toState: currentState as any,
+    trigger,
+    message,
+    userId,
+  });
+}
+
 export async function getTaskEvents(taskId: string) {
   const rows = await db
     .select({
@@ -578,6 +632,160 @@ async function sendSlackNotificationForTask(
   const { getRepoByUrl } = await import("./repo-service.js");
   const repoConfig = await getRepoByUrl(task.repoUrl);
   await notifySlackOnTransition({ ...task, state: toState }, toState, repoConfig);
+}
+
+/**
+ * Update the task's lastActivityAt timestamp and handle stall recovery.
+ * Called from the task-worker with debounced writes.
+ */
+export async function updateTaskActivity(taskId: string, at: Date) {
+  // Use a conditional update: if the task was stalled, flip to recovered
+  const updated = await db
+    .update(tasks)
+    .set({
+      lastActivityAt: at,
+      activitySubstate: sql`CASE WHEN ${tasks.activitySubstate} = 'stalled' THEN 'recovered' ELSE ${tasks.activitySubstate} END`,
+    })
+    .where(eq(tasks.id, taskId))
+    .returning({ activitySubstate: tasks.activitySubstate, lastActivityAt: tasks.lastActivityAt });
+
+  // If we just recovered from stalled, publish the event
+  if (updated.length > 0 && updated[0].activitySubstate === "recovered") {
+    const task = await getTask(taskId);
+    if (task) {
+      const silentWasMs = task.lastActivityAt
+        ? at.getTime() - new Date(task.lastActivityAt).getTime()
+        : 0;
+      await publishEvent({
+        type: "task:recovered",
+        taskId,
+        silentWasMs: Math.max(0, silentWasMs),
+        timestamp: new Date().toISOString(),
+      });
+    }
+  }
+}
+
+/**
+ * Get the effective stall threshold for a repo.
+ * Priority: per-repo override → env var → hardcoded default.
+ */
+export function getStallThresholdForRepo(
+  repoConfig: {
+    stallThresholdMs?: number | null;
+  } | null,
+): number {
+  if (repoConfig?.stallThresholdMs != null) {
+    return repoConfig.stallThresholdMs;
+  }
+  return parseIntEnv("OPTIO_STALL_THRESHOLD_MS", DEFAULT_STALL_THRESHOLD_MS);
+}
+
+/**
+ * Get the last meaningful log entry summary for a stalled task.
+ * Returns a short string like "Bash $ npm test" or "Read file.ts".
+ */
+export async function getLastLogSummary(taskId: string): Promise<string | undefined> {
+  const [log] = await db
+    .select({ content: taskLogs.content, logType: taskLogs.logType })
+    .from(taskLogs)
+    .where(
+      and(
+        eq(taskLogs.taskId, taskId),
+        sql`${taskLogs.logType} IN ('tool_use', 'text', 'tool_result')`,
+      ),
+    )
+    .orderBy(desc(taskLogs.timestamp))
+    .limit(1);
+
+  if (!log) return undefined;
+  // Truncate to a reasonable summary length
+  const summary = log.content.trim().slice(0, 120);
+  return summary || undefined;
+}
+
+/**
+ * Get repo config for a given repo URL. Used by stall detector.
+ */
+export async function getRepoConfig(repoUrl: string) {
+  const [repo] = await db.select().from(repos).where(eq(repos.repoUrl, repoUrl));
+  return repo ?? null;
+}
+
+/**
+ * Compute aggregated pipeline stats server-side via a single grouped COUNT query.
+ * Returns the same shape as the frontend TaskStats interface so the dashboard
+ * can consume it directly.
+ */
+export async function getTaskStats(workspaceId?: string | null) {
+  const conditions = [];
+  if (workspaceId) {
+    conditions.push(eq(tasks.workspaceId, workspaceId));
+  }
+
+  const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+  // Single query: count tasks grouped by state, and for pr_opened tasks
+  // also count CI vs review sub-buckets
+  const rows = await db
+    .select({
+      state: tasks.state,
+      prChecksStatus: tasks.prChecksStatus,
+      prReviewStatus: tasks.prReviewStatus,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(tasks)
+    .where(whereClause)
+    .groupBy(tasks.state, tasks.prChecksStatus, tasks.prReviewStatus);
+
+  let total = 0;
+  let queued = 0;
+  let running = 0;
+  let ci = 0;
+  let review = 0;
+  let needsAttention = 0;
+  let failed = 0;
+  let completed = 0;
+
+  for (const row of rows) {
+    const count = row.count;
+    total += count;
+
+    switch (row.state) {
+      case "pending":
+      case "queued":
+      case "provisioning":
+        queued += count;
+        break;
+      case "running":
+        running += count;
+        break;
+      case "needs_attention":
+        needsAttention += count;
+        break;
+      case "failed":
+        failed += count;
+        break;
+      case "completed":
+        completed += count;
+        break;
+      case "pr_opened": {
+        // Mirror the client-side logic: if review status is meaningful
+        // (not "none"/"pending"), it's a review; otherwise CI.
+        const reviewStatus = row.prReviewStatus;
+        const isReview = reviewStatus != null && !["none", "pending"].includes(reviewStatus);
+        if (isReview) {
+          review += count;
+        } else {
+          ci += count;
+        }
+        break;
+      }
+      // waiting_on_deps, cancelled — counted in total only
+    }
+  }
+
+  return { total, queued, running, ci, review, needsAttention, failed, completed };
 }
 
 /** Fetch the most recent state-change events across all tasks. */

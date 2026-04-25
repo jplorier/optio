@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import { buildRouteTestApp } from "../test-utils/build-route-test-app.js";
 
 // ─── Mocks ───
 
@@ -13,6 +13,7 @@ const mockForceRedoTask = vi.fn();
 const mockGetTaskLogs = vi.fn();
 const mockGetAllTaskLogs = vi.fn();
 const mockGetTaskEvents = vi.fn();
+const mockGetTaskStats = vi.fn();
 
 vi.mock("../services/task-service.js", () => ({
   listTasks: (...args: unknown[]) => mockListTasks(...args),
@@ -24,6 +25,8 @@ vi.mock("../services/task-service.js", () => ({
   getTaskLogs: (...args: unknown[]) => mockGetTaskLogs(...args),
   getAllTaskLogs: (...args: unknown[]) => mockGetAllTaskLogs(...args),
   getTaskEvents: (...args: unknown[]) => mockGetTaskEvents(...args),
+  getTaskStats: (...args: unknown[]) => mockGetTaskStats(...args),
+  hydratePrReviewPrUrls: async (rows: unknown[]) => rows,
 }));
 
 const mockAddDependencies = vi.fn();
@@ -66,34 +69,99 @@ vi.mock("../services/review-service.js", () => ({
   launchReview: vi.fn().mockResolvedValue("review-task-1"),
 }));
 
+// The unified resolver falls through to task_configs and workflows when the
+// tasks table lookup returns null. Stub to null so existing repo-task tests
+// continue to see 404s.
+const mockResolveAnyTaskById = vi.fn().mockResolvedValue(null);
+vi.mock("../services/unified-task-service.js", () => ({
+  resolveAnyTaskById: (...args: unknown[]) => mockResolveAnyTaskById(...args),
+  listUnifiedTasks: vi.fn().mockResolvedValue([]),
+  listUnifiedRuns: vi.fn().mockResolvedValue([]),
+  getUnifiedRun: vi.fn().mockResolvedValue(null),
+  listTriggersForParent: vi.fn().mockResolvedValue([]),
+  getTriggerForParent: vi.fn().mockResolvedValue(null),
+}));
+
+// POST /api/tasks now dispatches to workflow-service and task-config-service
+// when the body's `type` is "standalone" or "repo-blueprint". Stub both so
+// the default "repo-task" path keeps working.
+vi.mock("../services/workflow-service.js", () => ({
+  createWorkflow: vi.fn(),
+  getWorkflow: vi.fn(),
+  listWorkflows: vi.fn().mockResolvedValue([]),
+  createWorkflowTrigger: vi.fn(),
+  updateWorkflowTrigger: vi.fn(),
+  deleteWorkflowTrigger: vi.fn(),
+  createWorkflowRun: vi.fn(),
+}));
+
+vi.mock("../services/task-config-service.js", () => ({
+  createTaskConfig: vi.fn(),
+  getTaskConfig: vi.fn(),
+  listTaskConfigs: vi.fn().mockResolvedValue([]),
+  instantiateTask: vi.fn(),
+  createTaskConfigTrigger: vi.fn(),
+  updateTaskConfigTrigger: vi.fn(),
+  deleteTaskConfigTrigger: vi.fn(),
+}));
+
 import { taskRoutes } from "./tasks.js";
 
 // ─── Helpers ───
 
 async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
-  app.decorateRequest("user", undefined as any);
-  app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { id: "user-1", workspaceId: "ws-1", workspaceRole: "admin" };
-    done();
-  });
-  await taskRoutes(app);
-  await app.ready();
-  return app;
+  return buildRouteTestApp(taskRoutes);
 }
 
+// Complete task mock matching the post-migration TaskSchema. Any missing
+// field here risks failing the response serializer on routes that declare
+// `schema.response[200]: TaskSchema`. Keep in sync with
+// `apps/api/src/schemas/task.ts`.
 const mockTaskData = {
   id: "task-1",
   title: "Fix bug",
   prompt: "Fix the bug",
   repoUrl: "https://github.com/org/repo",
+  repoBranch: "main",
   state: "running",
   agentType: "claude-code",
-  workspaceId: "ws-1",
-  priority: 100,
-  maxRetries: 1,
-  prUrl: null,
+  containerId: null,
   sessionId: "sess-1",
+  prUrl: null,
+  prNumber: null,
+  prState: null,
+  prChecksStatus: null,
+  prReviewStatus: null,
+  prReviewComments: null,
+  resultSummary: null,
+  costUsd: null,
+  inputTokens: null,
+  outputTokens: null,
+  modelUsed: null,
+  errorMessage: null,
+  ticketSource: null,
+  ticketExternalId: null,
+  metadata: null,
+  retryCount: 0,
+  maxRetries: 1,
+  priority: 100,
+  parentTaskId: null,
+  taskType: "coding",
+  subtaskOrder: 0,
+  blocksParent: false,
+  worktreeState: null,
+  lastPodId: null,
+  workflowRunId: null,
+  createdBy: null,
+  ignoreOffPeak: false,
+  lastActivityAt: null,
+  activitySubstate: "active",
+  workspaceId: "ws-1",
+  lastMessageAt: null,
+  createdAt: new Date("2026-04-11T12:00:00Z"),
+  updatedAt: new Date("2026-04-11T12:00:00Z"),
+  startedAt: null,
+  completedAt: null,
 };
 
 describe("GET /api/tasks", () => {
@@ -268,7 +336,7 @@ describe("POST /api/tasks", () => {
     expect(mockQueueAdd).not.toHaveBeenCalled();
   });
 
-  it("rejects invalid agentType (Zod throws)", async () => {
+  it("rejects invalid agentType (400 from Zod body schema)", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/tasks",
@@ -280,17 +348,19 @@ describe("POST /api/tasks", () => {
       },
     });
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("Validation error");
   });
 
-  it("rejects missing required fields (Zod throws)", async () => {
+  it("rejects missing required fields (400 from Zod body schema)", async () => {
     const res = await app.inject({
       method: "POST",
       url: "/api/tasks",
       payload: { title: "Fix bug" },
     });
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("Validation error");
   });
 
   it("rejects repoBranch with shell injection characters", async () => {
@@ -305,7 +375,8 @@ describe("POST /api/tasks", () => {
       },
     });
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe("Validation error");
   });
 
   it("accepts valid repoBranch names", async () => {
@@ -435,7 +506,19 @@ describe("GET /api/tasks/:id/logs", () => {
 
   it("returns task logs with default pagination", async () => {
     mockGetTask.mockResolvedValue(mockTaskData);
-    mockGetTaskLogs.mockResolvedValue([{ id: "log-1", content: "hello" }]);
+    mockGetTaskLogs.mockResolvedValue([
+      {
+        id: "log-1",
+        taskId: "task-1",
+        stream: "stdout",
+        content: "hello",
+        logType: "text",
+        metadata: null,
+        workflowRunId: null,
+        prReviewRunId: null,
+        timestamp: new Date("2026-04-11T12:00:00Z"),
+      },
+    ]);
 
     const res = await app.inject({ method: "GET", url: "/api/tasks/task-1/logs" });
 
@@ -511,7 +594,18 @@ describe("GET /api/tasks/:id/events", () => {
 
   it("returns task events", async () => {
     mockGetTask.mockResolvedValue(mockTaskData);
-    mockGetTaskEvents.mockResolvedValue([{ id: "ev-1", fromState: "pending", toState: "queued" }]);
+    mockGetTaskEvents.mockResolvedValue([
+      {
+        id: "ev-1",
+        taskId: "task-1",
+        fromState: "pending",
+        toState: "queued",
+        trigger: "task_submitted",
+        message: null,
+        userId: "user-1",
+        createdAt: new Date("2026-04-11T12:00:00Z"),
+      },
+    ]);
 
     const res = await app.inject({ method: "GET", url: "/api/tasks/task-1/events" });
 
@@ -548,6 +642,60 @@ describe("POST /api/tasks/reorder", () => {
     });
 
     expect(res.statusCode).toBe(400);
-    expect(res.json().error).toBe("taskIds array required");
+    expect(res.json().error).toBe("Validation error");
+  });
+});
+
+describe("GET /api/tasks/stats", () => {
+  let app: FastifyInstance;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    app = await buildTestApp();
+  });
+
+  it("returns aggregated task stats", async () => {
+    mockGetTaskStats.mockResolvedValue({
+      total: 42,
+      queued: 3,
+      running: 2,
+      ci: 1,
+      review: 1,
+      needsAttention: 1,
+      failed: 5,
+      completed: 30,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/tasks/stats" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.stats.total).toBe(42);
+    expect(body.stats.queued).toBe(3);
+    expect(body.stats.running).toBe(2);
+    expect(body.stats.ci).toBe(1);
+    expect(body.stats.review).toBe(1);
+    expect(body.stats.needsAttention).toBe(1);
+    expect(body.stats.failed).toBe(5);
+    expect(body.stats.completed).toBe(30);
+    expect(mockGetTaskStats).toHaveBeenCalledWith("ws-1");
+  });
+
+  it("passes workspace ID from the authenticated user", async () => {
+    mockGetTaskStats.mockResolvedValue({
+      total: 0,
+      queued: 0,
+      running: 0,
+      ci: 0,
+      review: 0,
+      needsAttention: 0,
+      failed: 0,
+      completed: 0,
+    });
+
+    const res = await app.inject({ method: "GET", url: "/api/tasks/stats" });
+
+    expect(res.statusCode).toBe(200);
+    expect(mockGetTaskStats).toHaveBeenCalledWith("ws-1");
   });
 });

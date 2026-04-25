@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { getSettings } from "../services/optio-settings-service.js";
-import { authenticateWs } from "./ws-auth.js";
+import { authenticateWs, extractSessionToken } from "./ws-auth.js";
 import { logger } from "../logger.js";
 import {
   OPTIO_TOOL_SCHEMAS,
   OPTIO_TOOL_CATEGORIES,
+  resolveModelId,
   type OptioToolDefinition,
   type OptioToolSchema,
 } from "@optio/shared";
@@ -22,11 +23,11 @@ import {
 
 const ANTHROPIC_API_URL = process.env.ANTHROPIC_API_BASE_URL ?? "https://api.anthropic.com";
 
-const ANTHROPIC_MODEL_MAP: Record<string, string> = {
-  opus: "claude-opus-4-6",
-  sonnet: "claude-sonnet-4-6",
-  haiku: "claude-haiku-4-5-20251001",
-};
+/**
+ * Fallback when the stored model ID is unrecognised (not a known alias, not a
+ * cataloged dated id). Kept as a concrete dated id so an Anthropic API call
+ * never sends a stale alias.
+ */
 const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_MAX_TURNS = 10;
 
@@ -332,18 +333,30 @@ export async function streamAnthropicResponse(
  * Retrieve the Anthropic API credentials from the secrets store.
  * Returns the raw key or token for use with the Messages API.
  */
-async function getAnthropicAuth(log: {
-  warn: (obj: unknown, msg: string) => void;
-}): Promise<{ apiKey?: string; oauthToken?: string }> {
+async function getAnthropicAuth(
+  log: { warn: (obj: unknown, msg: string) => void },
+  userId?: string | null,
+): Promise<{ apiKey?: string; oauthToken?: string }> {
   try {
-    const { retrieveSecret } = await import("../services/secret-service.js");
+    const { retrieveSecret, retrieveSecretWithFallback } =
+      await import("../services/secret-service.js");
     const authMode = (await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null)) as string | null;
 
     if (authMode === "api-key") {
-      const apiKey = await retrieveSecret("ANTHROPIC_API_KEY").catch(() => null);
+      const apiKey = await retrieveSecretWithFallback(
+        "ANTHROPIC_API_KEY",
+        "global",
+        undefined,
+        userId,
+      ).catch(() => null);
       return apiKey ? { apiKey: apiKey as string } : {};
     } else if (authMode === "oauth-token") {
-      const token = await retrieveSecret("CLAUDE_CODE_OAUTH_TOKEN").catch(() => null);
+      const token = await retrieveSecretWithFallback(
+        "CLAUDE_CODE_OAUTH_TOKEN",
+        "global",
+        undefined,
+        userId,
+      ).catch(() => null);
       return token ? { oauthToken: token as string } : {};
     } else if (authMode === "max-subscription") {
       const { getClaudeAuthToken } = await import("../services/auth-service.js");
@@ -408,12 +421,10 @@ export async function optioChatWs(app: FastifyInstance) {
     activeConnections.set(userId, socket as unknown as WebSocket);
     log.info("Optio chat connected");
 
-    // Extract session token for tool execution (cookie or query param)
-    const cookieHeader = req.headers.cookie ?? "";
-    const sessionMatch = cookieHeader.match(/optio_session=([^;]+)/);
-    const sessionCookie = sessionMatch?.[1] ?? "";
-    const wsToken = (req.query as Record<string, string>)?.token ?? "";
-    const sessionToken = sessionCookie || wsToken;
+    // Extract session token for tool execution (cookie only — never URL query params).
+    // The upgrade token from Sec-WebSocket-Protocol is single-use and already consumed
+    // by authenticateWs(), so it cannot be reused for API passthrough.
+    const sessionToken = extractSessionToken(req) ?? "";
 
     let isProcessing = false;
     let abortController: AbortController | null = null;
@@ -591,7 +602,7 @@ export async function optioChatWs(app: FastifyInstance) {
       send({ type: "status", status: "thinking" });
 
       // Get Anthropic credentials
-      const auth = await getAnthropicAuth(log);
+      const auth = await getAnthropicAuth(log, userId);
       if (!auth.apiKey && !auth.oauthToken) {
         send({
           type: "error",
@@ -605,7 +616,7 @@ export async function optioChatWs(app: FastifyInstance) {
 
       // Load settings
       const settings = await getSettings(user.workspaceId);
-      const model = ANTHROPIC_MODEL_MAP[settings.model] ?? DEFAULT_MODEL;
+      const model = resolveModelId("anthropic", settings.model) ?? DEFAULT_MODEL;
       const maxTurns = settings.maxTurns || DEFAULT_MAX_TURNS;
 
       // Build system prompt (tool definitions are passed separately to the API)
@@ -647,7 +658,7 @@ export async function optioChatWs(app: FastifyInstance) {
     const continueAfterDecision = async (approved: boolean, feedback?: string) => {
       send({ type: "status", status: approved ? "executing" : "thinking" });
 
-      const auth = await getAnthropicAuth(log);
+      const auth = await getAnthropicAuth(log, userId);
       if (!auth.apiKey && !auth.oauthToken) {
         send({ type: "error", message: "No Anthropic credentials configured" });
         isProcessing = false;
@@ -656,7 +667,7 @@ export async function optioChatWs(app: FastifyInstance) {
       }
 
       const settings = await getSettings(user.workspaceId);
-      const model = ANTHROPIC_MODEL_MAP[settings.model] ?? DEFAULT_MODEL;
+      const model = resolveModelId("anthropic", settings.model) ?? DEFAULT_MODEL;
       const maxTurns = settings.maxTurns || DEFAULT_MAX_TURNS;
       const systemPrompt = buildSystemPrompt({
         systemPrompt: settings.systemPrompt,

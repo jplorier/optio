@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import Fastify from "fastify";
+import { buildRouteTestApp } from "../test-utils/build-route-test-app.js";
 import type { FastifyInstance } from "fastify";
 
 // ─── Mocks ───
@@ -87,15 +87,9 @@ import { clusterRoutes } from "./cluster.js";
 // ─── Helpers ───
 
 async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
-  app.decorateRequest("user", undefined as any);
-  app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { workspaceId: null, workspaceRole: "admin" };
-    done();
+  return buildRouteTestApp(clusterRoutes, {
+    user: { id: "u1", workspaceId: null, workspaceRole: "admin" },
   });
-  await clusterRoutes(app);
-  await app.ready();
-  return app;
 }
 
 describe("GET /api/cluster/overview", () => {
@@ -106,13 +100,34 @@ describe("GET /api/cluster/overview", () => {
     app = await buildTestApp();
   });
 
-  it("returns 500 when K8s API fails", async () => {
-    mockListNode.mockRejectedValue(new Error("K8s API unavailable"));
+  it("returns 500 when namespace-scoped K8s API fails", async () => {
+    mockListNode.mockResolvedValue({ items: [] });
+    mockListNamespacedPod.mockRejectedValue(new Error("K8s API unavailable"));
+    mockListNamespacedService.mockRejectedValue(new Error("K8s API unavailable"));
+    mockListNamespacedEvent.mockRejectedValue(new Error("K8s API unavailable"));
 
     const res = await app.inject({ method: "GET", url: "/api/cluster/overview" });
 
     expect(res.statusCode).toBe(500);
     expect(res.json().error).toContain("K8s API unavailable");
+  });
+
+  it("returns 200 with empty nodes when listNode fails (no ClusterRole)", async () => {
+    mockListNode.mockRejectedValue(new Error("Forbidden: nodes is forbidden"));
+    mockListNamespacedPod.mockResolvedValue({ items: [] });
+    mockListNamespacedService.mockResolvedValue({ items: [] });
+    mockListNamespacedEvent.mockResolvedValue({ items: [] });
+    mockListClusterCustomObject.mockRejectedValue(new Error("Forbidden"));
+    mockListNamespacedCustomObject.mockResolvedValue({ items: [] });
+
+    const res = await app.inject({ method: "GET", url: "/api/cluster/overview" });
+
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.nodes).toEqual([]);
+    expect(body.summary.totalNodes).toBe(0);
+    expect(body.summary.readyNodes).toBe(0);
+    expect(body.pods).toBeDefined();
   });
 });
 

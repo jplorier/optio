@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import { buildRouteTestApp } from "../test-utils/build-route-test-app.js";
+import { mockTaskComment, mockTaskEvent } from "../test-utils/fixtures.js";
 
 // ─── Mocks ───
 
@@ -24,20 +25,18 @@ vi.mock("../services/task-service.js", () => ({
   getTaskEvents: (...args: unknown[]) => mockGetTaskEvents(...args),
 }));
 
+const mockListMessages = vi.fn().mockResolvedValue([]);
+
+vi.mock("../services/task-message-service.js", () => ({
+  listMessages: (...args: unknown[]) => mockListMessages(...args),
+}));
+
 import { commentRoutes } from "./comments.js";
 
 // ─── Helpers ───
 
 async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
-  app.decorateRequest("user", undefined as any);
-  app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { id: "user-1", workspaceId: "ws-1" };
-    done();
-  });
-  await commentRoutes(app);
-  await app.ready();
-  return app;
+  return buildRouteTestApp(commentRoutes);
 }
 
 describe("GET /api/tasks/:id/comments", () => {
@@ -50,7 +49,7 @@ describe("GET /api/tasks/:id/comments", () => {
 
   it("lists comments for a task", async () => {
     mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
-    mockListComments.mockResolvedValue([{ id: "c-1", content: "Hello" }]);
+    mockListComments.mockResolvedValue([{ ...mockTaskComment, content: "Hello" }]);
 
     const res = await app.inject({ method: "GET", url: "/api/tasks/task-1/comments" });
 
@@ -77,7 +76,7 @@ describe("POST /api/tasks/:id/comments", () => {
 
   it("adds a comment", async () => {
     mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
-    mockAddComment.mockResolvedValue({ id: "c-1", content: "New comment", taskId: "task-1" });
+    mockAddComment.mockResolvedValue({ ...mockTaskComment, content: "New comment" });
 
     const res = await app.inject({
       method: "POST",
@@ -89,7 +88,7 @@ describe("POST /api/tasks/:id/comments", () => {
     expect(mockAddComment).toHaveBeenCalledWith("task-1", "New comment", "user-1");
   });
 
-  it("rejects empty content (Zod throws)", async () => {
+  it("rejects empty content (400 from Zod body schema)", async () => {
     mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
 
     const res = await app.inject({
@@ -98,7 +97,7 @@ describe("POST /api/tasks/:id/comments", () => {
       payload: { content: "" },
     });
 
-    expect(res.statusCode).toBe(500);
+    expect(res.statusCode).toBe(400);
   });
 });
 
@@ -112,7 +111,7 @@ describe("PATCH /api/tasks/:taskId/comments/:commentId", () => {
 
   it("updates a comment", async () => {
     mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
-    mockUpdateComment.mockResolvedValue({ id: "c-1", content: "Updated" });
+    mockUpdateComment.mockResolvedValue({ ...mockTaskComment, content: "Updated" });
 
     const res = await app.inject({
       method: "PATCH",
@@ -194,23 +193,18 @@ describe("GET /api/tasks/:id/activity", () => {
     mockGetTask.mockResolvedValue({ id: "task-1", workspaceId: "ws-1" });
     mockListComments.mockResolvedValue([
       {
-        id: "c-1",
-        taskId: "task-1",
+        ...mockTaskComment,
         content: "Comment",
-        user: "user-1",
-        createdAt: "2026-03-27T10:00:00Z",
+        createdAt: new Date("2026-03-27T10:00:00Z"),
       },
     ]);
     mockGetTaskEvents.mockResolvedValue([
       {
-        id: "e-1",
-        taskId: "task-1",
+        ...mockTaskEvent,
         fromState: "pending",
         toState: "queued",
         trigger: "submit",
-        message: null,
-        userId: null,
-        createdAt: "2026-03-27T09:00:00Z",
+        createdAt: new Date("2026-03-27T09:00:00Z"),
       },
     ]);
 

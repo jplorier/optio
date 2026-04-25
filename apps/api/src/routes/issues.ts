@@ -1,265 +1,278 @@
 import type { FastifyInstance } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import { z } from "zod";
 import { db } from "../db/client.js";
 import { repos, tasks } from "../db/schema.js";
-import { eq, and } from "drizzle-orm";
-import { normalizeRepoUrl } from "@optio/shared";
-import { getGitHubToken } from "../services/github-token-service.js";
+import { eq } from "drizzle-orm";
+import { normalizeRepoUrl, parseRepoUrl } from "@optio/shared";
+import { getGitPlatformForRepo } from "../services/git-token-service.js";
 import { logger } from "../logger.js";
+import { ErrorResponseSchema } from "../schemas/common.js";
+import { IssueSummarySchema } from "../schemas/session.js";
+import { TaskSchema } from "../schemas/task.js";
 
-export async function issueRoutes(app: FastifyInstance) {
-  // List GitHub issues from all configured repos
-  app.get("/api/issues", async (req, reply) => {
-    const query = req.query as { repoId?: string; state?: string };
+const issuesQuerySchema = z
+  .object({
+    repoId: z.string().optional().describe("Restrict results to a single repo"),
+    state: z.string().optional().describe("`open` (default) | `closed` | `all`"),
+  })
+  .describe("Query parameters for listing issues");
 
-    const githubToken = await getGitHubToken(
-      req.user ? { userId: req.user.id } : { server: true },
-    ).catch(() => null);
-    if (!githubToken) {
-      return reply.status(503).send({ issues: [], error: "No GitHub token configured" });
-    }
+const assignIssueSchema = z
+  .object({
+    issueNumber: z.number().int().positive().describe("Ticket provider issue number"),
+    repoId: z.string().min(1).describe("Repo UUID that owns the issue"),
+    title: z.string().min(1),
+    body: z.string().describe("Issue body (markdown)"),
+    agentType: z.string().optional().describe("Agent runtime override"),
+  })
+  .describe("Body for assigning an issue to Optio");
 
-    const headers = {
-      Authorization: `Bearer ${githubToken}`,
-      "User-Agent": "Optio",
-      Accept: "application/vnd.github.v3+json",
-    };
+const IssueListResponseSchema = z
+  .object({
+    issues: z.array(IssueSummarySchema),
+  })
+  .describe("List of issues aggregated across configured repos");
 
-    // Get repos to fetch issues from (scoped to workspace)
-    const workspaceId = req.user?.workspaceId;
-    let repoList: (typeof repos.$inferSelect)[];
-    if (query.repoId) {
-      const [repo] = await db.select().from(repos).where(eq(repos.id, query.repoId));
-      if (repo && workspaceId && repo.workspaceId !== workspaceId) {
-        repoList = [];
+const TaskResponseSchema = z
+  .object({
+    task: TaskSchema,
+  })
+  .describe("Task envelope");
+
+export async function issueRoutes(rawApp: FastifyInstance) {
+  const app = rawApp.withTypeProvider<ZodTypeProvider>();
+
+  app.get(
+    "/api/issues",
+    {
+      schema: {
+        operationId: "listIssues",
+        summary: "List issues from configured repos",
+        description:
+          "Aggregate open issues across every configured repository in the " +
+          "current workspace (GitHub or GitLab). Each issue is decorated " +
+          "with a `hasOptioLabel` flag and, if Optio is already working on " +
+          "it, the corresponding `optioTask` reference. Sorted " +
+          "unassigned-first, then by update recency.",
+        tags: ["Reviews & PRs"],
+        querystring: issuesQuerySchema,
+        response: {
+          200: IssueListResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const query = req.query;
+
+      const wsId = req.user?.workspaceId;
+      let repoList;
+      if (query.repoId) {
+        const [repo] = await db.select().from(repos).where(eq(repos.id, query.repoId));
+        if (!repo) return reply.send({ issues: [] });
+        if (wsId && repo.workspaceId !== wsId) {
+          return reply.send({ issues: [] });
+        }
+        repoList = [repo];
+      } else if (wsId) {
+        repoList = await db.select().from(repos).where(eq(repos.workspaceId, wsId));
       } else {
-        repoList = repo ? [repo] : [];
+        repoList = await db.select().from(repos);
       }
-    } else if (workspaceId) {
-      repoList = await db.select().from(repos).where(eq(repos.workspaceId, workspaceId));
-    } else {
-      repoList = await db.select().from(repos);
-    }
 
-    if (repoList.length === 0) {
-      return reply.send({ issues: [] });
-    }
-
-    // Get existing Optio tasks to know which issues are already assigned (scoped to workspace)
-    const taskConditions = [];
-    if (workspaceId) taskConditions.push(eq(tasks.workspaceId, workspaceId));
-    const existingTasks = await db
-      .select({
+      const taskSelect = {
         ticketSource: tasks.ticketSource,
         ticketExternalId: tasks.ticketExternalId,
         repoUrl: tasks.repoUrl,
         id: tasks.id,
         state: tasks.state,
-      })
-      .from(tasks)
-      .where(taskConditions.length > 0 ? and(...taskConditions) : undefined);
+      };
+      const existingTasks = wsId
+        ? await db.select(taskSelect).from(tasks).where(eq(tasks.workspaceId, wsId))
+        : await db.select(taskSelect).from(tasks);
 
-    const taskMap = new Map(
-      existingTasks
-        .filter((t) => t.ticketSource === "github" && t.ticketExternalId)
-        .map((t) => [
-          `${normalizeRepoUrl(t.repoUrl)}:${t.ticketExternalId}`,
-          { taskId: t.id, state: t.state },
-        ]),
-    );
+      const taskMap = new Map(
+        existingTasks
+          .filter(
+            (t) =>
+              (t.ticketSource === "github" || t.ticketSource === "gitlab") && t.ticketExternalId,
+          )
+          .map((t) => [
+            `${normalizeRepoUrl(t.repoUrl)}:${t.ticketExternalId}`,
+            { taskId: t.id, state: t.state },
+          ]),
+      );
 
-    const allIssues: any[] = [];
+      const allIssues: Array<Record<string, unknown>> = [];
 
-    for (const repo of repoList) {
-      try {
-        const match = repo.repoUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
-        if (!match) continue;
-        const [, owner, repoName] = match;
+      for (const repo of repoList) {
+        try {
+          const ri = parseRepoUrl(repo.repoUrl);
+          if (!ri) continue;
 
-        const issueState = query.state ?? "open";
-        const res = await fetch(
-          `https://api.github.com/repos/${owner}/${repoName}/issues?state=${issueState}&per_page=50&sort=updated&direction=desc`,
-          { headers },
-        );
+          const { platform } = await getGitPlatformForRepo(repo.repoUrl, {
+            userId: req.user?.id,
+            server: !req.user,
+          }).catch(() => ({ platform: null }));
+          if (!platform) continue;
 
-        if (!res.ok) {
-          logger.warn({ repo: repo.fullName, status: res.status }, "Failed to fetch issues");
-          continue;
+          const issueState = query.state ?? "open";
+          const issues = await platform.listIssues(ri, { state: issueState, perPage: 50 });
+
+          for (const issue of issues) {
+            if (issue.isPullRequest) continue;
+
+            const hasOptioLabel = issue.labels.includes("optio");
+            const existingTask = taskMap.get(`${normalizeRepoUrl(repo.repoUrl)}:${issue.number}`);
+
+            allIssues.push({
+              id: issue.id,
+              number: issue.number,
+              title: issue.title,
+              body: issue.body,
+              state: issue.state,
+              url: issue.url,
+              labels: issue.labels,
+              hasOptioLabel,
+              author: issue.author || null,
+              assignee: issue.assignee,
+              repo: {
+                id: repo.id,
+                fullName: repo.fullName,
+                repoUrl: repo.repoUrl,
+              },
+              createdAt: issue.createdAt,
+              updatedAt: issue.updatedAt,
+              optioTask: existingTask ?? null,
+            });
+          }
+        } catch (err) {
+          logger.warn({ err, repo: repo.fullName }, "Error fetching issues");
         }
-
-        const issues = (await res.json()) as any[];
-
-        for (const issue of issues) {
-          // Skip pull requests (GitHub API returns PRs in issues endpoint)
-          if (issue.pull_request) continue;
-
-          const labels = (issue.labels ?? []).map((l: any) => (typeof l === "string" ? l : l.name));
-          const hasOptioLabel = labels.includes("optio");
-          const existingTask = taskMap.get(`${normalizeRepoUrl(repo.repoUrl)}:${issue.number}`);
-
-          allIssues.push({
-            id: issue.id,
-            number: issue.number,
-            title: issue.title,
-            body: issue.body ?? "",
-            state: issue.state,
-            url: issue.html_url,
-            labels,
-            hasOptioLabel,
-            author: issue.user?.login ?? null,
-            assignee: issue.assignee?.login,
-            repo: {
-              id: repo.id,
-              fullName: repo.fullName,
-              repoUrl: repo.repoUrl,
-            },
-            createdAt: issue.created_at,
-            updatedAt: issue.updated_at,
-            // Optio task info if exists
-            optioTask: existingTask ?? null,
-          });
-        }
-      } catch (err) {
-        logger.warn({ err, repo: repo.fullName }, "Error fetching issues");
       }
-    }
 
-    // Sort: unassigned first, then by updated date
-    allIssues.sort((a, b) => {
-      if (a.optioTask && !b.optioTask) return 1;
-      if (!a.optioTask && b.optioTask) return -1;
-      return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
-    });
+      allIssues.sort((a, b) => {
+        if (a.optioTask && !b.optioTask) return 1;
+        if (!a.optioTask && b.optioTask) return -1;
+        return (
+          new Date(b.updatedAt as string).getTime() - new Date(a.updatedAt as string).getTime()
+        );
+      });
 
-    reply.send({ issues: allIssues });
-  });
+      reply.send({ issues: allIssues });
+    },
+  );
 
-  // Assign an issue to Optio (add label + create task)
-  app.post("/api/issues/assign", async (req, reply) => {
-    const body = req.body as {
-      issueNumber: number;
-      repoId: string;
-      title: string;
-      body: string;
-      agentType?: string;
-    };
+  app.post(
+    "/api/issues/assign",
+    {
+      schema: {
+        operationId: "assignIssueToOptio",
+        summary: "Assign an issue to Optio",
+        description:
+          "Add the `optio` label to the issue, create a task with the " +
+          "issue body (plus comments) as its prompt, enqueue it, and post " +
+          "a confirmation comment back on the issue.",
+        tags: ["Reviews & PRs"],
+        body: assignIssueSchema,
+        response: {
+          201: TaskResponseSchema,
+          400: ErrorResponseSchema,
+          404: ErrorResponseSchema,
+          503: ErrorResponseSchema,
+        },
+      },
+    },
+    async (req, reply) => {
+      const body = req.body;
 
-    const [repo] = await db.select().from(repos).where(eq(repos.id, body.repoId));
-    if (!repo) return reply.status(404).send({ error: "Repo not found" });
-    const wsId = req.user?.workspaceId;
-    if (wsId && repo.workspaceId !== wsId) {
-      return reply.status(404).send({ error: "Repo not found" });
-    }
+      const [repo] = await db.select().from(repos).where(eq(repos.id, body.repoId));
+      if (!repo) return reply.status(404).send({ error: "Repo not found" });
+      const wsId = req.user?.workspaceId;
+      if (wsId && repo.workspaceId !== wsId) {
+        return reply.status(404).send({ error: "Repo not found" });
+      }
 
-    const githubToken = await getGitHubToken(
-      req.user ? { userId: req.user.id } : { server: true },
-    ).catch(() => null);
-    if (!githubToken) {
-      return reply.status(503).send({ error: "No GitHub token configured" });
-    }
+      const ri = parseRepoUrl(repo.repoUrl);
+      if (!ri) return reply.status(400).send({ error: "Cannot parse repo URL" });
 
-    const match = repo.repoUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
-    if (!match) return reply.status(400).send({ error: "Cannot parse repo URL" });
-    const [, owner, repoName] = match;
+      const { platform } = await getGitPlatformForRepo(repo.repoUrl, {
+        userId: req.user?.id,
+        server: !req.user,
+      }).catch(() => ({ platform: null }));
+      if (!platform) {
+        return reply.status(503).send({ error: "No git token configured" });
+      }
 
-    const headers = {
-      Authorization: `Bearer ${githubToken}`,
-      "User-Agent": "Optio",
-      Accept: "application/vnd.github.v3+json",
-      "Content-Type": "application/json",
-    };
-
-    // Add the "optio" label to the issue
-    try {
-      // Ensure the label exists
-      await fetch(`https://api.github.com/repos/${owner}/${repoName}/labels`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
+      try {
+        await platform.createLabel(ri, {
           name: "optio",
           color: "6d28d9",
           description: "Assigned to Optio AI agent",
-        }),
-      }); // Ignore errors (label may already exist)
+        });
+        await platform.addLabelsToIssue(ri, body.issueNumber, ["optio"]);
+      } catch (err) {
+        logger.warn({ err }, "Failed to add optio label");
+      }
 
-      // Add label to issue
-      await fetch(
-        `https://api.github.com/repos/${owner}/${repoName}/issues/${body.issueNumber}/labels`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ labels: ["optio"] }),
-        },
-      );
-    } catch (err) {
-      logger.warn({ err }, "Failed to add optio label");
-    }
-
-    // Fetch issue comments for context
-    let commentsSection = "";
-    try {
-      const commentsRes = await fetch(
-        `https://api.github.com/repos/${owner}/${repoName}/issues/${body.issueNumber}/comments?per_page=30`,
-        { headers },
-      );
-      if (commentsRes.ok) {
-        const issueComments = (await commentsRes.json()) as any[];
+      let commentsSection = "";
+      try {
+        const issueComments = await platform.getIssueComments(ri, body.issueNumber);
         if (issueComments.length > 0) {
           commentsSection =
             "\n\n## Comments\n\n" +
-            issueComments
-              .map(
-                (c: any) => `**${c.user?.login ?? "unknown"}** (${c.created_at}):\n${c.body ?? ""}`,
-              )
-              .join("\n\n");
+            issueComments.map((c) => `**${c.author}** (${c.createdAt}):\n${c.body}`).join("\n\n");
         }
+      } catch (err) {
+        logger.warn({ err, issueNumber: body.issueNumber }, "Failed to fetch issue comments");
       }
-    } catch (err) {
-      logger.warn({ err, issueNumber: body.issueNumber }, "Failed to fetch issue comments");
-    }
 
-    // Create the Optio task
-    const taskServiceModule = await import("../services/task-service.js");
-    const { TaskState } = await import("@optio/shared");
-    const { taskQueue } = await import("../workers/task-worker.js");
+      const ticketSource = ri.platform === "gitlab" ? "gitlab" : "github";
 
-    const task = await taskServiceModule.createTask({
-      title: body.title,
-      prompt: `${body.title}\n\n${body.body}${commentsSection}`,
-      repoUrl: repo.repoUrl,
-      agentType: body.agentType ?? repo.defaultAgentType ?? "claude-code",
-      ticketSource: "github",
-      ticketExternalId: String(body.issueNumber),
-      metadata: { issueUrl: `https://github.com/${owner}/${repoName}/issues/${body.issueNumber}` },
-      createdBy: req.user?.id,
-      workspaceId: req.user?.workspaceId ?? null,
-    });
+      const issueUrl =
+        ri.platform === "gitlab"
+          ? `https://${ri.host}/${ri.owner}/${ri.repo}/-/issues/${body.issueNumber}`
+          : `https://${ri.host}/${ri.owner}/${ri.repo}/issues/${body.issueNumber}`;
 
-    await taskServiceModule.transitionTask(task.id, TaskState.QUEUED, "issue_assigned");
-    await taskQueue.add(
-      "process-task",
-      { taskId: task.id },
-      {
-        jobId: task.id,
-        priority: task.priority ?? 100,
-        attempts: task.maxRetries + 1,
-        backoff: { type: "exponential", delay: 5000 },
-      },
-    );
+      const taskServiceModule = await import("../services/task-service.js");
+      const { TaskState } = await import("@optio/shared");
+      const { taskQueue } = await import("../workers/task-worker.js");
 
-    // Comment on the issue
-    try {
-      await fetch(
-        `https://api.github.com/repos/${owner}/${repoName}/issues/${body.issueNumber}/comments`,
+      const task = await taskServiceModule.createTask({
+        title: body.title,
+        prompt: `${body.title}\n\n${body.body}${commentsSection}`,
+        repoUrl: repo.repoUrl,
+        agentType: body.agentType ?? repo.defaultAgentType ?? "claude-code",
+        ticketSource,
+        ticketExternalId: String(body.issueNumber),
+        metadata: { issueUrl },
+        createdBy: req.user?.id,
+        workspaceId: req.user?.workspaceId ?? null,
+      });
+
+      await taskServiceModule.transitionTask(task.id, TaskState.QUEUED, "issue_assigned");
+      await taskQueue.add(
+        "process-task",
+        { taskId: task.id },
         {
-          method: "POST",
-          headers,
-          body: JSON.stringify({
-            body: `**Optio** is working on this issue.\n\nTask ID: \`${task.id}\`\nAgent: ${body.agentType ?? "claude-code"}`,
-          }),
+          jobId: task.id,
+          priority: task.priority ?? 100,
+          attempts: task.maxRetries + 1,
+          backoff: { type: "exponential", delay: 5000 },
         },
       );
-    } catch {}
 
-    reply.status(201).send({ task });
-  });
+      try {
+        await platform.createIssueComment(
+          ri,
+          body.issueNumber,
+          `**Optio** is working on this issue.\n\nTask ID: \`${task.id}\`\nAgent: ${body.agentType ?? "claude-code"}`,
+        );
+      } catch {
+        /* non-critical */
+      }
+
+      reply.status(201).send({ task });
+    },
+  );
 }

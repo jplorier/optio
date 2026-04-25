@@ -6,4 +6,6 @@ export { RecentTasks } from "./recent-tasks.js";
 export { PodsList } from "./pods-list.js";
 export { WelcomeHero } from "./welcome-hero.js";
 export { EmptyState } from "./empty-state.js";
-export type { TaskStats, UsageData, MetricsHistoryPoint } from "./types.js";
+export { AgentComparison } from "./agent-comparison.js";
+export { RecentActivity } from "./recent-activity.js";
+export type { TaskStats, StandaloneStats, UsageData, MetricsHistoryPoint } from "./types.js";

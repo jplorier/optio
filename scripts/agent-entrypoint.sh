@@ -10,9 +10,15 @@ echo "[optio] Auth mode: ${OPTIO_AUTH_MODE:-api-key}"
 git config --global user.name "Optio Agent"
 git config --global user.email "optio-agent@noreply.github.com"
 
-# Authenticate GitHub CLI
-echo "${GITHUB_TOKEN}" | gh auth login --with-token
-echo "[optio] GitHub CLI authenticated"
+# Authenticate CLI tools
+if [ -n "${GITHUB_TOKEN:-}" ]; then
+  echo "${GITHUB_TOKEN}" | gh auth login --with-token
+  echo "[optio] GitHub CLI authenticated"
+fi
+if [ -n "${GITLAB_TOKEN:-}" ] && command -v glab >/dev/null 2>&1; then
+  glab auth login --hostname "${GITLAB_HOST:-gitlab.com}" --token "${GITLAB_TOKEN}"
+  echo "[optio] GitLab CLI authenticated"
+fi
 
 # Clone repo
 cd /workspace
@@ -36,6 +42,9 @@ for f in files:
         fh.write(f['content'])
     if f.get('executable'):
         os.chmod(f['path'], 0o755)
+    elif f.get('sensitive'):
+        # For sensitive files (service account keys, credentials), set restrictive permissions
+        os.chmod(f['path'], 0o600)
     print(f'  wrote {f[\"path\"]}')
 "
 fi
@@ -53,6 +62,28 @@ case "${OPTIO_AGENT_TYPE}" in
         echo "[optio] WARNING: Token proxy not reachable at ${OPTIO_API_URL}"
       fi
       # Unset API key so Claude Code uses the apiKeyHelper
+      unset ANTHROPIC_API_KEY 2>/dev/null || true
+    elif [ "${OPTIO_AUTH_MODE:-api-key}" = "vertex-ai" ]; then
+      echo "[optio] Using Vertex AI (Google Cloud)"
+      # Validate required env vars for Vertex AI
+      if [ -z "${ANTHROPIC_VERTEX_PROJECT_ID:-}" ]; then
+        echo "[optio] ERROR: ANTHROPIC_VERTEX_PROJECT_ID is required for Vertex AI mode"
+        echo "[optio] Set this via the Vertex AI section of the setup wizard at /setup"
+        exit 1
+      fi
+      if [ -z "${CLOUD_ML_REGION:-}" ]; then
+        echo "[optio] ERROR: CLOUD_ML_REGION is required for Vertex AI mode"
+        echo "[optio] Set this via the Vertex AI section of the setup wizard at /setup"
+        exit 1
+      fi
+      echo "[optio] GCP Project: ${ANTHROPIC_VERTEX_PROJECT_ID}"
+      echo "[optio] Region: ${CLOUD_ML_REGION}"
+      if [ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]; then
+        echo "[optio] Using service account key at: ${GOOGLE_APPLICATION_CREDENTIALS}"
+      else
+        echo "[optio] Using workload identity (no service account key provided)"
+      fi
+      # Unset API key so Claude Code uses Vertex AI
       unset ANTHROPIC_API_KEY 2>/dev/null || true
     else
       echo "[optio] Using API key"
@@ -78,6 +109,25 @@ case "${OPTIO_AGENT_TYPE}" in
       COPILOT_FLAGS="${COPILOT_FLAGS} --effort ${COPILOT_EFFORT}"
     fi
     copilot ${COPILOT_FLAGS} -p "${OPTIO_PROMPT}"
+    ;;
+  opencode)
+    echo "[optio] Running OpenCode (experimental)..."
+    OPENCODE_FLAGS="run --format json"
+    if [ -n "${OPTIO_OPENCODE_MODEL:-}" ]; then
+      OPENCODE_FLAGS="${OPENCODE_FLAGS} --model ${OPTIO_OPENCODE_MODEL}"
+    fi
+    if [ -n "${OPTIO_OPENCODE_AGENT:-}" ]; then
+      OPENCODE_FLAGS="${OPENCODE_FLAGS} --agent ${OPTIO_OPENCODE_AGENT}"
+    fi
+    opencode ${OPENCODE_FLAGS} "${OPTIO_PROMPT}"
+    ;;
+  gemini)
+    echo "[optio] Running Google Gemini..."
+    GEMINI_FLAGS="--output-format stream-json --approval-mode yolo"
+    if [ -n "${OPTIO_GEMINI_MODEL:-}" ]; then
+      GEMINI_FLAGS="${GEMINI_FLAGS} -m ${OPTIO_GEMINI_MODEL}"
+    fi
+    gemini ${GEMINI_FLAGS} -p "${OPTIO_PROMPT}"
     ;;
   *)
     echo "[optio] Unknown agent type: ${OPTIO_AGENT_TYPE}"

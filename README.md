@@ -1,13 +1,21 @@
 # Optio
 
-**Workflow orchestration for AI coding agents, from task to merged PR.**
+**Workflow orchestration for AI coding agents — from ticket to merged PR, and beyond.**
 
 [![CI](https://github.com/jonwiggins/optio/actions/workflows/ci.yml/badge.svg)](https://github.com/jonwiggins/optio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-Optio turns coding tasks into merged pull requests — without human babysitting. Submit a task (manually, from a GitHub Issue, Linear, Jira, or Notion), and Optio handles the rest: provisions an isolated environment, runs an AI agent, opens a PR, monitors CI, triggers code review, auto-fixes failures, and merges when everything passes.
+Optio has one user-facing concept — a **Task** — with one attribute that flips the pipeline behind it: does the task have a repo?
 
-The feedback loop is what makes it different. When CI fails, the agent is automatically resumed with the failure context. When a reviewer requests changes, the agent picks up the review comments and pushes a fix. When everything passes, the PR is squash-merged and the issue is closed. You describe the work; Optio drives it to completion.
+- **Repo Tasks** — turn tickets into merged pull requests. Submit a task (manually, from a GitHub Issue, Linear, Jira, or Notion), and Optio provisions an isolated environment, runs an AI agent, opens a PR, monitors CI, triggers code review, auto-fixes failures, and merges when everything passes.
+- **Standalone Tasks** — run reusable, parameterized agent work with no repo checkout. Generate reports, triage alerts, audit dependencies, query a database, post to Slack — anything that doesn't need to land as a PR.
+- **Connections** — give your agents access to external services. Connect Notion, Slack, Linear, GitHub, PostgreSQL, Sentry, or any MCP-compatible server, and Optio injects them into agent pods at runtime.
+
+Both flavors share the same trigger types (manual, schedule, webhook, ticket), the same prompt-template engine, the same real-time log streaming, and the same `/api/tasks` HTTP surface. The difference is whether the agent runs against a worktree or in an empty pod. See [docs/tasks.md](./docs/tasks.md) for the full breakdown.
+
+The feedback loop is what makes Repo Tasks different. When CI fails, the agent is automatically resumed with the failure context. When a reviewer requests changes, the agent picks up the review comments and pushes a fix. When everything passes, the PR is squash-merged and the issue is closed. You describe the work; Optio drives it to completion.
+
+Under the hood, all task and pod state changes flow through a [Kubernetes-style reconciliation control plane](./docs/reconciliation.md) — a pure-decision-plus-CAS-executor loop with periodic resync that keeps runs from getting stuck on lost events.
 
 <p align="center">
   <img src="docs/screenshots/overview.png" alt="Optio dashboard showing 10 running tasks, 19 completed, with Claude Max usage, active pods, and recent task activity" width="100%"/>
@@ -20,6 +28,8 @@ The feedback loop is what makes it different. When CI fails, the agent is automa
 <p align="center"><em>Task detail — live-streamed agent output with pipeline progress, PR tracking, and cost breakdown</em></p>
 
 ## How It Works
+
+### Repo Tasks — ticket to merged PR
 
 ```
 You create a task          Optio runs the agent           Optio closes the loop
@@ -40,13 +50,37 @@ You create a task          Optio runs the agent           Optio closes the loop
 5. **Feedback loop** — CI failures, merge conflicts, and review feedback automatically resume the agent with context
 6. **Completion** — PR is squash-merged, linked issues are closed, costs are recorded
 
+### Standalone Tasks — reusable agent work without a repo
+
+```
+You define a task           Optio triggers it              Optio runs & tracks
+────────────────────        ─────────────────              ───────────────────
+
+  Prompt template           Manual (UI / API)              Provision isolated pod
+  {{PARAM}} variables  ──→  Cron schedule          ──→     Execute agent with params
+  Agent + model config      Webhook from external          Stream logs in real time
+  Budget & retry limits     Ticket events                  Track cost & token usage
+                                                           Auto-retry on failure
+```
+
+Standalone Tasks run an agent in an isolated pod with no git checkout. Define a prompt template with `{{PARAM}}` placeholders, configure triggers (manual, cron schedule, webhook, or ticket), and let Optio handle execution, retries, and cost tracking. Repo Tasks can also be saved as **blueprints** with the same trigger types — see [docs/tasks.md](./docs/tasks.md).
+
+### Connections — extend agent capabilities
+
+Connections give your agents access to external tools and data at runtime. Configure a provider once, assign it to repos or agents, and Optio injects MCP servers into agent pods automatically.
+
+**Built-in providers:** Notion, GitHub, Slack, Linear, PostgreSQL, Sentry, Filesystem, plus custom MCP servers and HTTP APIs.
+
 ## Key Features
 
 - **Autonomous feedback loop** — auto-resumes the agent on CI failures, merge conflicts, and review feedback; auto-merges when everything passes
+- **Repo Tasks and Standalone Tasks** — one Task concept, two pipelines. Repo Tasks land code via PRs; Standalone Tasks run agents in empty pods for reports, triage, and ops. Both share triggers (manual / schedule / webhook / ticket), templates, and the unified `/api/tasks` HTTP layer
+- **Connections** — plug external services (Notion, Slack, Linear, GitHub, PostgreSQL, Sentry, custom MCP servers) into agent pods with fine-grained access control per repo and agent type
 - **Pod-per-repo architecture** — one long-lived Kubernetes pod per repo with git worktree isolation, multi-pod scaling, and idle cleanup
 - **Code review agent** — automatically launches a review agent as a subtask, with a separate prompt and model
-- **Per-repo configuration** — model, prompt template, container image, concurrency limits, and setup commands, all tunable per repository
+- **Multi-agent support** — run Claude Code, OpenAI Codex, GitHub Copilot, Google Gemini, or OpenCode with per-repo model and prompt configuration
 - **GitHub Issues, Linear, Jira, and Notion intake** — assign issues to Optio from the UI or via ticket sync
+- **Reconciliation control plane** — K8s-style pure-decision-plus-CAS-executor loop with periodic resync; keeps tasks and pods from getting stuck on lost events. Ships in shadow mode behind a feature flag
 - **Real-time dashboard** — live log streaming, pipeline progress, cost analytics, and cluster health
 
 ## Architecture
@@ -59,17 +93,21 @@ You create a task          Optio runs the agent           Optio closes the loop
 │              │←ws──│  Workers:          │     │  │ clone + sleep       │  │
 │  Dashboard   │     │  ├─ Task Queue     │     │  │ ├─ worktree 1  ⚡    │  │
 │  Tasks       │     │  ├─ PR Watcher     │     │  │ ├─ worktree 2  ⚡    │  │
-│  Repos       │     │  ├─ Health Mon     │     │  │ └─ worktree N  ⚡    │  │
-│  Cluster     │     │  └─ Ticket Sync    │     │  └─────────────────────┘  │
-│  Costs       │     │                    │     │  ┌── Repo Pod B ───────┐  │
-│  Issues      │     │  Services:         │     │  │ clone + sleep       │  │
-│              │     │  ├─ Repo Pool      │     │  │ └─ worktree 1  ⚡    │  │
-│              │     │  ├─ Review Agent   │     │  └─────────────────────┘  │
+│  Repos       │     │  ├─ Workflow Queue │     │  │ └─ worktree N  ⚡    │  │
+│  Standalone  │     │  ├─ Reconciler     │     │  └─────────────────────┘  │
+│  Connections │     │  ├─ Health Mon     │     │  ┌── Standalone Pod ────┐ │
+│  Cluster     │     │  └─ Ticket Sync    │     │  │ isolated agent  ⚡    │ │
+│  Costs       │     │                    │     │  └─────────────────────┘  │
+│              │     │  Services:         │     │                           │
+│              │     │  ├─ Repo Pool      │     │                           │
+│              │     │  ├─ Workflow Pool  │     │  MCP servers injected via │
+│              │     │  ├─ Connections    │     │  Connections at runtime    │
+│              │     │  ├─ Review Agent   │     │                           │
 │              │     │  └─ Auth/Secrets   │     │                           │
 └──────────────┘     └─────────┬──────────┘     └───────────────────────────┘
-                               │                  ⚡ = Claude Code / Codex / Copilot
+                               │                  ⚡ = Claude / Codex / Copilot / Gemini
                         ┌──────┴──────┐
-                        │  Postgres   │  Tasks, logs, events, secrets, repos
+                        │  Postgres   │  Tasks, workflows, connections, logs, secrets
                         │  Redis      │  Job queue, pub/sub, live streaming
                         └─────────────┘
 ```
@@ -130,6 +168,7 @@ You create a task          Optio runs the agent           Optio closes the loop
 
 ### Prerequisites
 
+- **Kubernetes v1.33+** — required for post-quantum TLS on the control plane. v1.33 is the first release built on Go 1.24, which enables hybrid X25519MLKEM768 key exchange automatically. Earlier versions run but do not negotiate post-quantum TLS between Optio and the Kubernetes API server.
 - **Docker Desktop** with Kubernetes enabled (Settings → Kubernetes → Enable)
 - **Node.js 22+** and **pnpm 10+**
 - **Helm** (`brew install helm`)
@@ -168,14 +207,18 @@ helm uninstall optio -n optio
 
 ```
 apps/
-  api/          Fastify API server, BullMQ workers, WebSocket endpoints,
-                review service, subtask system, OAuth providers
-  web/          Next.js dashboard with real-time streaming, cost analytics
+  api/          Fastify API server, BullMQ workers (incl. reconciler),
+                WebSocket endpoints, standalone-task engine, connection service,
+                review service, OAuth
+  web/          Next.js dashboard with real-time streaming, cost analytics,
+                Repo / Standalone Task management, connection catalog
+  site/         Documentation site (GitHub Pages)
+  cli/          Terminal client for Optio
 
 packages/
   shared/             Types, task state machine, prompt templates, error classifier
   container-runtime/  Kubernetes pod lifecycle, exec, log streaming
-  agent-adapters/     Claude Code + Codex + Copilot prompt/auth adapters
+  agent-adapters/     Claude Code + Codex + Copilot + Gemini + OpenCode adapters
   ticket-providers/   GitHub Issues, Linear, Jira, Notion
 
 images/               Container Dockerfiles: base, node, python, go, rust, full
@@ -253,10 +296,41 @@ The secret must contain these keys: `GITHUB_APP_ID`, `GITHUB_APP_CLIENT_ID`, `GI
 
 ## Production Deployment
 
-Optio ships with a Helm chart for production Kubernetes clusters:
+Optio ships with a Helm chart for production Kubernetes clusters. Three installation methods are available:
+
+### Install from Helm repository (recommended)
 
 ```bash
-helm install optio helm/optio \
+helm repo add optio https://jonwiggins.github.io/optio
+helm repo update
+helm install optio optio/optio -n optio --create-namespace \
+  --set encryption.key=$(openssl rand -hex 32) \
+  --set postgresql.enabled=false \
+  --set externalDatabase.url="postgres://..." \
+  --set redis.enabled=false \
+  --set externalRedis.url="redis://..." \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=optio.example.com
+```
+
+### Install from OCI registry
+
+```bash
+helm install optio oci://ghcr.io/jonwiggins/optio -n optio --create-namespace \
+  --set encryption.key=$(openssl rand -hex 32) \
+  --set postgresql.enabled=false \
+  --set externalDatabase.url="postgres://..." \
+  --set redis.enabled=false \
+  --set externalRedis.url="redis://..." \
+  --set ingress.enabled=true \
+  --set ingress.hosts[0].host=optio.example.com
+```
+
+### Install from source
+
+```bash
+git clone https://github.com/jonwiggins/optio.git && cd optio
+helm install optio helm/optio -n optio --create-namespace \
   --set encryption.key=$(openssl rand -hex 32) \
   --set postgresql.enabled=false \
   --set externalDatabase.url="postgres://..." \
@@ -270,18 +344,18 @@ See the [Helm chart values](helm/optio/values.yaml) for full configuration optio
 
 ## Tech Stack
 
-| Layer    | Technology                                                       |
-| -------- | ---------------------------------------------------------------- |
-| Monorepo | Turborepo + pnpm                                                 |
-| API      | Fastify 5, Drizzle ORM, BullMQ                                   |
-| Web      | Next.js 15, Tailwind CSS 4, Zustand                              |
-| Database | PostgreSQL 16                                                    |
-| Queue    | Redis 7 + BullMQ                                                 |
-| Runtime  | Kubernetes (Docker Desktop for local dev)                        |
-| Deploy   | Helm chart                                                       |
-| Auth     | Multi-provider OAuth (GitHub, Google, GitLab)                    |
-| CI       | GitHub Actions (format, typecheck, test, build-web, build-image) |
-| Agents   | Claude Code, OpenAI Codex, GitHub Copilot                        |
+| Layer    | Technology                                                         |
+| -------- | ------------------------------------------------------------------ |
+| Monorepo | Turborepo + pnpm                                                   |
+| API      | Fastify 5, Drizzle ORM, BullMQ                                     |
+| Web      | Next.js 15, Tailwind CSS 4, Zustand                                |
+| Database | PostgreSQL 16                                                      |
+| Queue    | Redis 7 + BullMQ                                                   |
+| Runtime  | Kubernetes (Docker Desktop for local dev)                          |
+| Deploy   | Helm chart                                                         |
+| Auth     | Multi-provider OAuth (GitHub, Google, GitLab)                      |
+| CI       | GitHub Actions (format, typecheck, test, build-web, build-image)   |
+| Agents   | Claude Code, OpenAI Codex, GitHub Copilot, Google Gemini, OpenCode |
 
 ## Contributing
 

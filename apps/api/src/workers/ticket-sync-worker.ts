@@ -1,10 +1,10 @@
 import { Queue, Worker } from "bullmq";
+import { parseIntEnv } from "@optio/shared";
 import { logger } from "../logger.js";
 
-const connectionOpts = {
-  url: process.env.REDIS_URL ?? "redis://localhost:6379",
-  maxRetriesPerRequest: null,
-};
+import { getBullMQConnectionOptions } from "../services/redis-config.js";
+
+const connectionOpts = getBullMQConnectionOptions();
 
 export const ticketSyncQueue = new Queue("ticket-sync", { connection: connectionOpts });
 
@@ -15,7 +15,7 @@ export function startTicketSyncWorker(syncFn: () => Promise<unknown>) {
     {},
     {
       repeat: {
-        every: parseInt(process.env.OPTIO_TICKET_SYNC_INTERVAL ?? "60000", 10), // default: 60s
+        every: parseIntEnv("OPTIO_TICKET_SYNC_INTERVAL", 60000), // default: 60s
       },
     },
   );

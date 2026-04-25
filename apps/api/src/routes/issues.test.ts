@@ -1,12 +1,29 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import Fastify from "fastify";
 import type { FastifyInstance } from "fastify";
+import { buildRouteTestApp } from "../test-utils/build-route-test-app.js";
 
 // ─── Mocks ───
 
-const mockGetGitHubToken = vi.fn();
-vi.mock("../services/github-token-service.js", () => ({
-  getGitHubToken: (...args: unknown[]) => mockGetGitHubToken(...args),
+const mockPlatform = {
+  type: "github",
+  listIssues: vi.fn().mockResolvedValue([]),
+  createLabel: vi.fn().mockResolvedValue(undefined),
+  addLabelsToIssue: vi.fn().mockResolvedValue(undefined),
+  getIssueComments: vi.fn().mockResolvedValue([]),
+  createIssueComment: vi.fn().mockResolvedValue(undefined),
+};
+const mockGetGitPlatformForRepo = vi.fn().mockResolvedValue({
+  platform: mockPlatform,
+  ri: {
+    platform: "github",
+    host: "github.com",
+    owner: "org",
+    repo: "repo",
+    apiBaseUrl: "https://api.github.com",
+  },
+});
+vi.mock("../services/git-token-service.js", () => ({
+  getGitPlatformForRepo: (...args: unknown[]) => mockGetGitPlatformForRepo(...args),
 }));
 
 const mockDbSelect = vi.fn();
@@ -50,15 +67,7 @@ import { issueRoutes } from "./issues.js";
 // ─── Helpers ───
 
 async function buildTestApp(): Promise<FastifyInstance> {
-  const app = Fastify({ logger: false });
-  app.decorateRequest("user", undefined as any);
-  app.addHook("preHandler", (req, _reply, done) => {
-    (req as any).user = { id: "user-1", workspaceId: "ws-1" };
-    done();
-  });
-  await issueRoutes(app);
-  await app.ready();
-  return app;
+  return buildRouteTestApp(issueRoutes);
 }
 
 describe("GET /api/issues", () => {
@@ -73,17 +82,34 @@ describe("GET /api/issues", () => {
     vi.unstubAllGlobals();
   });
 
-  it("returns 503 when no GitHub token is configured", async () => {
-    mockGetGitHubToken.mockResolvedValue(null);
+  it("returns empty issues when no repos exist", async () => {
+    const repoChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([]),
+    };
+    const taskChain = {
+      from: vi.fn().mockReturnThis(),
+      where: vi.fn().mockResolvedValue([]),
+    };
+    mockDbSelect.mockReturnValueOnce(repoChain).mockReturnValueOnce(taskChain);
 
     const res = await app.inject({ method: "GET", url: "/api/issues" });
 
-    expect(res.statusCode).toBe(503);
-    expect(res.json().error).toContain("No GitHub token");
+    expect(res.statusCode).toBe(200);
+    expect(res.json().issues).toEqual([]);
   });
 
   it("includes author username in issue response", async () => {
-    mockGetGitHubToken.mockResolvedValue("ghp_token");
+    mockGetGitPlatformForRepo.mockResolvedValue({
+      platform: mockPlatform,
+      ri: {
+        platform: "github",
+        host: "github.com",
+        owner: "org",
+        repo: "repo",
+        apiBaseUrl: "https://api.github.com",
+      },
+    });
 
     // repos query returns one repo
     const repoChain = {
@@ -104,28 +130,23 @@ describe("GET /api/issues", () => {
     };
     mockDbSelect.mockReturnValueOnce(repoChain).mockReturnValueOnce(taskChain);
 
-    // Mock GitHub API response
-    const mockIssue = {
-      id: 1,
-      number: 42,
-      title: "Test issue",
-      body: "Test body",
-      state: "open",
-      html_url: "https://github.com/org/repo/issues/42",
-      labels: [],
-      user: { login: "testauthor" },
-      assignee: null,
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-02T00:00:00Z",
-    };
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve([mockIssue]),
-      }),
-    );
+    // Mock platform listIssues response
+    mockPlatform.listIssues.mockResolvedValue([
+      {
+        id: 1,
+        number: 42,
+        title: "Test issue",
+        body: "Test body",
+        state: "open",
+        url: "https://github.com/org/repo/issues/42",
+        labels: [],
+        author: "testauthor",
+        assignee: null,
+        isPullRequest: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-02T00:00:00Z",
+      },
+    ]);
 
     const res = await app.inject({ method: "GET", url: "/api/issues" });
 
@@ -137,7 +158,16 @@ describe("GET /api/issues", () => {
   });
 
   it("returns null author when issue has no user", async () => {
-    mockGetGitHubToken.mockResolvedValue("ghp_token");
+    mockGetGitPlatformForRepo.mockResolvedValue({
+      platform: mockPlatform,
+      ri: {
+        platform: "github",
+        host: "github.com",
+        owner: "org",
+        repo: "repo",
+        apiBaseUrl: "https://api.github.com",
+      },
+    });
 
     const repoChain = {
       from: vi.fn().mockReturnThis(),
@@ -156,27 +186,22 @@ describe("GET /api/issues", () => {
     };
     mockDbSelect.mockReturnValueOnce(repoChain).mockReturnValueOnce(taskChain);
 
-    const mockIssue = {
-      id: 2,
-      number: 43,
-      title: "No author issue",
-      body: "",
-      state: "open",
-      html_url: "https://github.com/org/repo/issues/43",
-      labels: [],
-      user: null,
-      assignee: null,
-      created_at: "2026-01-01T00:00:00Z",
-      updated_at: "2026-01-02T00:00:00Z",
-    };
-
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve([mockIssue]),
-      }),
-    );
+    mockPlatform.listIssues.mockResolvedValue([
+      {
+        id: 2,
+        number: 43,
+        title: "No author issue",
+        body: "",
+        state: "open",
+        url: "https://github.com/org/repo/issues/43",
+        labels: [],
+        author: "",
+        assignee: null,
+        isPullRequest: false,
+        createdAt: "2026-01-01T00:00:00Z",
+        updatedAt: "2026-01-02T00:00:00Z",
+      },
+    ]);
 
     const res = await app.inject({ method: "GET", url: "/api/issues" });
 
@@ -187,7 +212,16 @@ describe("GET /api/issues", () => {
   });
 
   it("returns empty issues when no repos are configured", async () => {
-    mockGetGitHubToken.mockResolvedValue("ghp_token");
+    mockGetGitPlatformForRepo.mockResolvedValue({
+      platform: mockPlatform,
+      ri: {
+        platform: "github",
+        host: "github.com",
+        owner: "org",
+        repo: "repo",
+        apiBaseUrl: "https://api.github.com",
+      },
+    });
 
     // repos query returns empty
     const repoChain = {
@@ -243,7 +277,7 @@ describe("POST /api/issues/assign", () => {
     expect(res.statusCode).toBe(404);
   });
 
-  it("returns 503 when no GitHub token is configured", async () => {
+  it("returns 503 when no git token is configured", async () => {
     const chainable = {
       from: vi.fn().mockReturnThis(),
       where: vi.fn().mockResolvedValue([
@@ -255,7 +289,7 @@ describe("POST /api/issues/assign", () => {
       ]),
     };
     mockDbSelect.mockReturnValue(chainable);
-    mockGetGitHubToken.mockResolvedValue(null);
+    mockGetGitPlatformForRepo.mockRejectedValue(new Error("No token"));
 
     const res = await app.inject({
       method: "POST",
@@ -269,7 +303,7 @@ describe("POST /api/issues/assign", () => {
     });
 
     expect(res.statusCode).toBe(503);
-    expect(res.json().error).toContain("No GitHub token");
+    expect(res.json().error).toContain("No git token");
   });
 
   it("returns 404 for repo in different workspace", async () => {

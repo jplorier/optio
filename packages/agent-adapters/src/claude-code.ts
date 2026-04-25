@@ -30,6 +30,14 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       OPTIO_AUTH_MODE: authMode,
     };
 
+    // Pass model info as env vars so buildAgentCommand can add --model flag
+    if (input.claudeModel) {
+      env.OPTIO_CLAUDE_MODEL = input.claudeModel;
+    }
+    if (input.claudeContextWindow) {
+      env.OPTIO_CLAUDE_CONTEXT_WINDOW = input.claudeContextWindow;
+    }
+
     const requiredSecrets: string[] = [];
     const setupFiles: AgentContainerConfig["setupFiles"] = [];
 
@@ -50,6 +58,26 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       const apiUrl = input.optioApiUrl ?? "http://host.docker.internal:4000";
       env.OPTIO_API_URL = apiUrl;
       // CLAUDE_CODE_OAUTH_TOKEN will be injected by the task worker after fetching from auth proxy
+    } else if (authMode === "vertex-ai") {
+      // Vertex AI: authenticate via Google ADC, route through Google Cloud
+      // Claude Code reads CLAUDE_CODE_USE_VERTEX=1 + ANTHROPIC_VERTEX_PROJECT_ID + CLOUD_ML_REGION
+      env.CLAUDE_CODE_USE_VERTEX = "1";
+      if (input.googleCloudProject) {
+        env.ANTHROPIC_VERTEX_PROJECT_ID = input.googleCloudProject;
+      }
+      if (input.googleCloudLocation) {
+        env.CLOUD_ML_REGION = input.googleCloudLocation;
+      }
+      // If a service account key was provided, write it as a setup file and point ADC at it
+      if (input.claudeVertexServiceAccountKey) {
+        setupFiles.push({
+          path: "/home/agent/.config/gcloud/gsa-key.json",
+          content: input.claudeVertexServiceAccountKey,
+          sensitive: true, // Apply chmod 600 for security
+        });
+        env.GOOGLE_APPLICATION_CREDENTIALS = "/home/agent/.config/gcloud/gsa-key.json";
+      }
+      // When no key is provided, rely on workload identity (GKE) or pre-mounted ADC
     }
 
     // Claude Code settings
@@ -81,11 +109,15 @@ export class ClaudeCodeAdapter implements AgentAdapter {
   }
 
   parseResult(exitCode: number, logs: string): AgentResult {
-    const prMatch = logs.match(/https:\/\/github\.com\/[^\s"]+\/pull\/\d+/);
+    // Match both GitHub PR URLs and GitLab MR URLs (web URLs only, not API URLs)
+    const prMatch = logs.match(
+      /https:\/\/(?![\w.-]+\/api\/)[^\s"]+\/(?:pull\/\d+|-\/merge_requests\/\d+)/,
+    );
     const costMatch = logs.match(/"total_cost_usd":\s*([\d.]+)/);
 
-    // Extract error, token usage, and model from Claude's NDJSON events
+    // Extract error, token usage, model, and result text from Claude's NDJSON events
     let error: string | undefined;
+    let resultText: string | undefined;
     let totalInputTokens = 0;
     let totalOutputTokens = 0;
     let model: string | undefined;
@@ -101,16 +133,24 @@ export class ClaudeCodeAdapter implements AgentAdapter {
 
         // Accumulate token usage from assistant messages
         if (event.type === "assistant" && event.message?.usage) {
-          totalInputTokens += event.message.usage.input_tokens || 0;
-          totalOutputTokens += event.message.usage.output_tokens || 0;
+          const usage = event.message.usage;
+          totalInputTokens +=
+            (usage.input_tokens || 0) +
+            (usage.cache_creation_input_tokens || 0) +
+            (usage.cache_read_input_tokens || 0);
+          totalOutputTokens += usage.output_tokens || 0;
           if (!model && event.message.model) {
             model = event.message.model;
           }
         }
 
-        // Extract error from result event
-        if (exitCode !== 0 && event.type === "result" && event.is_error && event.result) {
-          error = event.result;
+        // Extract result text from the final result event
+        if (event.type === "result" && event.result) {
+          if (event.is_error && exitCode !== 0) {
+            error = event.result;
+          } else if (!event.is_error) {
+            resultText = event.result;
+          }
         }
       } catch {
         // Not JSON, skip
@@ -121,6 +161,23 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       error = `Exit code: ${exitCode}`;
     }
 
+    // Use the agent's actual result text as the summary when available.
+    // When the agent reports an explicit error, surface it in the summary
+    // so users see what went wrong without digging into raw logs.
+    let summary: string;
+    const hasStructuredError = exitCode !== 0 && error && error !== `Exit code: ${exitCode}`;
+    if (hasStructuredError) {
+      const preview = error!.length > 500 ? error!.slice(0, 500) + "…" : error!;
+      summary = `Agent error: ${preview}`;
+    } else if (exitCode !== 0) {
+      summary = `Agent exited with code ${exitCode}`;
+    } else if (resultText) {
+      // Truncate very long result texts for the summary field
+      summary = resultText.length > 2000 ? resultText.slice(0, 2000) + "…" : resultText;
+    } else {
+      summary = "Agent completed successfully";
+    }
+
     return {
       success: exitCode === 0,
       prUrl: prMatch?.[0],
@@ -128,8 +185,7 @@ export class ClaudeCodeAdapter implements AgentAdapter {
       inputTokens: totalInputTokens > 0 ? totalInputTokens : undefined,
       outputTokens: totalOutputTokens > 0 ? totalOutputTokens : undefined,
       model,
-      summary:
-        exitCode === 0 ? "Agent completed successfully" : `Agent exited with code ${exitCode}`,
+      summary,
       error,
     };
   }

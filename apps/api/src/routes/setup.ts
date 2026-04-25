@@ -1,32 +1,75 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import { z } from "zod";
 import { checkRuntimeHealth } from "../services/container-service.js";
 import { listSecrets, retrieveSecret } from "../services/secret-service.js";
 import { isSubscriptionAvailable } from "../services/auth-service.js";
-import { isGitHubAppConfigured } from "../services/github-app-service.js";
+import { isGitHubAppConfigured, getInstallationToken } from "../services/github-app-service.js";
 import { isAuthDisabled } from "../services/oauth/index.js";
+import { ErrorResponseSchema } from "../schemas/common.js";
 
-/** Rate limit config for setup POST endpoints: 5 requests per 15 minutes per IP. */
+const tokenSchema = z.object({ token: z.string().min(1) }).describe("Body with a required token");
+const gitlabTokenSchema = z
+  .object({
+    token: z.string().min(1),
+    host: z
+      .string()
+      .optional()
+      .describe("Optional self-hosted GitLab host; defaults to gitlab.com"),
+  })
+  .describe("GitLab token + optional host");
+const keySchema = z.object({ key: z.string().min(1) }).describe("Body with a required API key");
+const reposBodySchema = z
+  .object({
+    token: z
+      .string()
+      .optional()
+      .describe("Optional GitHub PAT; if omitted uses the installed GitHub App"),
+  })
+  .describe("Body for listing the authenticated user's GitHub repos");
+const validateRepoSchema = z
+  .object({
+    repoUrl: z.string().min(1),
+    token: z.string().optional(),
+  })
+  .describe("Body for validating access to a specific repo URL");
+
+const ValidationResultSchema = z
+  .object({
+    valid: z.boolean(),
+    error: z.string().optional(),
+    user: z.object({ login: z.string(), name: z.string() }).optional(),
+  })
+  .passthrough()
+  .describe("Result of an upstream credential probe");
+
+const SetupStatusResponseSchema = z
+  .object({
+    isSetUp: z.boolean(),
+    steps: z.record(z.object({ done: z.boolean(), label: z.string() })),
+  })
+  .describe("Initial setup progress summary");
+
+const ReposListResponseSchema = z
+  .object({
+    repos: z.array(z.unknown()),
+    error: z.string().optional(),
+  })
+  .describe("List of the authenticated user's repos, from the git provider");
+
 const SETUP_POST_RATE_LIMIT = {
   max: 5,
   timeWindow: "15 minutes",
 };
 
-/** Rate limit config for the status endpoint: 20 requests per minute per IP. */
 const SETUP_STATUS_RATE_LIMIT = {
   max: 20,
   timeWindow: "1 minute",
 };
 
-/**
- * Pre-handler for POST setup routes.
- *
- * When auth is enabled and the user is authenticated (i.e. setup is already
- * complete — the auth plugin only lets unauthenticated requests through when
- * setup is NOT complete), require the admin role.
- */
 const requireAdminWhenAuthenticated = async (req: FastifyRequest, reply: FastifyReply) => {
   if (isAuthDisabled()) return;
-  if (!req.user) return; // Not authenticated → setup not yet complete, allow
+  if (!req.user) return;
   if (req.user.workspaceRole !== "admin") {
     return reply.status(403).send({
       error: "Admin role required for setup operations",
@@ -39,85 +82,124 @@ function sanitizeError(err: unknown): string {
   return "An unexpected error occurred";
 }
 
-export async function setupRoutes(app: FastifyInstance) {
-  // Check if the system has been set up (secrets exist)
+export async function setupRoutes(rawApp: FastifyInstance) {
+  const app = rawApp.withTypeProvider<ZodTypeProvider>();
+
   app.get(
     "/api/setup/status",
-    { config: { rateLimit: SETUP_STATUS_RATE_LIMIT } },
+    {
+      config: { rateLimit: SETUP_STATUS_RATE_LIMIT },
+      schema: {
+        operationId: "getSetupStatus",
+        summary: "Get initial setup status",
+        description:
+          "Return whether Optio has completed its initial setup, plus a " +
+          "per-step breakdown (container runtime, git token, agent API keys, " +
+          "etc.). This endpoint is public — the frontend polls it to decide " +
+          "whether to show the setup wizard.",
+        tags: ["Setup & Settings"],
+        security: [],
+        response: { 200: SetupStatusResponseSchema },
+      },
+    },
     async (_req, reply) => {
       const secrets = await listSecrets();
       const secretNames = secrets.map((s) => s.name);
 
+      // This endpoint is public (no req.user) so it cannot decrypt
+      // workspace-scoped secrets: the AAD binding (`name|scope|workspaceId`,
+      // see #319) requires the caller's workspaceId. Inferring mode from the
+      // set of stored secret names avoids that read-after-write asymmetry.
       const hasAnthropicKey = secretNames.includes("ANTHROPIC_API_KEY");
       const hasOpenAIKey = secretNames.includes("OPENAI_API_KEY");
-      // GitHub App configured at deployment level satisfies the GitHub token requirement
-      const hasGithubToken = secretNames.includes("GITHUB_TOKEN") || isGitHubAppConfigured();
+      const hasGitToken =
+        secretNames.includes("GITHUB_TOKEN") ||
+        isGitHubAppConfigured() ||
+        secretNames.includes("GITLAB_TOKEN");
 
-      // Check if using Max subscription or OAuth token mode
-      let usingSubscription = false;
-      let hasOauthToken = false;
-      try {
-        const authMode = await retrieveSecret("CLAUDE_AUTH_MODE").catch(() => null);
-        if (authMode === "max-subscription") {
-          usingSubscription = isSubscriptionAvailable();
-        }
-        if (authMode === "oauth-token") {
-          hasOauthToken = secretNames.includes("CLAUDE_CODE_OAUTH_TOKEN");
-        }
-      } catch {}
+      const usingSubscription = isSubscriptionAvailable();
+      const hasOauthToken = secretNames.includes("CLAUDE_CODE_OAUTH_TOKEN");
+      // Claude Vertex AI is detected by Claude-specific GCP project secret
+      const hasClaudeVertexAi = secretNames.includes("CLAUDE_VERTEX_PROJECT_ID");
 
-      // Check if using Codex app-server mode (no API key needed)
-      let hasCodexAppServer = false;
-      try {
-        const codexAuthMode = await retrieveSecret("CODEX_AUTH_MODE").catch(() => null);
-        if (codexAuthMode === "app-server") {
-          hasCodexAppServer = secretNames.includes("CODEX_APP_SERVER_URL");
-        }
-      } catch {}
+      const hasCodexAppServer = secretNames.includes("CODEX_APP_SERVER_URL");
 
-      // Check for Copilot token
       const hasCopilotToken = secretNames.includes("COPILOT_GITHUB_TOKEN");
+
+      const hasOpencodeBaseUrl = secretNames.includes("OPENCODE_DEFAULT_BASE_URL");
+      const opencodeConfigured = hasAnthropicKey || hasOpenAIKey || hasOpencodeBaseUrl;
+
+      const hasGeminiKey = secretNames.includes("GEMINI_API_KEY");
+      // Vertex AI mode is signaled by GOOGLE_CLOUD_PROJECT (written by the
+      // wizard alongside GEMINI_AUTH_MODE="vertex-ai") — distinct from API
+      // key mode.
+      const hasGeminiVertexAi = secretNames.includes("GOOGLE_CLOUD_PROJECT");
 
       const hasAnyAgentKey =
         hasAnthropicKey ||
         hasOpenAIKey ||
         usingSubscription ||
         hasOauthToken ||
+        hasClaudeVertexAi ||
         hasCodexAppServer ||
-        hasCopilotToken;
+        hasCopilotToken ||
+        hasGeminiKey ||
+        hasGeminiVertexAi ||
+        hasOpencodeBaseUrl;
 
       let runtimeHealthy = false;
       try {
         runtimeHealthy = await checkRuntimeHealth();
-      } catch {}
+      } catch {
+        /* non-critical */
+      }
 
-      const isSetUp = hasAnyAgentKey && hasGithubToken && runtimeHealthy;
+      // Runtime health is a separate step for the wizard; it must not gate
+      // isSetUp, or a container-runtime blip traps users in the wizard.
+      const isSetUp = hasAnyAgentKey && hasGitToken;
 
       reply.send({
         isSetUp,
         steps: {
           runtime: { done: runtimeHealthy, label: "Container runtime" },
-          githubToken: { done: hasGithubToken, label: "GitHub token" },
-          anthropicKey: { done: hasAnthropicKey, label: "Anthropic API key" },
+          gitToken: { done: hasGitToken, label: "Git provider token" },
+          anthropicKey: {
+            done: hasAnthropicKey || usingSubscription || hasOauthToken || hasClaudeVertexAi,
+            label: "Claude credentials",
+          },
           openaiKey: { done: hasOpenAIKey, label: "OpenAI API key" },
           codexAppServer: { done: hasCodexAppServer, label: "Codex app-server" },
           copilotToken: { done: hasCopilotToken, label: "GitHub Copilot token" },
+          opencodeConfigured: {
+            done: opencodeConfigured,
+            label: "OpenCode configured",
+          },
+          geminiKey: { done: hasGeminiKey || hasGeminiVertexAi, label: "Google Gemini API key" },
           anyAgentKey: { done: hasAnyAgentKey, label: "At least one agent API key" },
         },
       });
     },
   );
 
-  // Validate a GitHub token by trying to get the authenticated user
   app.post(
     "/api/setup/validate/github-token",
     {
       config: { rateLimit: SETUP_POST_RATE_LIMIT },
       preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "validateGitHubToken",
+        summary: "Validate a GitHub personal access token",
+        description:
+          "Probe `api.github.com/user` with the provided token to verify it " +
+          "works. Rate limited to 5/15min per IP. Publicly accessible during " +
+          "initial setup, admin-only afterward.",
+        tags: ["Setup & Settings"],
+        body: tokenSchema,
+        response: { 200: ValidationResultSchema, 400: ErrorResponseSchema },
+      },
     },
     async (req, reply) => {
-      const { token } = req.body as { token: string };
-      if (!token) return reply.status(400).send({ valid: false, error: "Token is required" });
+      const { token } = req.body;
 
       try {
         const res = await fetch("https://api.github.com/user", {
@@ -135,16 +217,55 @@ export async function setupRoutes(app: FastifyInstance) {
     },
   );
 
-  // Validate an Anthropic API key
+  app.post(
+    "/api/setup/validate/gitlab-token",
+    {
+      config: { rateLimit: SETUP_POST_RATE_LIMIT },
+      preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "validateGitLabToken",
+        summary: "Validate a GitLab token",
+        description: "Probe GitLab's /user endpoint with the provided token and optional host.",
+        tags: ["Setup & Settings"],
+        body: gitlabTokenSchema,
+        response: { 200: ValidationResultSchema, 400: ErrorResponseSchema },
+      },
+    },
+    async (req, reply) => {
+      const { token, host } = req.body;
+      const gitlabHost = host ?? "gitlab.com";
+      try {
+        const res = await fetch(`https://${gitlabHost}/api/v4/user`, {
+          headers: { "PRIVATE-TOKEN": token, "User-Agent": "Optio" },
+        });
+        if (!res.ok) {
+          return reply.send({ valid: false, error: `GitLab returned ${res.status}` });
+        }
+        const user = (await res.json()) as { username: string; name: string };
+        reply.send({ valid: true, user: { login: user.username, name: user.name } });
+      } catch (err) {
+        app.log.error(err, "GitLab token validation failed");
+        reply.send({ valid: false, error: sanitizeError(err) });
+      }
+    },
+  );
+
   app.post(
     "/api/setup/validate/anthropic-key",
     {
       config: { rateLimit: SETUP_POST_RATE_LIMIT },
       preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "validateAnthropicKey",
+        summary: "Validate an Anthropic API key",
+        description: "Probe Anthropic's /v1/models endpoint with the provided key.",
+        tags: ["Setup & Settings"],
+        body: keySchema,
+        response: { 200: ValidationResultSchema, 400: ErrorResponseSchema },
+      },
     },
     async (req, reply) => {
-      const { key } = req.body as { key: string };
-      if (!key) return reply.status(400).send({ valid: false, error: "Key is required" });
+      const { key } = req.body;
 
       try {
         const res = await fetch("https://api.anthropic.com/v1/models", {
@@ -166,18 +287,25 @@ export async function setupRoutes(app: FastifyInstance) {
     },
   );
 
-  // Validate a GitHub Copilot token
   app.post(
     "/api/setup/validate/copilot-token",
     {
       config: { rateLimit: SETUP_POST_RATE_LIMIT },
       preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "validateCopilotToken",
+        summary: "Validate a GitHub Copilot token",
+        description:
+          "Probe GitHub's /user endpoint with the provided token. Classic " +
+          "PATs (`ghp_*`) are rejected — Copilot CLI requires a fine-grained PAT.",
+        tags: ["Setup & Settings"],
+        body: tokenSchema,
+        response: { 200: ValidationResultSchema, 400: ErrorResponseSchema },
+      },
     },
     async (req, reply) => {
-      const { token } = req.body as { token: string };
-      if (!token) return reply.status(400).send({ valid: false, error: "Token is required" });
+      const { token } = req.body;
 
-      // Classic PATs (ghp_*) are not supported by Copilot CLI
       if (token.startsWith("ghp_")) {
         return reply.send({
           valid: false,
@@ -202,16 +330,22 @@ export async function setupRoutes(app: FastifyInstance) {
     },
   );
 
-  // Validate an OpenAI API key
   app.post(
     "/api/setup/validate/openai-key",
     {
       config: { rateLimit: SETUP_POST_RATE_LIMIT },
       preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "validateOpenAIKey",
+        summary: "Validate an OpenAI API key",
+        description: "Probe OpenAI's /v1/models endpoint with the provided key.",
+        tags: ["Setup & Settings"],
+        body: keySchema,
+        response: { 200: ValidationResultSchema, 400: ErrorResponseSchema },
+      },
     },
     async (req, reply) => {
-      const { key } = req.body as { key: string };
-      if (!key) return reply.status(400).send({ valid: false, error: "Key is required" });
+      const { key } = req.body;
 
       try {
         const res = await fetch("https://api.openai.com/v1/models", {
@@ -230,30 +364,84 @@ export async function setupRoutes(app: FastifyInstance) {
     },
   );
 
-  // List recent repos for the authenticated user
+  app.post(
+    "/api/setup/validate/gemini-key",
+    {
+      config: { rateLimit: SETUP_POST_RATE_LIMIT },
+      preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "validateGeminiKey",
+        summary: "Validate a Google Gemini API key",
+        description: "Probe Google's generativelanguage API with the provided key.",
+        tags: ["Setup & Settings"],
+        body: keySchema,
+        response: { 200: ValidationResultSchema, 400: ErrorResponseSchema },
+      },
+    },
+    async (req, reply) => {
+      const { key } = req.body;
+
+      try {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`,
+        );
+        if (res.ok) {
+          reply.send({ valid: true });
+        } else {
+          const body = (await res.json().catch(() => ({}))) as { error?: { message?: string } };
+          reply.send({ valid: false, error: body.error?.message ?? `API returned ${res.status}` });
+        }
+      } catch (err) {
+        app.log.error(err, "Gemini key validation failed");
+        reply.send({ valid: false, error: sanitizeError(err) });
+      }
+    },
+  );
+
   app.post(
     "/api/setup/repos",
     {
       config: { rateLimit: SETUP_POST_RATE_LIMIT },
       preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "listSetupGitHubRepos",
+        summary: "List GitHub repos available for setup",
+        description:
+          "List the authenticated user's recent GitHub repos, used by the " +
+          "setup wizard's repo picker. If no token is supplied, falls back " +
+          "to the GitHub App installation token.",
+        tags: ["Setup & Settings"],
+        body: reposBodySchema,
+        response: { 200: ReposListResponseSchema, 400: ErrorResponseSchema },
+      },
     },
     async (req, reply) => {
-      const { token } = req.body as { token: string };
-      if (!token) return reply.status(400).send({ repos: [], error: "Token is required" });
+      const token = req.body.token;
+
+      let effectiveToken = token || null;
+      if (!effectiveToken && isGitHubAppConfigured()) {
+        try {
+          effectiveToken = await getInstallationToken();
+        } catch {
+          return reply.send({ repos: [], error: "Failed to get GitHub App token" });
+        }
+      }
+      if (!effectiveToken) {
+        return reply.status(400).send({ error: "Token is required" });
+      }
 
       try {
-        const headers = { Authorization: `Bearer ${token}`, "User-Agent": "Optio" };
+        const headers = { Authorization: `Bearer ${effectiveToken}`, "User-Agent": "Optio" };
 
-        // Fetch repos sorted by most recently pushed
-        const res = await fetch(
-          "https://api.github.com/user/repos?sort=pushed&direction=desc&per_page=20&affiliation=owner,collaborator,organization_member",
-          { headers },
-        );
+        const apiUrl = token
+          ? "https://api.github.com/user/repos?sort=pushed&direction=desc&per_page=20&affiliation=owner,collaborator,organization_member"
+          : "https://api.github.com/installation/repositories?sort=pushed&direction=desc&per_page=20";
+        const res = await fetch(apiUrl, { headers });
         if (!res.ok) {
           return reply.send({ repos: [], error: `GitHub returned ${res.status}` });
         }
 
-        const data = (await res.json()) as Array<{
+        type RepoItem = {
           full_name: string;
           html_url: string;
           clone_url: string;
@@ -262,7 +450,10 @@ export async function setupRoutes(app: FastifyInstance) {
           description: string | null;
           language: string | null;
           pushed_at: string;
-        }>;
+        };
+
+        const json = (await res.json()) as RepoItem[] | { repositories: RepoItem[] };
+        const data: RepoItem[] = Array.isArray(json) ? json : json.repositories;
 
         const repos = data.map((r) => ({
           fullName: r.full_name,
@@ -283,27 +474,93 @@ export async function setupRoutes(app: FastifyInstance) {
     },
   );
 
-  // Validate repo access (try to ls-remote)
+  app.post(
+    "/api/setup/repos/gitlab",
+    {
+      config: { rateLimit: SETUP_POST_RATE_LIMIT },
+      preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "listSetupGitLabRepos",
+        summary: "List GitLab projects available for setup",
+        description: "List GitLab projects accessible to the provided token.",
+        tags: ["Setup & Settings"],
+        body: gitlabTokenSchema,
+        response: { 200: ReposListResponseSchema, 400: ErrorResponseSchema },
+      },
+    },
+    async (req, reply) => {
+      const { token, host } = req.body;
+      const gitlabHost = host ?? "gitlab.com";
+      try {
+        const res = await fetch(
+          `https://${gitlabHost}/api/v4/projects?membership=true&order_by=last_activity_at&sort=desc&per_page=20`,
+          { headers: { "PRIVATE-TOKEN": token, "User-Agent": "Optio" } },
+        );
+        if (!res.ok) {
+          return reply.send({ repos: [], error: `GitLab returned ${res.status}` });
+        }
+
+        const data = (await res.json()) as Array<{
+          path_with_namespace: string;
+          web_url: string;
+          http_url_to_repo: string;
+          default_branch: string;
+          visibility: string;
+          description: string | null;
+          last_activity_at: string;
+        }>;
+
+        const repos = data.map((r) => ({
+          fullName: r.path_with_namespace,
+          cloneUrl: r.http_url_to_repo,
+          htmlUrl: r.web_url,
+          defaultBranch: r.default_branch ?? "main",
+          isPrivate: r.visibility !== "public",
+          description: r.description,
+          language: null,
+          pushedAt: r.last_activity_at,
+        }));
+
+        reply.send({ repos });
+      } catch (err) {
+        app.log.error(err, "GitLab repo listing failed");
+        reply.send({ repos: [], error: sanitizeError(err) });
+      }
+    },
+  );
+
   app.post(
     "/api/setup/validate/repo",
     {
       config: { rateLimit: SETUP_POST_RATE_LIMIT },
       preHandler: [requireAdminWhenAuthenticated],
+      schema: {
+        operationId: "validateRepoAccess",
+        summary: "Validate access to a specific repo",
+        description:
+          "Check whether Optio can access a given GitHub repo URL using the " +
+          "supplied token (or the configured GitHub App).",
+        tags: ["Setup & Settings"],
+        body: validateRepoSchema,
+        response: { 200: ValidationResultSchema, 400: ErrorResponseSchema },
+      },
     },
     async (req, reply) => {
-      const { repoUrl, token } = req.body as { repoUrl: string; token?: string };
-      if (!repoUrl) return reply.status(400).send({ valid: false, error: "Repo URL is required" });
+      const { repoUrl, token } = req.body;
 
       try {
-        // Use the GitHub API to check if the repo exists and is accessible
         const match = repoUrl.match(/github\.com[/:]([^/]+)\/([^/.]+)/);
         if (!match) {
           return reply.send({ valid: false, error: "Could not parse GitHub repo from URL" });
         }
         const [, owner, repo] = match;
         const headers: Record<string, string> = { "User-Agent": "Optio" };
-        const effectiveToken = token ?? (await retrieveSecret("GITHUB_TOKEN").catch(() => null));
-        if (effectiveToken) headers["Authorization"] = `Bearer ${effectiveToken}`;
+        let repoToken: string | null = token ?? null;
+        if (!repoToken) repoToken = await retrieveSecret("GITHUB_TOKEN").catch(() => null);
+        if (!repoToken && isGitHubAppConfigured()) {
+          repoToken = await getInstallationToken().catch(() => null);
+        }
+        if (repoToken) headers["Authorization"] = `Bearer ${repoToken}`;
 
         const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
         if (res.ok) {
