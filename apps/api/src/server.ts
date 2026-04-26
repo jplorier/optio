@@ -45,6 +45,7 @@ import { workflowTriggerRoutes } from "./routes/workflow-triggers.js";
 import { mcpServerRoutes } from "./routes/mcp-servers.js";
 import { connectionRoutes } from "./routes/connections.js";
 import { skillRoutes } from "./routes/skills.js";
+import { installedSkillRoutes } from "./routes/installed-skills.js";
 import { workflowRoutes } from "./routes/workflows.js";
 import { taskConfigRoutes } from "./routes/task-configs.js";
 import { tasksUnifiedRoutes } from "./routes/tasks-unified.js";
@@ -280,6 +281,7 @@ export async function buildServer() {
   await app.register(mcpServerRoutes);
   await app.register(connectionRoutes);
   await app.register(skillRoutes);
+  await app.register(installedSkillRoutes);
   await app.register(workflowRoutes);
   await app.register(taskConfigRoutes);
   await app.register(tasksUnifiedRoutes);

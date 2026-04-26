@@ -861,6 +861,283 @@ function GlobalSkills() {
   );
 }
 
+function MarketplaceSkills() {
+  const [skills, setSkills] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [name, setName] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [ref, setRef] = useState("main");
+  const [subpath, setSubpath] = useState("");
+  const [agentTypes, setAgentTypes] = useState<string[]>(["claude-code"]);
+
+  const refresh = () => {
+    api
+      .listInstalledSkills()
+      .then((res) => setSkills(res.skills))
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    refresh();
+    setLoading(false);
+  }, []);
+
+  const resetForm = () => {
+    setShowAdd(false);
+    setName("");
+    setSourceUrl("");
+    setRef("main");
+    setSubpath("");
+    setAgentTypes(["claude-code"]);
+  };
+
+  const toggleAgent = (value: string) => {
+    setAgentTypes((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  };
+
+  // Auto-derive a name from the source URL when the user hasn't typed one yet.
+  const deriveName = (url: string): string => {
+    const m = url.match(/([^/]+?)(?:\.git)?\/?$/);
+    if (!m) return "";
+    return m[1]
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]/g, "-")
+      .slice(0, 64);
+  };
+
+  if (loading) {
+    return (
+      <div className="p-5 rounded-xl border border-border/50 bg-bg-card text-center text-text-muted text-sm">
+        <Loader2 className="w-4 h-4 animate-spin inline mr-2" /> Loading...
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-text-muted">
+          Install a skill from any public git URL (e.g. an Anthropic marketplace skill repo). Files
+          are fetched into a shared cache and materialized into{" "}
+          <code className="text-primary">.claude/skills/&lt;name&gt;/</code> at task spawn. Claude
+          Code only.
+        </p>
+        <button
+          onClick={() => setShowAdd(!showAdd)}
+          className="flex items-center gap-1 text-xs text-primary hover:underline"
+        >
+          <Plus className="w-3.5 h-3.5" />
+          Install
+        </button>
+      </div>
+
+      {skills.length > 0 && (
+        <div className="space-y-2">
+          {skills.map((skill: any) => (
+            <div
+              key={skill.id}
+              className="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg"
+            >
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-medium">{skill.name}</span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                    {skill.ref}
+                    {skill.resolvedSha ? ` @${skill.resolvedSha.slice(0, 7)}` : ""}
+                  </span>
+                  {skill.hasExecutableFiles && (
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-warning/10 text-warning"
+                      title="This skill ships executable scripts. Review the source before enabling."
+                    >
+                      <AlertTriangle className="w-3 h-3 inline" /> scripts
+                    </span>
+                  )}
+                  {Array.isArray(skill.agentTypes) && skill.agentTypes.length > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-hover text-text-muted">
+                      {skill.agentTypes.join(", ")}
+                    </span>
+                  )}
+                  {!skill.enabled && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/10 text-warning">
+                      disabled
+                    </span>
+                  )}
+                  {skill.lastSyncError && (
+                    <span
+                      className="text-[10px] px-1.5 py-0.5 rounded bg-error/10 text-error truncate max-w-[200px]"
+                      title={skill.lastSyncError}
+                    >
+                      sync failed
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-text-muted mt-0.5 truncate">
+                  {skill.sourceUrl}
+                  {skill.subpath !== "." && (
+                    <span className="text-text-muted/70"> · {skill.subpath}</span>
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    await api.syncInstalledSkill(skill.id);
+                    toast.success("Sync queued");
+                    setTimeout(refresh, 1500);
+                  } catch {
+                    toast.error("Sync failed to queue");
+                  }
+                }}
+                className="text-xs text-text-muted hover:text-text"
+                title="Force re-sync"
+              >
+                Sync
+              </button>
+              <button
+                onClick={async () => {
+                  await api.updateInstalledSkill(skill.id, { enabled: !skill.enabled });
+                  setSkills((prev) =>
+                    prev.map((s) => (s.id === skill.id ? { ...s, enabled: !s.enabled } : s)),
+                  );
+                }}
+                className="text-xs text-text-muted hover:text-text"
+              >
+                {skill.enabled ? "Disable" : "Enable"}
+              </button>
+              <button
+                onClick={async () => {
+                  await api.deleteInstalledSkill(skill.id);
+                  setSkills((prev) => prev.filter((s) => s.id !== skill.id));
+                  toast.success("Skill removed");
+                }}
+                className="text-text-muted hover:text-error"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {skills.length === 0 && !showAdd && (
+        <p className="text-xs text-text-muted/60 text-center py-2">
+          No marketplace skills installed.
+        </p>
+      )}
+
+      {showAdd && (
+        <div className="space-y-3 p-3 rounded-lg border border-primary/30 bg-primary/5">
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Source URL (git)</label>
+            <input
+              value={sourceUrl}
+              onChange={(e) => {
+                setSourceUrl(e.target.value);
+                if (!name) setName(deriveName(e.target.value));
+              }}
+              placeholder="https://github.com/anthropics/skills.git"
+              className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+            />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Name</label>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="superpowers"
+                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Ref</label>
+              <input
+                value={ref}
+                onChange={(e) => setRef(e.target.value)}
+                placeholder="main"
+                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Subpath (optional)</label>
+              <input
+                value={subpath}
+                onChange={(e) => setSubpath(e.target.value)}
+                placeholder="."
+                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs text-text-muted mb-1">Agent types</label>
+            <div className="flex flex-wrap gap-1.5">
+              {SKILL_AGENT_TYPES.map((a) => {
+                const active = agentTypes.includes(a.value);
+                return (
+                  <button
+                    key={a.value}
+                    type="button"
+                    onClick={() => toggleAgent(a.value)}
+                    className={`px-2 py-1 rounded-md text-[11px] border ${
+                      active
+                        ? "bg-primary/10 border-primary text-primary"
+                        : "bg-bg border-border text-text-muted hover:border-primary/40"
+                    }`}
+                  >
+                    {a.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-text-muted/70 mt-1">
+              Marketplace skills only inject for Claude Code today; other selections are recorded
+              for future agents.
+            </p>
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={resetForm}
+              className="px-3 py-1.5 rounded-md text-xs text-text-muted hover:bg-bg-hover"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={async () => {
+                if (!name || !sourceUrl) {
+                  toast.error("Name and source URL are required");
+                  return;
+                }
+                try {
+                  const res = await api.createInstalledSkill({
+                    name,
+                    sourceUrl,
+                    ref: ref || undefined,
+                    subpath: subpath || undefined,
+                    agentTypes: agentTypes.length > 0 ? agentTypes : undefined,
+                  });
+                  setSkills((prev) => [...prev, res.skill]);
+                  resetForm();
+                  toast.success("Skill installed; syncing in background");
+                  setTimeout(refresh, 2500);
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "Could not install skill");
+                }
+              }}
+              className="px-3 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover"
+            >
+              Install
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AuthenticationSettings() {
   const [providers, setProviders] = useState<Array<{ name: string; displayName: string }>>([]);
   const [authDisabled, setAuthDisabled] = useState(false);
@@ -1662,6 +1939,15 @@ export default function SettingsPage() {
           Global Custom Skills
         </h2>
         <GlobalSkills />
+      </section>
+
+      {/* Marketplace Skills */}
+      <section>
+        <h2 className="text-sm font-medium text-text-muted mb-3 flex items-center gap-2">
+          <Sparkles className="w-4 h-4" />
+          Marketplace Skills
+        </h2>
+        <MarketplaceSkills />
       </section>
 
       {/* Prompt Template */}

@@ -526,6 +526,13 @@
       "when": 1777200000000,
       "tag": "1777200000_custom_skills_agent_types_files",
       "breakpoints": true
+    },
+    {
+      "idx": 75,
+      "version": "7",
+      "when": 1777300000000,
+      "tag": "1777300000_installed_skills",
+      "breakpoints": true
     }
   ]
 }

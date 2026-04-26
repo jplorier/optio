@@ -391,6 +391,31 @@ export function startPrReviewWorker() {
           agentConfig.setupFiles.push(...buildSkillSetupFiles(skills));
         }
 
+        if (agentType === "claude-code") {
+          const { getInstalledSkillsForTask } =
+            await import("../services/installed-skill-service.js");
+          const { readInstalledSkillFiles } = await import("./skill-sync-worker.js");
+          const installed = await getInstalledSkillsForTask(review.repoUrl, workspaceId, agentType);
+          if (installed.length > 0) {
+            agentConfig.setupFiles = agentConfig.setupFiles ?? [];
+            for (const skill of installed) {
+              try {
+                const files = await readInstalledSkillFiles(skill.resolvedSha!, skill.subpath);
+                for (const f of files) {
+                  agentConfig.setupFiles.push({
+                    path: `.claude/skills/${skill.name}/${f.relativePath}`,
+                    content: "",
+                    contentBase64: f.content.toString("base64"),
+                    executable: f.executable,
+                  });
+                }
+              } catch {
+                // best-effort — log via worker telemetry only
+              }
+            }
+          }
+        }
+
         if (agentConfig.setupFiles && agentConfig.setupFiles.length > 0) {
           agentConfig.env.OPTIO_SETUP_FILES = Buffer.from(
             JSON.stringify(agentConfig.setupFiles),

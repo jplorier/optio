@@ -835,6 +835,46 @@ export const customSkills = pgTable(
   ],
 );
 
+// ── Installed Skills (marketplace-sourced) ──────────────────────────────────
+//
+// Phase 2 of issue #497. Skills installed from a remote source (today: any
+// public git URL — e.g. Anthropic's "superpowers" skill from the Claude
+// marketplace). The sync worker shallow-clones the source, resolves the ref
+// to an immutable SHA, parks the contents in a content-addressable cache PVC,
+// and the row records `resolvedSha` for reproducible task runs. Re-syncing
+// only when the user advances the ref keeps task setups deterministic.
+
+export const installedSkills = pgTable(
+  "installed_skills",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    name: text("name").notNull(), // becomes .claude/skills/<name>/ inside the worktree
+    description: text("description"),
+    sourceType: text("source_type").notNull().default("git"), // "git" only for v1
+    sourceUrl: text("source_url").notNull(), // e.g. https://github.com/anthropics/skills.git
+    ref: text("ref").notNull().default("main"), // branch/tag the user requested
+    resolvedSha: text("resolved_sha"), // pinned commit SHA written by sync worker
+    subpath: text("subpath").notNull().default("."), // dir within source to use as the skill
+    scope: text("scope").notNull().default("global"), // "global" or repo URL
+    repoUrl: text("repo_url"),
+    workspaceId: uuid("workspace_id"),
+    agentTypes: jsonb("agent_types").$type<string[]>(), // null/empty = all agents
+    enabled: boolean("enabled").notNull().default(true),
+    lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+    lastSyncError: text("last_sync_error"),
+    cachedManifest: jsonb("cached_manifest"), // SKILL.md frontmatter, file list, etc.
+    hasExecutableFiles: boolean("has_executable_files").notNull().default(false),
+    totalSizeBytes: integer("total_size_bytes"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("installed_skills_scope_idx").on(table.scope),
+    index("installed_skills_repo_url_idx").on(table.repoUrl),
+    index("installed_skills_resolved_sha_idx").on(table.resolvedSha),
+  ],
+);
+
 // ── API Keys (CLI personal access tokens + user-created keys) ─────────────────
 
 export const apiKeys = pgTable(
