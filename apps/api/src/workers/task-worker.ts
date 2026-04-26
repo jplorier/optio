@@ -546,12 +546,12 @@ export function startTaskWorker() {
           }
         }
 
-        const skills = await getSkillsForTask(task.repoUrl, taskWorkspaceId);
+        const skills = await getSkillsForTask(task.repoUrl, taskWorkspaceId, task.agentType);
         if (skills.length > 0) {
           agentConfig.setupFiles = agentConfig.setupFiles ?? [];
           const skillFiles = buildSkillSetupFiles(skills);
           agentConfig.setupFiles.push(...skillFiles);
-          log.info({ count: skills.length }, "Injecting custom skills");
+          log.info({ count: skills.length, agentType: task.agentType }, "Injecting custom skills");
         }
 
         // Encode setup files

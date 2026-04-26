@@ -812,10 +812,18 @@ export const customSkills = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     name: text("name").notNull(),
     description: text("description"),
-    prompt: text("prompt").notNull(), // markdown content
+    prompt: text("prompt").notNull(), // markdown content (SKILL.md body for skill-dir layout)
     scope: text("scope").notNull().default("global"), // "global" or repo URL
     repoUrl: text("repo_url"), // null = global, set = repo-scoped
     workspaceId: uuid("workspace_id"),
+    // Layout discriminator: "commands" writes .claude/commands/<name>.md (legacy),
+    // "skill-dir" writes .claude/skills/<name>/SKILL.md plus any `files`.
+    layout: text("layout").notNull().default("commands"),
+    // Extra files for skill-dir layout: [{ relativePath, content }].
+    // relativePath is resolved under .claude/skills/<name>/.
+    files: jsonb("files").$type<Array<{ relativePath: string; content: string }>>(),
+    // Agent types this skill applies to. null/empty = all agents.
+    agentTypes: jsonb("agent_types").$type<string[]>(),
     enabled: boolean("enabled").notNull().default(true),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

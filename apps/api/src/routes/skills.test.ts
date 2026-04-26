@@ -78,6 +78,42 @@ describe("POST /api/skills", () => {
 
     expect(res.statusCode).toBe(400);
   });
+
+  it("accepts skill-dir layout with extra files and agentTypes", async () => {
+    mockCreateSkill.mockResolvedValue({ id: "skill-1", name: "review" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/skills",
+      payload: {
+        name: "review",
+        prompt: "Review code carefully",
+        layout: "skill-dir",
+        files: [{ relativePath: "reference.md", content: "# Ref" }],
+        agentTypes: ["claude-code"],
+      },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(mockCreateSkill).toHaveBeenCalledWith(
+      expect.objectContaining({
+        layout: "skill-dir",
+        files: [{ relativePath: "reference.md", content: "# Ref" }],
+        agentTypes: ["claude-code"],
+      }),
+      "ws-1",
+    );
+  });
+
+  it("rejects an invalid layout value", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/skills",
+      payload: { name: "x", prompt: "y", layout: "bogus" },
+    });
+
+    expect(res.statusCode).toBe(400);
+  });
 });
 
 describe("PATCH /api/skills/:id", () => {

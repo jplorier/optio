@@ -926,6 +926,9 @@ export const api = {
     description?: string;
     prompt: string;
     repoUrl?: string;
+    layout?: "commands" | "skill-dir";
+    files?: Array<{ relativePath: string; content: string }>;
+    agentTypes?: string[];
     enabled?: boolean;
   }) =>
     request<{ skill: any }>("/api/skills", {

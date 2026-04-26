@@ -535,6 +535,16 @@ function GlobalMcpServers() {
   );
 }
 
+const SKILL_AGENT_TYPES = [
+  { value: "claude-code", label: "Claude Code" },
+  { value: "codex", label: "OpenAI Codex" },
+  { value: "copilot", label: "GitHub Copilot" },
+  { value: "gemini", label: "Google Gemini" },
+  { value: "opencode", label: "OpenCode" },
+];
+
+type SkillExtraFile = { relativePath: string; content: string };
+
 function GlobalSkills() {
   const [skills, setSkills] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -542,6 +552,25 @@ function GlobalSkills() {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [prompt, setPrompt] = useState("");
+  const [layout, setLayout] = useState<"commands" | "skill-dir">("commands");
+  const [files, setFiles] = useState<SkillExtraFile[]>([]);
+  const [agentTypes, setAgentTypes] = useState<string[]>([]);
+
+  const resetForm = () => {
+    setShowAdd(false);
+    setName("");
+    setDescription("");
+    setPrompt("");
+    setLayout("commands");
+    setFiles([]);
+    setAgentTypes([]);
+  };
+
+  const toggleAgent = (value: string) => {
+    setAgentTypes((prev) =>
+      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
+    );
+  };
 
   useEffect(() => {
     api
@@ -563,8 +592,10 @@ function GlobalSkills() {
     <div className="p-5 rounded-xl border border-border/50 bg-bg-card space-y-3">
       <div className="flex items-center justify-between">
         <p className="text-xs text-text-muted">
-          Global skills are available as slash commands to agents in all repos. Written to{" "}
-          <code className="text-primary">.claude/commands/</code> before the agent starts.
+          Global skills are available to agents in all repos. Written to{" "}
+          <code className="text-primary">.claude/commands/</code> or{" "}
+          <code className="text-primary">.claude/skills/&lt;name&gt;/</code> before the agent
+          starts. Optionally scope by agent type.
         </p>
         <button
           onClick={() => setShowAdd(!showAdd)}
@@ -583,8 +614,21 @@ function GlobalSkills() {
               className="flex items-center gap-3 p-3 rounded-lg border border-border bg-bg"
             >
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-medium">/{skill.name}</span>
+                  {skill.layout === "skill-dir" && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
+                      skill-dir
+                      {Array.isArray(skill.files) && skill.files.length > 0
+                        ? ` +${skill.files.length}`
+                        : ""}
+                    </span>
+                  )}
+                  {Array.isArray(skill.agentTypes) && skill.agentTypes.length > 0 && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-bg-hover text-text-muted">
+                      {skill.agentTypes.join(", ")}
+                    </span>
+                  )}
                   {!skill.enabled && (
                     <span className="text-[10px] px-1.5 py-0.5 rounded bg-warning/10 text-warning">
                       disabled
@@ -648,23 +692,127 @@ function GlobalSkills() {
             </div>
           </div>
           <div>
-            <label className="block text-xs text-text-muted mb-1">Prompt (markdown)</label>
+            <label className="block text-xs text-text-muted mb-1">
+              {layout === "skill-dir" ? "SKILL.md body" : "Prompt (markdown)"}
+            </label>
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               rows={6}
-              placeholder="Run the full test suite and analyze any failures..."
+              placeholder={
+                layout === "skill-dir"
+                  ? "Body of SKILL.md. YAML frontmatter is fine if Claude expects it."
+                  : "Run the full test suite and analyze any failures..."
+              }
               className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-xs font-mono focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20 resize-y"
             />
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Layout</label>
+              <select
+                value={layout}
+                onChange={(e) => setLayout(e.target.value as "commands" | "skill-dir")}
+                className="w-full px-3 py-2 rounded-lg bg-bg border border-border text-sm focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20"
+              >
+                <option value="commands">commands (.claude/commands/&lt;name&gt;.md)</option>
+                <option value="skill-dir">skill-dir (.claude/skills/&lt;name&gt;/...)</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-text-muted mb-1">Agent types</label>
+              <div className="flex flex-wrap gap-1.5">
+                {SKILL_AGENT_TYPES.map((a) => {
+                  const active = agentTypes.includes(a.value);
+                  return (
+                    <button
+                      key={a.value}
+                      type="button"
+                      onClick={() => toggleAgent(a.value)}
+                      className={`px-2 py-1 rounded-md text-[11px] border ${
+                        active
+                          ? "bg-primary/10 border-primary text-primary"
+                          : "bg-bg border-border text-text-muted hover:border-primary/40"
+                      }`}
+                    >
+                      {a.label}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[10px] text-text-muted/70 mt-1">
+                {agentTypes.length === 0
+                  ? "No selection — applies to all agents."
+                  : `Applies only to: ${agentTypes.join(", ")}`}
+              </p>
+            </div>
+          </div>
+
+          {layout === "skill-dir" && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-xs text-text-muted">
+                  Additional files (under{" "}
+                  <code className="text-primary">.claude/skills/{name || "&lt;name&gt;"}/</code>)
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setFiles((prev) => [...prev, { relativePath: "", content: "" }])}
+                  className="flex items-center gap-1 text-xs text-primary hover:underline"
+                >
+                  <Plus className="w-3 h-3" />
+                  Add file
+                </button>
+              </div>
+              {files.map((f, i) => (
+                <div key={i} className="space-y-1.5 p-2 rounded-md border border-border/60 bg-bg">
+                  <div className="flex items-center gap-2">
+                    <input
+                      value={f.relativePath}
+                      onChange={(e) =>
+                        setFiles((prev) =>
+                          prev.map((x, idx) =>
+                            idx === i ? { ...x, relativePath: e.target.value } : x,
+                          ),
+                        )
+                      }
+                      placeholder="reference.md or scripts/lint.sh"
+                      className="flex-1 px-2 py-1 rounded bg-bg-card border border-border text-xs font-mono focus:outline-none focus:border-primary"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setFiles((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="text-text-muted hover:text-error"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <textarea
+                    value={f.content}
+                    onChange={(e) =>
+                      setFiles((prev) =>
+                        prev.map((x, idx) => (idx === i ? { ...x, content: e.target.value } : x)),
+                      )
+                    }
+                    rows={3}
+                    placeholder="File contents"
+                    className="w-full px-2 py-1 rounded bg-bg-card border border-border text-xs font-mono focus:outline-none focus:border-primary resize-y"
+                  />
+                </div>
+              ))}
+              {files.length === 0 && (
+                <p className="text-[11px] text-text-muted/60">
+                  None. SKILL.md is enough for most skills — add files only when you need scripts or
+                  supporting docs.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="flex justify-end gap-2">
             <button
-              onClick={() => {
-                setShowAdd(false);
-                setName("");
-                setDescription("");
-                setPrompt("");
-              }}
+              onClick={resetForm}
               className="px-3 py-1.5 rounded-md text-xs text-text-muted hover:bg-bg-hover"
             >
               Cancel
@@ -675,16 +823,25 @@ function GlobalSkills() {
                   toast.error("Name and prompt are required");
                   return;
                 }
+                const cleanedFiles =
+                  layout === "skill-dir"
+                    ? files
+                        .map((f) => ({
+                          relativePath: f.relativePath.trim(),
+                          content: f.content,
+                        }))
+                        .filter((f) => f.relativePath.length > 0)
+                    : undefined;
                 const res = await api.createSkill({
                   name,
                   description: description || undefined,
                   prompt,
+                  layout,
+                  files: cleanedFiles,
+                  agentTypes: agentTypes.length > 0 ? agentTypes : undefined,
                 });
                 setSkills((prev) => [...prev, res.skill]);
-                setShowAdd(false);
-                setName("");
-                setDescription("");
-                setPrompt("");
+                resetForm();
                 toast.success("Skill added");
               }}
               className="px-3 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover"

@@ -15,6 +15,9 @@ vi.mock("../db/schema.js", () => ({
     scope: "custom_skills.scope",
     workspaceId: "custom_skills.workspace_id",
     enabled: "custom_skills.enabled",
+    layout: "custom_skills.layout",
+    files: "custom_skills.files",
+    agentTypes: "custom_skills.agent_types",
   },
 }));
 
@@ -37,6 +40,9 @@ const makeRow = (overrides: Record<string, unknown> = {}) => ({
   scope: "global",
   repoUrl: null,
   workspaceId: null,
+  layout: "commands",
+  files: null,
+  agentTypes: null,
   enabled: true,
   createdAt: new Date(),
   updatedAt: new Date(),
@@ -241,35 +247,98 @@ describe("skill-service", () => {
       const result = await getSkillsForTask("https://github.com/o/r");
       expect(result).toHaveLength(2);
     });
+
+    it("filters out skills whose agentTypes don't include the current agent", async () => {
+      (db.select as any) = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi
+            .fn()
+            .mockResolvedValue([
+              makeRow({ id: "s-1", name: "claude-only", agentTypes: ["claude-code"] }),
+              makeRow({ id: "s-2", name: "codex-only", agentTypes: ["codex"] }),
+              makeRow({ id: "s-3", name: "any-agent", agentTypes: null }),
+            ]),
+        }),
+      });
+
+      const result = await getSkillsForTask("https://github.com/o/r", null, "claude-code");
+      const names = result.map((s) => s.name).sort();
+      expect(names).toEqual(["any-agent", "claude-only"]);
+    });
+
+    it("treats empty agentTypes array the same as null (all agents)", async () => {
+      (db.select as any) = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([makeRow({ name: "broad", agentTypes: [] })]),
+        }),
+      });
+
+      const result = await getSkillsForTask("https://github.com/o/r", null, "claude-code");
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe("broad");
+    });
+
+    it("excludes agent-scoped skills when no agentType is provided", async () => {
+      (db.select as any) = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi
+            .fn()
+            .mockResolvedValue([
+              makeRow({ id: "s-1", name: "scoped", agentTypes: ["claude-code"] }),
+              makeRow({ id: "s-2", name: "any", agentTypes: null }),
+            ]),
+        }),
+      });
+
+      const result = await getSkillsForTask("https://github.com/o/r");
+      expect(result).toHaveLength(1);
+      expect(result[0].name).toBe("any");
+    });
+
+    it("falls back to global skill when matching repo skill is excluded by agent filter", async () => {
+      (db.select as any) = vi.fn().mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([
+            makeRow({
+              id: "s-g",
+              name: "deploy",
+              scope: "global",
+              agentTypes: null,
+            }),
+            makeRow({
+              id: "s-r",
+              name: "deploy",
+              scope: "https://github.com/o/r",
+              agentTypes: ["codex"], // doesn't match claude-code
+            }),
+          ]),
+        }),
+      });
+
+      const result = await getSkillsForTask("https://github.com/o/r", null, "claude-code");
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe("s-g");
+    });
   });
 
   describe("buildSkillSetupFiles", () => {
-    it("creates .claude/commands/ files for each skill", () => {
+    const baseSkill = {
+      description: null,
+      scope: "global" as const,
+      repoUrl: null,
+      workspaceId: null,
+      layout: "commands" as const,
+      files: null,
+      agentTypes: null,
+      enabled: true,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+
+    it("creates .claude/commands/ files for commands-layout skills", () => {
       const skills = [
-        {
-          id: "s-1",
-          name: "deploy",
-          description: null,
-          prompt: "Deploy the app",
-          scope: "global",
-          repoUrl: null,
-          workspaceId: null,
-          enabled: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        {
-          id: "s-2",
-          name: "test",
-          description: null,
-          prompt: "Run tests",
-          scope: "global",
-          repoUrl: null,
-          workspaceId: null,
-          enabled: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
+        { ...baseSkill, id: "s-1", name: "deploy", prompt: "Deploy the app" },
+        { ...baseSkill, id: "s-2", name: "test", prompt: "Run tests" },
       ];
 
       const files = buildSkillSetupFiles(skills);
@@ -284,6 +353,75 @@ describe("skill-service", () => {
     it("returns empty array for no skills", () => {
       const files = buildSkillSetupFiles([]);
       expect(files).toEqual([]);
+    });
+
+    it("emits SKILL.md plus extra files for skill-dir layout", () => {
+      const files = buildSkillSetupFiles([
+        {
+          ...baseSkill,
+          id: "s-1",
+          name: "review",
+          prompt: "review steps",
+          layout: "skill-dir",
+          files: [
+            { relativePath: "reference.md", content: "# Reference" },
+            { relativePath: "scripts/lint.sh", content: "#!/bin/sh\necho hi" },
+          ],
+        },
+      ]);
+
+      expect(files).toEqual([
+        { path: ".claude/skills/review/SKILL.md", content: "review steps" },
+        { path: ".claude/skills/review/reference.md", content: "# Reference" },
+        {
+          path: ".claude/skills/review/scripts/lint.sh",
+          content: "#!/bin/sh\necho hi",
+        },
+      ]);
+    });
+
+    it("rejects extra-file paths that try to escape the skill dir", () => {
+      const files = buildSkillSetupFiles([
+        {
+          ...baseSkill,
+          id: "s-1",
+          name: "danger",
+          prompt: "body",
+          layout: "skill-dir",
+          files: [
+            { relativePath: "../escape.md", content: "nope" },
+            { relativePath: "/absolute.md", content: "leading slash stripped" },
+            { relativePath: "ok/nested.md", content: "ok" },
+            { relativePath: "", content: "empty" },
+          ],
+        },
+      ]);
+
+      const paths = files.map((f) => f.path);
+      expect(paths).toContain(".claude/skills/danger/SKILL.md");
+      expect(paths).toContain(".claude/skills/danger/absolute.md");
+      expect(paths).toContain(".claude/skills/danger/ok/nested.md");
+      expect(paths).not.toContain(".claude/skills/danger/../escape.md");
+      expect(paths.some((p) => p.endsWith("/"))).toBe(false);
+    });
+
+    it("mixes layouts in a single batch", () => {
+      const files = buildSkillSetupFiles([
+        { ...baseSkill, id: "s-1", name: "legacy", prompt: "old style" },
+        {
+          ...baseSkill,
+          id: "s-2",
+          name: "modern",
+          prompt: "new style",
+          layout: "skill-dir",
+          files: [],
+        },
+      ]);
+
+      expect(files.map((f) => f.path)).toEqual([
+        ".claude/commands/legacy.md",
+        ".claude/skills/modern/SKILL.md",
+      ]);
     });
   });
 });

@@ -349,7 +349,7 @@ export function startPrReviewWorker() {
           }
         }
 
-        const skills = await getSkillsForTask(review.repoUrl, workspaceId);
+        const skills = await getSkillsForTask(review.repoUrl, workspaceId, agentType);
         if (skills.length > 0) {
           agentConfig.setupFiles = agentConfig.setupFiles ?? [];
           agentConfig.setupFiles.push(...buildSkillSetupFiles(skills));
