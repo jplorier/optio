@@ -2,10 +2,14 @@ import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 import { db } from "../db/client.js";
-import { repos, tasks } from "../db/schema.js";
+import { repos, tasks, ticketProviders } from "../db/schema.js";
 import { eq } from "drizzle-orm";
 import { normalizeRepoUrl, parseRepoUrl } from "@optio/shared";
+import type { TicketSource } from "@optio/shared";
+import { getTicketProvider } from "@optio/ticket-providers";
 import { getGitPlatformForRepo } from "../services/git-token-service.js";
+import { retrieveSecret } from "../services/secret-service.js";
+import { getGitHubToken } from "../services/github-token-service.js";
 import { logger } from "../logger.js";
 import { ErrorResponseSchema } from "../schemas/common.js";
 import { IssueSummarySchema } from "../schemas/session.js";
@@ -91,7 +95,9 @@ export async function issueRoutes(rawApp: FastifyInstance) {
         ? await db.select(taskSelect).from(tasks).where(eq(tasks.workspaceId, wsId))
         : await db.select(taskSelect).from(tasks);
 
-      const taskMap = new Map(
+      // Repo-scoped task lookup (github/gitlab issues live under a specific repo,
+      // and issue numbers can repeat across repos — must include the repo URL in the key).
+      const repoTaskMap = new Map(
         existingTasks
           .filter(
             (t) =>
@@ -99,6 +105,23 @@ export async function issueRoutes(rawApp: FastifyInstance) {
           )
           .map((t) => [
             `${normalizeRepoUrl(t.repoUrl)}:${t.ticketExternalId}`,
+            { taskId: t.id, state: t.state },
+          ]),
+      );
+
+      // Source-scoped task lookup for external trackers (Linear/Jira/Notion).
+      // External IDs are globally unique within a source (e.g. "ENG-123", "PROJ-42").
+      const externalTaskMap = new Map(
+        existingTasks
+          .filter(
+            (t) =>
+              t.ticketSource &&
+              t.ticketSource !== "github" &&
+              t.ticketSource !== "gitlab" &&
+              t.ticketExternalId,
+          )
+          .map((t) => [
+            `${t.ticketSource}:${t.ticketExternalId}`,
             { taskId: t.id, state: t.state },
           ]),
       );
@@ -118,16 +141,22 @@ export async function issueRoutes(rawApp: FastifyInstance) {
 
           const issueState = query.state ?? "open";
           const issues = await platform.listIssues(ri, { state: issueState, perPage: 50 });
+          const repoSource: TicketSource =
+            ri.platform === "gitlab" ? ("gitlab" as TicketSource) : ("github" as TicketSource);
 
           for (const issue of issues) {
             if (issue.isPullRequest) continue;
 
             const hasOptioLabel = issue.labels.includes("optio");
-            const existingTask = taskMap.get(`${normalizeRepoUrl(repo.repoUrl)}:${issue.number}`);
+            const existingTask = repoTaskMap.get(
+              `${normalizeRepoUrl(repo.repoUrl)}:${issue.number}`,
+            );
 
             allIssues.push({
               id: issue.id,
               number: issue.number,
+              externalId: String(issue.number),
+              source: repoSource,
               title: issue.title,
               body: issue.body,
               state: issue.state,
@@ -148,6 +177,81 @@ export async function issueRoutes(rawApp: FastifyInstance) {
           }
         } catch (err) {
           logger.warn({ err, repo: repo.fullName }, "Error fetching issues");
+        }
+      }
+
+      // Fan out to configured external ticket providers (Linear, Jira, Notion).
+      // GitHub / GitLab providers are skipped here since the repo loop above
+      // already covers their issues via getGitPlatformForRepo.
+      if (!query.repoId) {
+        const providerRows = await db
+          .select()
+          .from(ticketProviders)
+          .where(eq(ticketProviders.enabled, true));
+
+        for (const providerRow of providerRows) {
+          if (providerRow.source === "github" || providerRow.source === "gitlab") continue;
+          try {
+            let mergedConfig = { ...((providerRow.config as Record<string, unknown>) ?? {}) };
+            try {
+              const secretJson = await retrieveSecret(
+                `ticket-provider:${providerRow.id}`,
+                "ticket-provider",
+              );
+              mergedConfig = { ...mergedConfig, ...JSON.parse(secretJson) };
+            } catch {
+              // No stored secret — use config as-is.
+            }
+
+            const provider = getTicketProvider(providerRow.source as TicketSource);
+            const tickets = await provider.fetchActionableTickets(mergedConfig);
+
+            for (const ticket of tickets) {
+              const meta = (ticket.metadata ?? {}) as Record<string, unknown>;
+              const createdAt =
+                (meta.createdAt as string | undefined) ??
+                (meta.created as string | undefined) ??
+                (meta.createdTime as string | undefined) ??
+                null;
+              const updatedAt =
+                (meta.updatedAt as string | undefined) ??
+                (meta.updated as string | undefined) ??
+                (meta.lastEditedTime as string | undefined) ??
+                createdAt;
+
+              const existingTask = externalTaskMap.get(`${ticket.source}:${ticket.externalId}`);
+
+              allIssues.push({
+                id: `${ticket.source}:${ticket.externalId}`,
+                number: ticket.externalId,
+                externalId: ticket.externalId,
+                source: ticket.source,
+                title: ticket.title,
+                body: ticket.body,
+                // fetchActionableTickets already filters to active/open tickets.
+                state: "open",
+                url: ticket.url,
+                labels: ticket.labels,
+                hasOptioLabel: true,
+                author: null,
+                assignee: ticket.assignee ?? null,
+                repo: {
+                  id: null,
+                  fullName: ticket.repo ?? `${ticket.source} provider`,
+                  repoUrl: null,
+                  providerId: providerRow.id,
+                },
+                createdAt,
+                updatedAt,
+                optioTask: existingTask ?? null,
+              });
+            }
+          } catch (err) {
+            logger.warn(
+              { err, providerSource: providerRow.source, providerId: providerRow.id },
+              "Error fetching tickets from external provider",
+            );
+          }
         }
       }
 

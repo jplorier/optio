@@ -35,7 +35,11 @@ export function IssuesBrowser() {
       .finally(() => setLoading(false));
   }, [selectedRepo]);
 
-  const unassignedIssues = issues.filter((i: any) => !i.optioTask);
+  // External-tracker tickets (Linear/Jira/Notion) flow into Optio via the
+  // ticket-sync worker — they can't be manually assigned from this UI.
+  const isAssignable = (i: any) =>
+    (i.source === "github" || i.source === "gitlab" || !i.source) && i.repo?.id;
+  const unassignedIssues = issues.filter((i: any) => !i.optioTask && isAssignable(i));
 
   const handleAssignAll = async () => {
     if (!confirm(`Assign ${unassignedIssues.length} issues to Optio?`)) return;
@@ -151,7 +155,7 @@ export function IssuesBrowser() {
         <div className="space-y-2">
           {issues.map((issue: any) => (
             <div
-              key={`${issue.repo.fullName}-${issue.number}`}
+              key={issue.id ?? `${issue.repo?.fullName}-${issue.number}`}
               className="card-hover p-3 rounded-lg border border-border bg-bg-card hover:border-primary/30"
             >
               <div className="flex items-start justify-between gap-3">
@@ -165,16 +169,23 @@ export function IssuesBrowser() {
                     >
                       {issue.title}
                     </a>
-                    <span className="text-xs text-text-muted shrink-0">#{issue.number}</span>
+                    <span className="text-xs text-text-muted shrink-0">
+                      {typeof issue.number === "number" ? `#${issue.number}` : issue.number}
+                    </span>
+                    {issue.source && issue.source !== "github" && issue.source !== "gitlab" && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full border border-primary/30 bg-primary/10 text-primary uppercase tracking-wide shrink-0">
+                        {issue.source}
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-text-muted">
                     <span className="flex items-center gap-1">
                       <GitBranch className="w-3 h-3" />
-                      {issue.repo.fullName}
+                      {issue.repo?.fullName ?? issue.source}
                     </span>
                     {issue.author && <span>@{issue.author}</span>}
                     {issue.assignee && <span>assignee: @{issue.assignee}</span>}
-                    <span>{formatRelativeTime(issue.updatedAt)}</span>
+                    {issue.updatedAt && <span>{formatRelativeTime(issue.updatedAt)}</span>}
                   </div>
                   {issue.labels.length > 0 && (
                     <div className="flex items-center gap-1 mt-1.5">
@@ -208,7 +219,7 @@ export function IssuesBrowser() {
                           ? "PR"
                           : "Running"}
                     </Link>
-                  ) : (
+                  ) : isAssignable(issue) ? (
                     <button
                       onClick={() => handleAssign(issue)}
                       disabled={assigning === issue.number}
@@ -221,6 +232,13 @@ export function IssuesBrowser() {
                       )}
                       Assign to Optio
                     </button>
+                  ) : (
+                    <span
+                      className="text-[10px] px-2 py-1 rounded-md border border-border bg-bg text-text-muted"
+                      title="External tracker tickets are picked up automatically by the ticket-sync worker."
+                    >
+                      auto-sync
+                    </span>
                   )}
                 </div>
               </div>
