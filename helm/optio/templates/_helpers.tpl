@@ -14,7 +14,7 @@ Database URL
 {{- define "optio.databaseUrl" -}}
 {{- if .Values.postgresql.enabled -}}
 {{- $base := printf "postgres://%s:%s@%s-postgres:5432/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password .Release.Name .Values.postgresql.auth.database -}}
-{{- if .Values.postgresql.tls.enabled -}}
+{{- if ((.Values.postgresql.tls).enabled) -}}
 {{- printf "%s?sslmode=verify-full&sslrootcert=/etc/optio/pg-ca.crt" $base -}}
 {{- else -}}
 {{- $base -}}
@@ -31,7 +31,7 @@ Auth: embeds password when redis.auth.enabled (password resolved at runtime via 
 */}}
 {{- define "optio.redisUrl" -}}
 {{- if .Values.redis.enabled -}}
-  {{- $scheme := ternary "rediss" "redis" .Values.redis.tls.enabled -}}
+  {{- $scheme := ternary "rediss" "redis" ((.Values.redis.tls).enabled | default false) -}}
   {{- $scheme -}}://{{ .Release.Name }}-redis:6379
 {{- else -}}
 {{- required "externalRedis.url is required when redis.enabled=false" .Values.externalRedis.url -}}
