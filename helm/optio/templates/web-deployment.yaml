@@ -62,6 +62,9 @@ spec:
               type: RuntimeDefault
           ports:
             - containerPort: {{ .Values.web.port }}
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-config
           volumeMounts:
             - name: tmp
               mountPath: /tmp

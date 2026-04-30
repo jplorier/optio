@@ -48,6 +48,7 @@ const WORKSPACE_HEADER = "x-workspace-id";
 const PUBLIC_ROUTES = new Set([
   "/api/health",
   "/api/setup/status",
+  "/api/github-app/status",
   "/api/notifications/vapid-public-key",
 ]);
 
