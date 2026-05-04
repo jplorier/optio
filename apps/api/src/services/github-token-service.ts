@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { tasks, secrets } from "../db/schema.js";
+import { tasks } from "../db/schema.js";
 import {
   retrieveSecret,
   retrieveSecretWithFallback,
@@ -33,22 +33,6 @@ async function getServerToken(workspaceId?: string | null): Promise<string> {
       return getPatFallback(workspaceId);
     }
   }
-  // If no GitHub App, and no workspace context provided (e.g. repo-init),
-  // try to find ANY global GITHUB_TOKEN to use as a server-level fallback.
-  // This handles the case where a token exists but is scoped to a workspace,
-  // preventing AAD decryption failures during system-level clones.
-  if (!workspaceId) {
-    const [anyGlobalToken] = await db
-      .select({ workspaceId: secrets.workspaceId })
-      .from(secrets)
-      .where(eq(secrets.name, "GITHUB_TOKEN"))
-      .limit(1);
-
-    if (anyGlobalToken) {
-      return getPatFallback(anyGlobalToken.workspaceId);
-    }
-  }
-
   return getPatFallback(workspaceId);
 }
 

@@ -216,16 +216,7 @@ describe("github-token-service", () => {
       db: {
         select: () => ({
           from: () => ({
-            where: () => {
-              const res = {
-                limit: (...args: unknown[]) => mockDbWhere(...args),
-                // Handle direct execution after where() without limit()
-                then: (cb: any) => mockDbWhere().then(cb),
-              };
-              // @ts-expect-error Mocking async iterator for Drizzle query result
-              res[Symbol.iterator] = [][Symbol.iterator];
-              return res;
-            },
+            where: (...args: unknown[]) => mockDbWhere(...args),
           }),
         }),
       },
@@ -235,11 +226,6 @@ describe("github-token-service", () => {
       tasks: {
         id: "id",
         createdBy: "created_by",
-        workspaceId: "workspace_id",
-      },
-      secrets: {
-        id: "id",
-        name: "name",
         workspaceId: "workspace_id",
       },
     }));
@@ -374,8 +360,6 @@ describe("github-token-service", () => {
 
   it("falls back to PAT when GitHub App not configured (server context)", async () => {
     mockIsConfigured.mockReturnValue(false);
-    // Return no token found by the new fallback logic
-    mockDbWhere.mockResolvedValueOnce([]);
     mockRetrieveSecretWithFallback.mockResolvedValue("ghp_server_pat");
 
     const token = await getGitHubToken({ server: true });
@@ -385,22 +369,6 @@ describe("github-token-service", () => {
       "GITHUB_TOKEN",
       "global",
       undefined,
-    );
-  });
-
-  it("falls back to any available PAT when GitHub App not configured (server context, no workspaceId)", async () => {
-    mockIsConfigured.mockReturnValue(false);
-    // Simulate finding an existing token in a different workspace
-    mockDbWhere.mockResolvedValueOnce([{ workspaceId: "ws-other" }]);
-    mockRetrieveSecretWithFallback.mockResolvedValue("ghp_other_pat");
-
-    const token = await getGitHubToken({ server: true });
-
-    expect(token).toBe("ghp_other_pat");
-    expect(mockRetrieveSecretWithFallback).toHaveBeenCalledWith(
-      "GITHUB_TOKEN",
-      "global",
-      "ws-other",
     );
   });
 
