@@ -19,6 +19,23 @@ if [ -n "${GITLAB_TOKEN:-}" ] && command -v glab >/dev/null 2>&1; then
   glab auth login --hostname "${GITLAB_HOST:-gitlab.com}" --token "${GITLAB_TOKEN}"
   echo "[optio] GitLab CLI authenticated"
 fi
+case "${OPTIO_REPO_URL:-}" in
+  *git-codecommit.*.amazonaws.com*)
+    if command -v aws >/dev/null 2>&1; then
+      git config --global credential.helper '!aws codecommit credential-helper $@'
+      git config --global credential.UseHttpPath true
+      if [ -z "${AWS_DEFAULT_REGION:-}" ] && [ -n "${AWS_REGION:-}" ]; then
+        export AWS_DEFAULT_REGION="${AWS_REGION}"
+      fi
+      echo "[optio] AWS CodeCommit credential helper configured (region: ${AWS_DEFAULT_REGION:-${AWS_REGION:-unset}})"
+      aws sts get-caller-identity >/dev/null 2>&1 \
+        && echo "[optio] AWS credentials valid" \
+        || echo "[optio] WARNING: AWS credentials missing or invalid — clone/PR ops may fail"
+    else
+      echo "[optio] WARNING: aws CLI not found in image; CodeCommit operations will fail"
+    fi
+    ;;
+esac
 
 # Clone repo
 cd /workspace
@@ -34,12 +51,18 @@ echo "[optio] Working on branch: ${BRANCH_NAME}"
 if [ -n "${OPTIO_SETUP_FILES:-}" ]; then
   echo "[optio] Writing setup files..."
   echo "${OPTIO_SETUP_FILES}" | base64 -d | python3 -c "
-import json, sys, os
+import json, sys, os, base64
 files = json.load(sys.stdin)
 for f in files:
-    os.makedirs(os.path.dirname(f['path']), exist_ok=True)
-    with open(f['path'], 'w') as fh:
-        fh.write(f['content'])
+    parent = os.path.dirname(f['path'])
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    if 'contentBase64' in f and f['contentBase64'] is not None:
+        with open(f['path'], 'wb') as fh:
+            fh.write(base64.b64decode(f['contentBase64']))
+    else:
+        with open(f['path'], 'w') as fh:
+            fh.write(f.get('content', ''))
     if f.get('executable'):
         os.chmod(f['path'], 0o755)
     elif f.get('sensitive'):

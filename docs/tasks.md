@@ -1,8 +1,14 @@
-# Tasks: Repo Tasks and Standalone Tasks
+# Tasks: Repo Tasks, Standalone Tasks, and Persistent Agents
 
-Optio has one user-facing concept — a **Task** — with one attribute that flips the pipeline behind it: does the task have a repo? Everything else (prompts, triggers, agent config, run history, logs, costs) is shared.
+Optio's runtime tier has three flavors:
 
-This guide covers the two flavors, when to use each, and how the unified `/api/tasks` HTTP layer presents them.
+1. **Repo Task** — agent runs in a worktree, opens a PR, terminates.
+2. **Standalone Task** — agent runs once with no repo, produces side effects, terminates.
+3. **Persistent Agent** — long-lived, named, message-driven; _doesn't terminate_. See [persistent-agents.md](persistent-agents.md).
+
+The first two share most of the pipeline (prompts, triggers, agent config, run history, logs, costs) — they're separated only by whether a repo is attached. Persistent Agents are a distinct runtime model: turns are inputs to a long-lived process, rather than the unit of work itself.
+
+This guide covers the two Task flavors, when to use each, and how the unified `/api/tasks` HTTP layer presents them. For Persistent Agents see [persistent-agents.md](persistent-agents.md).
 
 ## The two flavors
 
@@ -40,7 +46,7 @@ The user-facing flavors are backed by three internal types. The distinction is w
 
 A blueprint plus a fired trigger produces a run. The same trigger types (`manual`, `schedule`, `webhook`, `ticket`) work for both `repo-blueprint` and `standalone` because the trigger table is polymorphic — see [Triggers](#triggers) below.
 
-> **Backend-naming note.** The schema still says `workflows`, `workflow_runs`, and `workflow_triggers` for historical reasons. User-facing copy is always "Task" / "Repo Task" / "Standalone Task". Routes follow the same rule: `/api/tasks` is the canonical surface; `/api/jobs/*` and `/api/task-configs/*` are back-compat aliases.
+> **Backend-naming note.** The schema still says `workflows`, `workflow_runs`, and `workflow_triggers` for historical reasons, and the user-facing label for Standalone Tasks settled on **Jobs** (which matches the existing `/api/jobs` URL and the `/jobs/*` web routes). `/api/tasks` is the canonical polymorphic surface; `/api/jobs/*` and `/api/task-configs/*` are back-compat aliases.
 
 ## The unified `/api/tasks` HTTP layer
 
@@ -60,15 +66,16 @@ Legacy `/api/jobs/*` and `/api/task-configs/*` endpoints still work as thin alia
 
 ## How they appear in the UI
 
-The web UI hides the schema split entirely.
+The web UI hides the schema split entirely. As of v0.4 the old `/tasks`-with-tabs hub is gone — each surface lives at its own top-level route, grouped under **Run** in the sidebar. User-facing names: Standalone Tasks are called **Jobs**, PR reviews are called **Reviews**.
 
-- **`/tasks`** — the main hub.
-  - **Repo Tasks** tab: ad-hoc and blueprint-spawned `tasks` runs. Bulk actions, state filters, real-time WebSocket updates.
-  - **Standalone** tab: `workflows` (blueprints) with their runs and triggers. One-click "Run Now."
-  - **Issues** tab: GitHub Issues across connected repos. "Assign to Optio" creates an ad-hoc Repo Task.
-  - **Pull Requests** tab: PR browser with CI / review / merge tracking.
+- **`/tasks`** — Repo Tasks list. Ad-hoc and blueprint-spawned `tasks` runs, with bulk actions, state filters, and real-time WebSocket updates.
+- **`/jobs`**, **`/jobs/:id`**, **`/jobs/:id/runs/:runId`** — Jobs (Standalone Tasks): blueprint list, detail, and per-run views. One-click "Run Now."
+- **`/reviews`**, **`/reviews/:id`** — Reviews: code-review subtasks plus external PR reviews, with CI / review / merge tracking.
+- **`/issues`** — GitHub Issues across connected repos. "Assign to Optio" creates an ad-hoc Repo Task.
 - **`/tasks/scheduled`** — manage `repo-blueprint` rows: schedule, webhook, ticket, manual triggers; pause/resume; run-now.
-- **`/jobs`**, **`/jobs/:id`**, **`/jobs/:id/runs/:runId`** — Standalone detail and run views (the legacy "jobs" route names live on under the hood).
+- **`/agents`**, **`/agents/:id`** — Persistent Agents (the third tier — see [persistent-agents.md](persistent-agents.md)). Listed under **Live** in the sidebar alongside `/sessions`.
+
+Legacy bookmarks like `/tasks?tab=standalone`, `/tasks?tab=issues`, and `/tasks?tab=prs` are redirected to `/jobs`, `/issues`, and `/reviews` respectively.
 
 ## Triggers
 

@@ -11,12 +11,35 @@ const scopeQuerySchema = z
   })
   .describe("Query parameters for listing skills");
 
+const skillLayoutSchema = z.enum(["commands", "skill-dir"]);
+
+const skillFileSchema = z.object({
+  relativePath: z
+    .string()
+    .min(1)
+    .describe("Path under .claude/skills/<name>/. No leading slash or .. segments."),
+  content: z.string(),
+});
+
 const createSkillSchema = z
   .object({
     name: z.string().min(1),
     description: z.string().optional(),
-    prompt: z.string().min(1).describe("Skill prompt content"),
+    prompt: z.string().min(1).describe("Skill prompt content (SKILL.md body for skill-dir)"),
     repoUrl: z.string().optional().describe("Optional repo scope; empty means global"),
+    layout: skillLayoutSchema
+      .optional()
+      .describe(
+        "Layout: 'commands' (default) writes .claude/commands/<name>.md; 'skill-dir' writes .claude/skills/<name>/SKILL.md plus files.",
+      ),
+    files: z
+      .array(skillFileSchema)
+      .optional()
+      .describe("Extra files for skill-dir layout. Ignored for 'commands'."),
+    agentTypes: z
+      .array(z.string())
+      .optional()
+      .describe("Agent types this skill applies to. Empty/omitted = all agents."),
     enabled: z.boolean().optional(),
   })
   .describe("Body for creating a skill");
@@ -26,6 +49,9 @@ const updateSkillSchema = z
     name: z.string().min(1).optional(),
     description: z.string().nullable().optional(),
     prompt: z.string().min(1).optional(),
+    layout: skillLayoutSchema.optional(),
+    files: z.array(skillFileSchema).nullable().optional(),
+    agentTypes: z.array(z.string()).nullable().optional(),
     enabled: z.boolean().optional(),
   })
   .describe("Partial update to a skill");

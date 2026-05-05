@@ -1,19 +1,20 @@
 # Optio
 
-**Workflow orchestration for AI coding agents — from ticket to merged PR, and beyond.**
+**Self-hosted AI engineering platform — your cluster, your agents, your code.**
 
 [![CI](https://github.com/jonwiggins/optio/actions/workflows/ci.yml/badge.svg)](https://github.com/jonwiggins/optio/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-Optio has one user-facing concept — a **Task** — with one attribute that flips the pipeline behind it: does the task have a repo?
+Optio organizes agent work into three tiers, all driven by the same trigger types, prompt-template engine, log streaming, and `/api/tasks` HTTP surface:
 
-- **Repo Tasks** — turn tickets into merged pull requests. Submit a task (manually, from a GitHub Issue, Linear, Jira, or Notion), and Optio provisions an isolated environment, runs an AI agent, opens a PR, monitors CI, triggers code review, auto-fixes failures, and merges when everything passes.
-- **Standalone Tasks** — run reusable, parameterized agent work with no repo checkout. Generate reports, triage alerts, audit dependencies, query a database, post to Slack — anything that doesn't need to land as a PR.
+- **Tasks** ([Repo Tasks](./docs/tasks.md)) — turn tickets into merged pull requests. Submit a task (manually, from a GitHub Issue, Linear, Jira, or Notion), and Optio provisions an isolated environment, runs an AI agent, opens a PR, monitors CI, triggers code review, auto-fixes failures, and merges when everything passes.
+- **Jobs** ([Standalone Tasks](./docs/tasks.md)) — reusable, parameterized agent runs with no repo checkout. Generate reports, triage alerts, audit dependencies, query a database, post to Slack — anything that doesn't need to land as a PR.
+- **Agents** ([Persistent Agents](./docs/persistent-agents.md)) — long-lived, named, message-driven agent processes. Each has a stable slug, an inbox, and a cyclic state machine. Wake on user messages, agent messages, webhooks, cron ticks, or ticket events. Three pod lifecycle modes (`always-on` / `sticky` / `on-demand`). Address each other via an inter-agent HTTP API. See the four-agent [Forge demo](./examples/persistent-agents/forge/) and the [Mars Mission Control](./examples/persistent-agents/mars-mission-control/) example.
 - **Connections** — give your agents access to external services. Connect Notion, Slack, Linear, GitHub, PostgreSQL, Sentry, or any MCP-compatible server, and Optio injects them into agent pods at runtime.
 
-Both flavors share the same trigger types (manual, schedule, webhook, ticket), the same prompt-template engine, the same real-time log streaming, and the same `/api/tasks` HTTP surface. The difference is whether the agent runs against a worktree or in an empty pod. See [docs/tasks.md](./docs/tasks.md) for the full breakdown.
+Tasks and Jobs are the **job model** — one-shot runs whose identity is the run itself. Persistent Agents are the **service model** — a turn is an input to the long-lived process, not the unit of work. Pick the tier by what shape your work has; see [examples/](./examples/README.md) for runnable starting points and [docs/tasks.md](./docs/tasks.md) for the full breakdown.
 
-The feedback loop is what makes Repo Tasks different. When CI fails, the agent is automatically resumed with the failure context. When a reviewer requests changes, the agent picks up the review comments and pushes a fix. When everything passes, the PR is squash-merged and the issue is closed. You describe the work; Optio drives it to completion.
+The feedback loop is what makes Tasks different. When CI fails, the agent is automatically resumed with the failure context. When a reviewer requests changes, the agent picks up the review comments and pushes a fix. When everything passes, the PR is squash-merged and the issue is closed. You describe the work; Optio drives it to completion.
 
 Under the hood, all task and pod state changes flow through a [Kubernetes-style reconciliation control plane](./docs/reconciliation.md) — a pure-decision-plus-CAS-executor loop with periodic resync that keeps runs from getting stuck on lost events.
 
@@ -27,9 +28,33 @@ Under the hood, all task and pod state changes flow through a [Kubernetes-style 
 </p>
 <p align="center"><em>Task detail — live-streamed agent output with pipeline progress, PR tracking, and cost breakdown</em></p>
 
+## Why Optio?
+
+The AI coding agent space is crowded — Devin, Charlie Labs, Cursor background agents, Sweep, and others all promise ticket-to-PR automation. Optio's wedge is different: it runs **in your infrastructure**, behind **whichever agent vendor you trust**, against **whichever Kubernetes cluster you already operate**.
+
+| Optio                                                                                                                                                                                                                                                                             | Hosted alternatives                                    |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| **Self-hosted** — runs entirely in your Kubernetes cluster (GKE, EKS, AKS, or any conformant K8s). Code, secrets, and agent logs never leave your network.                                                                                                                        | Hosted SaaS — your code goes to their cloud.           |
+| **Multi-vendor agents** — Claude Code, OpenAI Codex, GitHub Copilot, Google Gemini, and OpenCode behind one interface. Switch per repo, or A/B agents on the same task.                                                                                                           | Locked to a single model family or in-house agent.     |
+| **Open source (MIT)** — read the code, fork it, audit it. No black box, no vendor lock-in.                                                                                                                                                                                        | Closed source.                                         |
+| **Enterprise-ready primitives out of the box** — workspaces, encrypted secrets at rest (AES-256-GCM), OIDC/OAuth, Kubernetes RBAC, audit-friendly task history, and a [reconciliation control plane](./docs/reconciliation.md) that keeps runs from getting stuck on lost events. | Vary by vendor; often gated to enterprise tiers.       |
+| **Standalone Tasks** — not just ticket-to-PR. Reusable, parameterized agent work for ops, on-call triage, scheduled reports, and webhook-driven automation, with no repo checkout.                                                                                                | PR-centric; ops/automation use cases are out of scope. |
+
+If you'd ship to a hosted agent without thinking twice, the hosted options are simpler. If shipping your repo to someone else's cloud is a non-starter — or if you want to keep your model choice open — Optio is built for you.
+
+## Who is this for?
+
+- **Security-conscious organizations** — teams that can't (or won't) ship source code, secrets, or production data to a third-party AI service.
+- **Regulated industries** — finance, healthcare, government, defense, and others where data residency, auditability, and tenancy isolation are non-negotiable.
+- **Teams already running Kubernetes** — drop-in Helm install, BYO Postgres/Redis, integrates with your existing observability, ingress, and identity stack.
+- **Multi-agent shops** — engineering teams evaluating multiple agent vendors and unwilling to commit to a single platform's roadmap.
+- **Platform teams building internal AI tooling** — Optio is the orchestration layer. You bring the prompts, policies, connections, and review standards.
+
+If none of the above describes you, a hosted product like Devin or Cursor background agents will get you to value faster. We're not trying to be everything to everyone.
+
 ## How It Works
 
-### Repo Tasks — ticket to merged PR
+### Tasks — ticket to merged PR
 
 ```
 You create a task          Optio runs the agent           Optio closes the loop
@@ -50,10 +75,10 @@ You create a task          Optio runs the agent           Optio closes the loop
 5. **Feedback loop** — CI failures, merge conflicts, and review feedback automatically resume the agent with context
 6. **Completion** — PR is squash-merged, linked issues are closed, costs are recorded
 
-### Standalone Tasks — reusable agent work without a repo
+### Jobs — reusable agent work without a repo
 
 ```
-You define a task           Optio triggers it              Optio runs & tracks
+You define a job            Optio triggers it              Optio runs & tracks
 ────────────────────        ─────────────────              ───────────────────
 
   Prompt template           Manual (UI / API)              Provision isolated pod
@@ -63,7 +88,21 @@ You define a task           Optio triggers it              Optio runs & tracks
                                                            Auto-retry on failure
 ```
 
-Standalone Tasks run an agent in an isolated pod with no git checkout. Define a prompt template with `{{PARAM}}` placeholders, configure triggers (manual, cron schedule, webhook, or ticket), and let Optio handle execution, retries, and cost tracking. Repo Tasks can also be saved as **blueprints** with the same trigger types — see [docs/tasks.md](./docs/tasks.md).
+Jobs (Standalone Tasks) run an agent in an isolated pod with no git checkout. Define a prompt template with `{{PARAM}}` placeholders, configure triggers (manual, cron schedule, webhook, or ticket), and let Optio handle execution, retries, and cost tracking. Tasks can also be saved as **blueprints** with the same trigger types — see [docs/tasks.md](./docs/tasks.md).
+
+### Agents — long-lived, message-driven
+
+```
+You create an agent         Wake sources                   Per turn
+──────────────────────      ─────────────────              ──────────────────────
+
+  System prompt             User chat message              Drain pending messages
+  agents.md operator   ──→  Inter-agent message    ──→     Render into prompt
+  manual                    Cron tick / webhook            Run one turn → halt
+  Pod lifecycle mode        Ticket event                   Repeat on next wake
+```
+
+Persistent Agents (PAs) are long-lived processes addressable by other agents in the same workspace. Each PA executes one **turn** of work, halts, and waits to be re-woken by a message or trigger event. Pod lifecycle is configurable per agent: `always-on` (lowest latency, highest cost), `sticky` (warm for an idle window after each turn — the default), or `on-demand` (cold-start every turn). PAs reuse the existing trigger system, the reconciler, and the pod-pool primitives. See [docs/persistent-agents.md](./docs/persistent-agents.md) and the [examples/persistent-agents](./examples/persistent-agents/) directory.
 
 ### Connections — extend agent capabilities
 
@@ -74,40 +113,44 @@ Connections give your agents access to external tools and data at runtime. Confi
 ## Key Features
 
 - **Autonomous feedback loop** — auto-resumes the agent on CI failures, merge conflicts, and review feedback; auto-merges when everything passes
-- **Repo Tasks and Standalone Tasks** — one Task concept, two pipelines. Repo Tasks land code via PRs; Standalone Tasks run agents in empty pods for reports, triage, and ops. Both share triggers (manual / schedule / webhook / ticket), templates, and the unified `/api/tasks` HTTP layer
+- **Three Task tiers** — **Tasks** land code via PRs; **Jobs** run agents in empty pods for reports, triage, and ops; **Agents** are long-lived, message-driven services. All three share triggers (manual / schedule / webhook / ticket), prompt templates, the reconciler, and the unified `/api/tasks` HTTP layer
+- **Inter-agent messaging** — Persistent Agents address each other via `/api/internal/persistent-agents/*` for direct messages and broadcasts, enabling multi-agent teams (see the Forge demo)
 - **Connections** — plug external services (Notion, Slack, Linear, GitHub, PostgreSQL, Sentry, custom MCP servers) into agent pods with fine-grained access control per repo and agent type
 - **Pod-per-repo architecture** — one long-lived Kubernetes pod per repo with git worktree isolation, multi-pod scaling, and idle cleanup
 - **Code review agent** — automatically launches a review agent as a subtask, with a separate prompt and model
 - **Multi-agent support** — run Claude Code, OpenAI Codex, GitHub Copilot, Google Gemini, or OpenCode with per-repo model and prompt configuration
 - **GitHub Issues, Linear, Jira, and Notion intake** — assign issues to Optio from the UI or via ticket sync
-- **Reconciliation control plane** — K8s-style pure-decision-plus-CAS-executor loop with periodic resync; keeps tasks and pods from getting stuck on lost events. Ships in shadow mode behind a feature flag
+- **Reconciliation control plane** — K8s-style pure-decision-plus-CAS-executor loop with periodic resync over four `RunKind`s (`repo`, `standalone`, `pr-review`, `persistent-agent`); keeps state from getting stuck on lost events
 - **Real-time dashboard** — live log streaming, pipeline progress, cost analytics, and cluster health
 
 ## Architecture
 
 ```
-┌──────────────┐     ┌────────────────────┐     ┌───────────────────────────┐
-│   Web UI     │────→│    API Server      │────→│      Kubernetes           │
-│   Next.js    │     │    Fastify         │     │                           │
-│   :3100      │     │                    │     │  ┌── Repo Pod A ───────┐  │
-│              │←ws──│  Workers:          │     │  │ clone + sleep       │  │
-│  Dashboard   │     │  ├─ Task Queue     │     │  │ ├─ worktree 1  ⚡    │  │
-│  Tasks       │     │  ├─ PR Watcher     │     │  │ ├─ worktree 2  ⚡    │  │
-│  Repos       │     │  ├─ Workflow Queue │     │  │ └─ worktree N  ⚡    │  │
-│  Standalone  │     │  ├─ Reconciler     │     │  └─────────────────────┘  │
-│  Connections │     │  ├─ Health Mon     │     │  ┌── Standalone Pod ────┐ │
-│  Cluster     │     │  └─ Ticket Sync    │     │  │ isolated agent  ⚡    │ │
-│  Costs       │     │                    │     │  └─────────────────────┘  │
-│              │     │  Services:         │     │                           │
-│              │     │  ├─ Repo Pool      │     │                           │
-│              │     │  ├─ Workflow Pool  │     │  MCP servers injected via │
-│              │     │  ├─ Connections    │     │  Connections at runtime    │
-│              │     │  ├─ Review Agent   │     │                           │
-│              │     │  └─ Auth/Secrets   │     │                           │
-└──────────────┘     └─────────┬──────────┘     └───────────────────────────┘
-                               │                  ⚡ = Claude / Codex / Copilot / Gemini
+┌──────────────┐     ┌────────────────────┐     ┌────────────────────────────┐
+│   Web UI     │────→│    API Server      │────→│      Kubernetes            │
+│   Next.js    │     │    Fastify         │     │                            │
+│   :3100      │     │                    │     │  ┌── Repo Pod A ────────┐  │
+│              │←ws──│  Workers:          │     │  │ clone + sleep        │  │
+│  Run         │     │  ├─ Task Queue     │     │  │ ├─ worktree 1  ⚡     │  │
+│   Tasks      │     │  ├─ PR Watcher     │     │  │ ├─ worktree 2  ⚡     │  │
+│   Jobs       │     │  ├─ Workflow Queue │     │  │ └─ worktree N  ⚡     │  │
+│   Reviews    │     │  ├─ PA Worker      │     │  └──────────────────────┘  │
+│   Issues     │     │  ├─ Reconciler     │     │  ┌── Job Pod ───────────┐  │
+│   Scheduled  │     │  ├─ Health Mon     │     │  │ isolated agent  ⚡    │  │
+│  Live        │     │  └─ Ticket Sync    │     │  └──────────────────────┘  │
+│   Agents     │     │                    │     │  ┌── Persistent Agent ──┐  │
+│   Sessions   │     │  Services:         │     │  │ long-lived; turns   ⚡│  │
+│  Library     │     │  ├─ Repo Pool      │     │  │ wake on messages     │  │
+│   Prompts    │     │  ├─ Workflow Pool  │     │  └──────────────────────┘  │
+│   Repos      │     │  ├─ PA Pool        │     │                            │
+│   Connections│     │  ├─ Connections    │     │  MCP servers injected via  │
+│              │     │  ├─ Review Agent   │     │  Connections at runtime    │
+│              │     │  └─ Auth/Secrets   │     │                            │
+└──────────────┘     └─────────┬──────────┘     └────────────────────────────┘
+                               │                  ⚡ = Claude / Codex / Copilot / Gemini / OpenCode
                         ┌──────┴──────┐
-                        │  Postgres   │  Tasks, workflows, connections, logs, secrets
+                        │  Postgres   │  Tasks, workflows, persistent agents,
+                        │             │  inboxes, connections, logs, secrets
                         │  Redis      │  Job queue, pub/sub, live streaming
                         └─────────────┘
 ```
@@ -207,11 +250,12 @@ helm uninstall optio -n optio
 
 ```
 apps/
-  api/          Fastify API server, BullMQ workers (incl. reconciler),
-                WebSocket endpoints, standalone-task engine, connection service,
-                review service, OAuth
+  api/          Fastify API server, BullMQ workers (incl. reconciler,
+                persistent-agent worker), WebSocket endpoints, standalone-task
+                engine, connection service, review service, OAuth
   web/          Next.js dashboard with real-time streaming, cost analytics,
-                Repo / Standalone Task management, connection catalog
+                Tasks / Jobs / Reviews / Issues / Agents / Sessions surfaces,
+                connection catalog
   site/         Documentation site (GitHub Pages)
   cli/          Terminal client for Optio
 
