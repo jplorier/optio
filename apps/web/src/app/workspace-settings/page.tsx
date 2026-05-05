@@ -155,6 +155,7 @@ function MemberManagement() {
   const [loading, setLoading] = useState(true);
   const [addingEmail, setAddingEmail] = useState("");
   const [addingRole, setAddingRole] = useState("member");
+  const [isAdding, setIsAdding] = useState(false);
 
   useEffect(() => {
     const wsId = localStorage.getItem("optio_workspace_id");
@@ -198,6 +199,31 @@ function MemberManagement() {
       toast.error("Failed to remove member", {
         description: err instanceof Error ? err.message : undefined,
       });
+    }
+  };
+
+  const handleAddMember = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!wsId || !addingEmail || isAdding) return;
+
+    setIsAdding(true);
+    try {
+      // Look the user up by email, then add them. The duplicate-member check
+      // is enforced server-side (409 from POST /members) so a stale local
+      // `members` list can't accidentally re-add someone with a new role.
+      const { user } = await api.lookupUserByEmail(addingEmail);
+      await api.addWorkspaceMember(wsId, user.id, addingRole);
+
+      const { members: updatedMembers } = await api.listWorkspaceMembers(wsId);
+      setMembers(updatedMembers);
+      setAddingEmail("");
+      toast.success(`${user.displayName} added to workspace`);
+    } catch (err) {
+      toast.error("Failed to add member", {
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setIsAdding(false);
     }
   };
 
@@ -270,10 +296,48 @@ function MemberManagement() {
         ))}
       </div>
       {isAdmin && (
-        <p className="text-xs text-text-muted">
-          To add new members, they must first sign in to Optio. You can then add them by their user
-          ID from the API.
-        </p>
+        <div className="pt-4 border-t border-border/50">
+          <p className="text-xs font-medium text-text-muted mb-3 flex items-center gap-1.5">
+            <UserPlus className="w-3.5 h-3.5" /> Add New Member
+          </p>
+          <form onSubmit={handleAddMember} className="flex flex-wrap gap-2">
+            <div className="flex-1 min-w-[200px]">
+              <input
+                type="email"
+                placeholder="user@example.com"
+                value={addingEmail}
+                onChange={(e) => setAddingEmail(e.target.value)}
+                required
+                className="w-full px-3 py-1.5 rounded-lg bg-bg border border-border text-xs focus:outline-none focus:border-primary"
+              />
+            </div>
+            <select
+              value={addingRole}
+              onChange={(e) => setAddingRole(e.target.value)}
+              className="text-xs px-2 py-1.5 rounded border border-border bg-bg focus:outline-none focus:border-primary"
+            >
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <button
+              type="submit"
+              disabled={isAdding || !addingEmail}
+              className="px-4 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover disabled:opacity-50 flex items-center gap-2"
+            >
+              {isAdding ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" /> Adding...
+                </>
+              ) : (
+                "Add Member"
+              )}
+            </button>
+          </form>
+          <p className="text-[10px] text-text-muted mt-2">
+            The user must have signed in to Optio at least once to be found.
+          </p>
+        </div>
       )}
     </div>
   );

@@ -1,7 +1,21 @@
 import { eq, and, or, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { customSkills } from "../db/schema.js";
-import type { CustomSkillConfig } from "@optio/shared";
+import type {
+  CreateCustomSkillInput,
+  CustomSkillConfig,
+  CustomSkillFile,
+  CustomSkillLayout,
+  UpdateCustomSkillInput,
+} from "@optio/shared";
+
+const VALID_LAYOUTS: readonly CustomSkillLayout[] = ["commands", "skill-dir"] as const;
+
+function normalizeLayout(value: unknown): CustomSkillLayout {
+  return VALID_LAYOUTS.includes(value as CustomSkillLayout)
+    ? (value as CustomSkillLayout)
+    : "commands";
+}
 
 export async function listSkills(
   scope?: string,
@@ -32,15 +46,10 @@ export async function getSkill(id: string): Promise<CustomSkillConfig | null> {
 }
 
 export async function createSkill(
-  input: {
-    name: string;
-    description?: string;
-    prompt: string;
-    repoUrl?: string;
-    enabled?: boolean;
-  },
+  input: CreateCustomSkillInput,
   workspaceId?: string | null,
 ): Promise<CustomSkillConfig> {
+  const layout = normalizeLayout(input.layout);
   const [row] = await db
     .insert(customSkills)
     .values({
@@ -50,6 +59,9 @@ export async function createSkill(
       scope: input.repoUrl ?? "global",
       repoUrl: input.repoUrl ?? undefined,
       workspaceId: workspaceId ?? undefined,
+      layout,
+      files: layout === "skill-dir" ? (input.files ?? []) : null,
+      agentTypes: input.agentTypes && input.agentTypes.length > 0 ? input.agentTypes : null,
       enabled: input.enabled ?? true,
     })
     .returning();
@@ -58,18 +70,18 @@ export async function createSkill(
 
 export async function updateSkill(
   id: string,
-  input: {
-    name?: string;
-    description?: string | null;
-    prompt?: string;
-    enabled?: boolean;
-  },
+  input: UpdateCustomSkillInput,
 ): Promise<CustomSkillConfig> {
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (input.name !== undefined) updates.name = input.name;
   if (input.description !== undefined) updates.description = input.description;
   if (input.prompt !== undefined) updates.prompt = input.prompt;
   if (input.enabled !== undefined) updates.enabled = input.enabled;
+  if (input.layout !== undefined) updates.layout = normalizeLayout(input.layout);
+  if (input.files !== undefined) updates.files = input.files;
+  if (input.agentTypes !== undefined) {
+    updates.agentTypes = input.agentTypes && input.agentTypes.length > 0 ? input.agentTypes : null;
+  }
 
   const [row] = await db
     .update(customSkills)
@@ -84,12 +96,15 @@ export async function deleteSkill(id: string): Promise<void> {
 }
 
 /**
- * Get all enabled skills for a task (global + repo-scoped).
- * Repo-scoped skills with the same name override global ones.
+ * Get all enabled skills for a task (global + repo-scoped) optionally filtered
+ * by the executing agent's type. Repo-scoped skills with the same name override
+ * global ones. Skills with `agentTypes` set that don't include the current
+ * agent are excluded; skills with no `agentTypes` apply to all agents.
  */
 export async function getSkillsForTask(
   repoUrl: string,
   workspaceId?: string | null,
+  agentType?: string | null,
 ): Promise<CustomSkillConfig[]> {
   const conditions = [
     eq(customSkills.enabled, true),
@@ -106,10 +121,13 @@ export async function getSkillsForTask(
     .from(customSkills)
     .where(and(...conditions));
 
-  // Repo-scoped skills override global ones with the same name
+  // Repo-scoped skills override global ones with the same name. Apply agent-type
+  // filtering after the per-name dedupe so a more specific (repo) skill that
+  // doesn't match the agent doesn't accidentally hide a matching global one.
   const byName = new Map<string, CustomSkillConfig>();
   for (const row of rows) {
     const config = mapRow(row);
+    if (!skillMatchesAgent(config, agentType)) continue;
     const existing = byName.get(config.name);
     if (!existing || (config.scope !== "global" && existing.scope === "global")) {
       byName.set(config.name, config);
@@ -118,16 +136,48 @@ export async function getSkillsForTask(
   return Array.from(byName.values());
 }
 
+function skillMatchesAgent(skill: CustomSkillConfig, agentType?: string | null): boolean {
+  if (!skill.agentTypes || skill.agentTypes.length === 0) return true;
+  if (!agentType) return false;
+  return skill.agentTypes.includes(agentType);
+}
+
 /**
- * Build setup files for custom skills to be written to .claude/commands/ in the worktree.
+ * Build setup files for custom skills, in the layout each skill declares.
+ *
+ *  - "commands"   → `.claude/commands/<name>.md` containing the prompt.
+ *  - "skill-dir"  → `.claude/skills/<name>/SKILL.md` containing the prompt,
+ *                   plus any `files` entries resolved under that directory.
+ *
+ * Extra-file paths are sanitized: leading slashes are stripped and `..`
+ * segments are rejected so a malformed entry can't escape the skill dir.
  */
 export function buildSkillSetupFiles(
   skills: CustomSkillConfig[],
 ): Array<{ path: string; content: string }> {
-  return skills.map((skill) => ({
-    path: `.claude/commands/${skill.name}.md`,
-    content: skill.prompt,
-  }));
+  const out: Array<{ path: string; content: string }> = [];
+  for (const skill of skills) {
+    if (skill.layout === "skill-dir") {
+      const baseDir = `.claude/skills/${skill.name}`;
+      out.push({ path: `${baseDir}/SKILL.md`, content: skill.prompt });
+      for (const f of skill.files ?? []) {
+        const sanitized = sanitizeRelativePath(f.relativePath);
+        if (!sanitized) continue;
+        out.push({ path: `${baseDir}/${sanitized}`, content: f.content });
+      }
+    } else {
+      out.push({ path: `.claude/commands/${skill.name}.md`, content: skill.prompt });
+    }
+  }
+  return out;
+}
+
+function sanitizeRelativePath(input: string): string | null {
+  const trimmed = input.replace(/^\/+/, "").trim();
+  if (!trimmed) return null;
+  const parts = trimmed.split("/");
+  if (parts.some((p) => p === "" || p === "." || p === "..")) return null;
+  return parts.join("/");
 }
 
 function mapRow(row: typeof customSkills.$inferSelect): CustomSkillConfig {
@@ -139,6 +189,9 @@ function mapRow(row: typeof customSkills.$inferSelect): CustomSkillConfig {
     scope: row.scope,
     repoUrl: row.repoUrl,
     workspaceId: row.workspaceId,
+    layout: normalizeLayout(row.layout),
+    files: (row.files as CustomSkillFile[] | null) ?? null,
+    agentTypes: (row.agentTypes as string[] | null) ?? null,
     enabled: row.enabled,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,

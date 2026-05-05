@@ -1,7 +1,13 @@
 import { randomUUID } from "node:crypto";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, asc, gte, isNull, lte, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
-import { interactiveSessions, sessionPrs, repos, repoPods } from "../db/schema.js";
+import {
+  interactiveSessions,
+  sessionPrs,
+  sessionChatEvents,
+  repos,
+  repoPods,
+} from "../db/schema.js";
 import { publishEvent, publishSessionEvent } from "./event-bus.js";
 import { InteractiveSessionState, normalizeRepoUrl, type PresetImageId } from "@optio/shared";
 import { getOrCreateRepoPod } from "./repo-pool-service.js";
@@ -215,4 +221,131 @@ export async function getActiveSessionCount(repoUrl?: string) {
     .where(and(...conditions));
 
   return count;
+}
+
+// ── Session Chat Events ─────────────────────────────────────────────────────
+
+/**
+ * Per-session retention cap. Sessions can run for hours/days, and a busy
+ * agent may emit thousands of events per turn. Keeping the most recent N
+ * events keeps the chat usable on reconnect without unbounded table growth.
+ * Older events are pruned synchronously as new ones are inserted.
+ */
+export const MAX_SESSION_CHAT_EVENTS = 5000;
+
+export interface AppendSessionChatEventInput {
+  sessionId: string;
+  content: string;
+  stream?: string;
+  logType?: string;
+  metadata?: Record<string, unknown>;
+  timestamp?: Date;
+}
+
+/**
+ * Persist a single chat event for a session. Trims older events past the
+ * retention cap so a long-running session doesn't grow unboundedly.
+ */
+export async function appendSessionChatEvent(input: AppendSessionChatEventInput) {
+  const [event] = await db
+    .insert(sessionChatEvents)
+    .values({
+      sessionId: input.sessionId,
+      stream: input.stream ?? "stdout",
+      content: input.content,
+      logType: input.logType ?? null,
+      metadata: input.metadata ?? null,
+      timestamp: input.timestamp ?? new Date(),
+    })
+    .returning();
+
+  // Best-effort retention prune. A bulk DELETE keyed on the cutoff timestamp
+  // avoids a per-row lookup on the hot streaming path.
+  try {
+    const [cutoff] = await db
+      .select({ ts: sessionChatEvents.timestamp })
+      .from(sessionChatEvents)
+      .where(eq(sessionChatEvents.sessionId, input.sessionId))
+      .orderBy(desc(sessionChatEvents.timestamp))
+      .limit(1)
+      .offset(MAX_SESSION_CHAT_EVENTS);
+    if (cutoff?.ts) {
+      await db
+        .delete(sessionChatEvents)
+        .where(
+          and(
+            eq(sessionChatEvents.sessionId, input.sessionId),
+            lte(sessionChatEvents.timestamp, cutoff.ts),
+          ),
+        );
+    }
+  } catch (err) {
+    logger.warn({ err, sessionId: input.sessionId }, "Failed to prune session chat events");
+  }
+
+  return event;
+}
+
+export async function listSessionChatEvents(sessionId: string, opts?: { limit?: number }) {
+  const limit = Math.min(opts?.limit ?? 1000, MAX_SESSION_CHAT_EVENTS);
+  return db
+    .select()
+    .from(sessionChatEvents)
+    .where(eq(sessionChatEvents.sessionId, sessionId))
+    .orderBy(asc(sessionChatEvents.timestamp))
+    .limit(limit);
+}
+
+/**
+ * How recent an `ended` session is allowed to be to count toward the
+ * Sessions stats bar. Past this window the session disappears from the
+ * "what's been live recently" picture so the Done bucket reflects today's
+ * activity, not historical noise.
+ */
+export const SESSION_RECENT_ENDED_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Per-state counts of interactive sessions in a workspace. Drives the
+ * Sessions stats bar on the overview dashboard — shape mirrors
+ * `getTaskStats()` / `getWorkflowRunStats()` so the frontend can treat all
+ * four execution surfaces symmetrically.
+ *
+ * `ended` is windowed (last 24h) to keep the bar focused on recent
+ * activity. `total` is the sum of `active` + `ended` (within the window),
+ * not a lifetime count.
+ */
+export async function getSessionStats(workspaceId?: string | null) {
+  const wsFilter =
+    workspaceId === undefined
+      ? undefined
+      : workspaceId === null
+        ? isNull(interactiveSessions.workspaceId)
+        : eq(interactiveSessions.workspaceId, workspaceId);
+
+  const recentSince = new Date(Date.now() - SESSION_RECENT_ENDED_WINDOW_MS);
+
+  const [activeRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(interactiveSessions)
+    .where(
+      wsFilter
+        ? and(eq(interactiveSessions.state, "active"), wsFilter)
+        : eq(interactiveSessions.state, "active"),
+    );
+
+  const [endedRow] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(interactiveSessions)
+    .where(
+      and(
+        eq(interactiveSessions.state, "ended"),
+        gte(interactiveSessions.endedAt, recentSince),
+        ...(wsFilter ? [wsFilter] : []),
+      ),
+    );
+
+  const active = activeRow?.count ?? 0;
+  const ended = endedRow?.count ?? 0;
+
+  return { total: active + ended, active, ended };
 }

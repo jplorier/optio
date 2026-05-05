@@ -6,7 +6,7 @@ Context and conventions for AI assistants working on the Optio codebase.
 
 Optio is an orchestration system for AI coding agents. Think of it as "CI/CD where the build step is an AI agent." One primary user-facing concept (Tasks) with one attribute (has a repo) flipping the pipeline, plus shared primitives:
 
-**Tasks** — a configured unit of agent work. A Task has a **Who** (agent type), **What** (prompt or template), **When** (trigger: manual / schedule / webhook / ticket), optional **Where** (repo + branch), and **Why** (description). Tasks come in two flavors based on whether a repo is attached:
+**Tasks** — a configured unit of agent work. A Task has a **Who** (agent type), **What** (prompt or template), **When** (trigger: manual / schedule / webhook / ticket), optional **Where** (repo + branch), and **Why** (description). Tasks come in three flavors:
 
 - **Repo Task** — `Where` is set. The agent clones the repo into a worktree and opens a PR:
   1. Spins up an isolated Kubernetes pod for the repository (pod-per-repo)
@@ -19,7 +19,11 @@ Optio is an orchestration system for AI coding agents. Think of it as "CI/CD whe
   8. Auto-resumes agent when reviewer requests changes (if enabled)
   9. Auto-completes on merge, auto-fails on close
 
+  Supported git platforms: **GitHub**, **GitLab** (incl. self-hosted via `GITLAB_HOSTS`), and **AWS CodeCommit**. CodeCommit auths via AWS access keys (or IRSA / instance profile when running on EKS) and uses the AWS CLI credential helper for clones; PR ops go through `@aws-sdk/client-codecommit`. CodeCommit has no native CI or issues — `getCIChecks` returns `[]` (auto-merge still fires on `checksStatus="none"`), `listIssues` returns `[]`, and `reviewTrigger="on_pr"` is recommended over the default `on_ci_pass` for CodeCommit repos.
+
 - **Standalone Task** — no `Where`. The agent runs in an isolated pod with no repo checkout, producing logs and side effects (e.g., queries Slack, posts to a database). Scheduled/webhook-driven runs of this flavor are the common case.
+
+- **Persistent Agent** — long-lived, named, message-driven agent process that does _not_ terminate after running. Halts after each turn and waits to be re-woken by a user message, an agent message, a webhook, a cron tick, or a ticket event. Addressable by other agents in the same workspace via the inter-agent HTTP API (`/api/internal/persistent-agents/*`). Three configurable pod lifecycle modes: `always-on`, `sticky` (default, with idle warm window), and `on-demand`. UI at `/agents`. Schema: `persistent_agents`, `persistent_agent_turns`, `persistent_agent_messages`, `persistent_agent_pods`. See `docs/persistent-agents.md` and the demo in `demos/the-forge/`.
 
 **Scheduled (Task Configs)** — a saved Task blueprint that spawns fresh Tasks on a trigger firing. Stored in `task_configs`. Each firing calls `instantiateTask()` which goes through the full Repo Task pipeline. Manageable at `/tasks/scheduled`. Standalone equivalents are stored in `workflows` (see backend-naming note below).
 
@@ -29,7 +33,16 @@ Optio is an orchestration system for AI coding agents. Think of it as "CI/CD whe
 
 **Connections** — external service integrations injected into agent pods at runtime via MCP (Model Context Protocol). Built-in providers: Notion, GitHub, Slack, Linear, PostgreSQL, Sentry, Filesystem. Also supports custom MCP servers and HTTP APIs. Fine-grained access control (per-repo, per-agent-type, permission levels).
 
-**Backend-naming note.** For historical reasons the tables are `tasks` (Repo Tasks' one-time runs), `task_configs` (Repo Task blueprints), and `workflows` / `workflow_runs` / `workflow_triggers` (Standalone Tasks and their shared trigger surface). User-facing copy never uses "Workflow" or "Job" — everything is "Task" / "Repo Task" / "Standalone Task" in the UI. The legacy `/api/workflows` path was renamed to `/api/jobs` at the HTTP layer and the `/jobs/*` web routes remain for Standalone detail/runs.
+**Backend-naming note.** For historical reasons the tables are `tasks` (Repo Tasks' one-time runs), `task_configs` (Repo Task blueprints), and `workflows` / `workflow_runs` / `workflow_triggers` (Standalone Tasks and their shared trigger surface). The v0.4 UI settled on these user-facing names:
+
+- **Tasks** — Repo Tasks (formerly "Repo Tasks" in copy; now just "Tasks")
+- **Jobs** — Standalone Tasks (matches the `/api/jobs` URL and `/jobs/*` web routes)
+- **Reviews** — code-review subtasks + external PR reviews (formerly "PR Reviews"; promoted out of `/tasks` into its own top-level slot)
+- **Issues** — GitHub Issues queue (promoted to its own top-level nav item)
+- **Agents** — Persistent Agents (the third tier; long-lived, message-driven)
+- **Prompts** — reusable prompt templates (was "Templates" in the Library)
+
+The sidebar groups these as **Run** (Tasks · Jobs · Reviews · Issues · Scheduled) and **Live** (Agents · Sessions). The `/tasks` hub-with-tabs from earlier versions is gone — each section is its own page now. Legacy `/tasks?tab=...` URLs redirect to the dedicated routes.
 
 For the long-form explanation of how the two flavors map to the three internal types, the polymorphic HTTP layer, and how the UI presents them, see `docs/tasks.md`.
 
@@ -47,23 +60,26 @@ Legacy `/api/jobs/*` and `/api/task-configs/*` endpoints still work as thin alia
 ## Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────────┐
-│   Web UI    │────→│  API Server  │────→│   K8s Pods          │
-│  Next.js    │     │   Fastify    │     │                     │
-│  :30310     │     │   :30400     │     │  ┌─ Repo Pod A ──┐  │
-│             │←ws──│              │     │  │ clone + sleep  │  │
-│             │     │ - BullMQ     │     │  │ ├─ worktree 1  │  │
-│             │     │ - Drizzle    │     │  │ ├─ worktree 2  │  │
-│             │     │ - WebSocket  │     │  │ └─ worktree N  │  │
-│             │     │ - PR Watcher │     │  └────────────────┘  │
-│             │     │ - Workflow Q │     │  ┌─ Workflow Pod ─┐  │
-│             │     │ - Health Mon │     │  │ isolated agent  │  │
-│             │     │ - Connection │     │  └────────────────┘  │
-│             │     │   Service    │     │                       │
-└─────────────┘     └──────┬───────┘     └───────────────────────┘
-                           │
+┌─────────────┐     ┌──────────────┐     ┌─────────────────────────────┐
+│   Web UI    │────→│  API Server  │────→│   K8s Pods                  │
+│  Next.js    │     │   Fastify    │     │                             │
+│  :30310     │     │   :30400     │     │  ┌─ Repo Pod A ──────────┐  │
+│             │←ws──│              │     │  │ clone + sleep          │  │
+│  Run        │     │ - BullMQ     │     │  │ ├─ worktree 1          │  │
+│   Tasks     │     │ - Drizzle    │     │  │ ├─ worktree 2          │  │
+│   Jobs      │     │ - WebSocket  │     │  │ └─ worktree N          │  │
+│   Reviews   │     │ - PR Watcher │     │  └────────────────────────┘  │
+│   Issues    │     │ - Workflow Q │     │  ┌─ Job Pod ─────────────┐  │
+│   Scheduled │     │ - PA Worker  │     │  │ isolated agent         │  │
+│  Live       │     │ - Reconciler │     │  └────────────────────────┘  │
+│   Agents    │     │ - Health Mon │     │  ┌─ Persistent Agent Pod ┐  │
+│   Sessions  │     │ - Connection │     │  │ long-lived; turns      │  │
+│             │     │   Service    │     │  │ wake on messages       │  │
+└─────────────┘     └──────┬───────┘     │  └────────────────────────┘  │
+                           │             └──────────────────────────────┘
                     ┌──────┴───────┐
-                    │  Postgres    │  State, logs, workflows, connections, secrets
+                    │  Postgres    │  State, logs, workflows, persistent agents,
+                    │              │  inboxes, connections, secrets
                     │  Redis       │  Job queue, pub/sub
                     └──────────────┘
 
@@ -136,12 +152,13 @@ These are well-documented in code; read the relevant service files for details:
 - **Shared cache directories**: per-repo persistent PVCs for tool caches (npm, pip, cargo, etc.), managed via `/api/repos/:id/shared-directories`
 - **Interactive sessions**: persistent workspaces with terminal + agent chat, at `/sessions`
 - **Workspaces**: multi-tenancy via `workspaceId` column. Roles (admin/member/viewer) in schema but not fully enforced
-- **Standalone Tasks** (`workflow-service.ts`, `workflow-worker.ts`): reached from the "Standalone" link on `/tasks` (list at `/jobs`, detail at `/jobs/:id`, runs at `/jobs/:id/runs/:runId`). Agent runs with no repo, `{{PARAM}}` prompt templates, four trigger types (manual/schedule/webhook/ticket), pooled pod execution, real-time log streaming, auto-retry with exponential backoff. Pods are **shared across runs within a workflow**, keyed on `(workflow_id, instance_index)`: each workflow has `workflows.maxPodInstances` pod replicas (default 1, max 20) and `workflows.maxAgentsPerPod` concurrent runs per pod (default 2, max 50) — mirrors repo pod scaling. Runs track their assigned pod via `workflow_runs.pod_id` and remember it for retry affinity via `last_pod_id`. Schema: `workflows`, `workflow_triggers`, `workflow_runs`, `workflow_run_logs`, `workflow_pods`
+- **Standalone Tasks / Jobs** (`workflow-service.ts`, `workflow-worker.ts`): top-level **Jobs** nav item under "Run" (list at `/jobs`, detail at `/jobs/:id`, runs at `/jobs/:id/runs/:runId`). Agent runs with no repo, `{{PARAM}}` prompt templates, four trigger types (manual/schedule/webhook/ticket), pooled pod execution, real-time log streaming, auto-retry with exponential backoff. Pods are **shared across runs within a workflow**, keyed on `(workflow_id, instance_index)`: each workflow has `workflows.maxPodInstances` pod replicas (default 1, max 20) and `workflows.maxAgentsPerPod` concurrent runs per pod (default 2, max 50) — mirrors repo pod scaling. Runs track their assigned pod via `workflow_runs.pod_id` and remember it for retry affinity via `last_pod_id`. Schema: `workflows`, `workflow_triggers`, `workflow_runs`, `workflow_run_logs`, `workflow_pods`
 - **Repo Task Configs** (`task-config-service.ts`, routes in `task-configs.ts`): reusable Repo Task blueprints that spawn tasks when triggers fire. `instantiateTask(configId, { triggerId, params })` creates a task with rendered prompt + title, transitions it to QUEUED, and enqueues the BullMQ job. UI at `/tasks/scheduled`. Schema: `task_configs`
 - **Triggers** (`workflow-trigger-service.ts`, `workflow-trigger-worker.ts`): polymorphic trigger table (`workflow_triggers`) keyed by `(target_type, target_id)`. `target_type="job"` dispatches to `createWorkflowRun`; `target_type="task_config"` dispatches to `instantiateTask`. Schedule trigger worker polls every 60s (`OPTIO_WORKFLOW_TRIGGER_INTERVAL`).
-- **Templates** (`prompt-template-service.ts`, routes in `prompt-templates.ts`): reusable prompt templates with `kind` discriminator (`prompt` / `review` / `job` / `task`). `renderTemplateString(template, params)` handles `{{param}}` substitution + `{{#if}}` blocks. UI at `/templates`.
+- **Prompts / Templates** (`prompt-template-service.ts`, routes in `prompt-templates.ts`): reusable prompt templates with `kind` discriminator (`prompt` / `review` / `job` / `task`). `renderTemplateString(template, params)` handles `{{param}}` substitution + `{{#if}}` blocks. UI at `/templates` (labeled **Prompts** in the Library nav as of v0.4 — the "Templates" name was freed for other use).
+- **Persistent Agents** (`persistent-agent-service.ts`, workers `persistent-agent-worker.ts` / `persistent-agent-cleanup-worker.ts`, routes in `persistent-agents.ts` and `internal/persistent-agents.ts`): the third Task tier — long-lived, named, message-driven. Cyclic state machine (`idle → queued → provisioning → running → idle`), per-agent pod lifecycle modes (`always-on` / `sticky` / `on-demand`). Wake sources: user/agent messages, webhook, cron tick, ticket event, system. Inter-agent HTTP API at `/api/internal/persistent-agents/*` (auth via `X-Optio-Agent-Token`). UI at `/agents` (under "Live"). Schema: `persistent_agents`, `persistent_agent_turns`, `persistent_agent_turn_logs`, `persistent_agent_messages`, `persistent_agent_pods`. See `docs/persistent-agents.md` and the demo in `demos/the-forge/`.
 - **Connections** (`connection-service.ts`): external service integrations via MCP. Built-in providers: Notion, GitHub, Slack, Linear, PostgreSQL, Sentry, Filesystem. Also supports custom MCP servers and HTTP APIs. Three-layer model: providers (catalog) → connections (configured instances) → assignments (per-repo/agent-type rules). Injected into agent pods at task runtime via `getConnectionsForTask()` in task-worker
-- **Reconciliation control plane** (`workers/reconcile-worker.ts`, `services/reconcile-{snapshot,executor,queue}.ts`, `packages/shared/src/reconcile/`): K8s-style reconciler for Repo Task runs (`tasks`) and Standalone runs (`workflow_runs`). Pure decision functions consume a frozen `WorldSnapshot` and return a typed `Action`; the executor applies it under CAS so concurrent passes can't trample each other. Producers — `taskService.transitionTask`, `workflow-worker`'s `transitionRun`, `pr-watcher` poll cycle, `repo-cleanup` pod-health detection — wake the reconciler via `enqueueReconcile`. Periodic resync (`OPTIO_RECONCILE_RESYNC_INTERVAL`, 5 min) catches anything missed. The reconciler owns: PR-driven transitions (auto-merge, complete-on-merge, fail-on-close), auto-resume on CI/conflict/review (capped by `OPTIO_MAX_AUTO_RESUMES`), review launch, stall + pod-death detection, control-intent (cancel/retry/resume/restart). Schema: `control_intent`, `reconcile_backoff_until`, `reconcile_attempts` columns on both `tasks` and `workflow_runs`. See `docs/reconciliation.md`
+- **Reconciliation control plane** (`workers/reconcile-worker.ts`, `services/reconcile-{snapshot,executor,queue}.ts`, `packages/shared/src/reconcile/`): K8s-style reconciler with four `RunKind`s — `repo` (Repo Task runs in `tasks`), `standalone` (Job runs in `workflow_runs`), `pr-review` (external PR reviews), and `persistent-agent` (Persistent Agents in `persistent_agents`). Pure decision functions consume a frozen `WorldSnapshot` and return a typed `Action`; the executor applies it under CAS so concurrent passes can't trample each other. Producers — `taskService.transitionTask`, `workflow-worker`'s `transitionRun`, `pr-watcher` poll cycle, `repo-cleanup` pod-health detection, `wakeAgent()` (PA inbox + trigger dispatch) — wake the reconciler via `enqueueReconcile`. Periodic resync (`OPTIO_RECONCILE_RESYNC_INTERVAL`, 5 min) catches anything missed. The reconciler owns: PR-driven transitions (auto-merge, complete-on-merge, fail-on-close), auto-resume on CI/conflict/review (capped by `OPTIO_MAX_AUTO_RESUMES`), review launch, stall + pod-death detection, control-intent (cancel/retry/resume/restart), and the Persistent Agent turn cycle. Schema: `control_intent`, `reconcile_backoff_until`, `reconcile_attempts` columns on `tasks`, `workflow_runs`, and `persistent_agents`. See `docs/reconciliation.md`
 - **Task dependencies**: `task_dependencies` table for multi-step pipelines
 - **Cost tracking**: `GET /api/analytics/costs` with daily/repo/type breakdowns, UI at `/costs`
 - **Error classification**: `packages/shared/src/error-classifier.ts` pattern-matches errors into categories with remedies

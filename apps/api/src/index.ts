@@ -64,9 +64,11 @@ async function main() {
   const { startWebhookWorker } = await import("./workers/webhook-worker.js");
   const { startWorkflowWorker } = await import("./workers/workflow-worker.js");
   const { startWorkflowTriggerWorker } = await import("./workers/workflow-trigger-worker.js");
+  const { startPersistentAgentWorker } = await import("./workers/persistent-agent-worker.js");
   const { startTokenValidationWorker } = await import("./workers/token-validation-worker.js");
   const { startReconcileWorker, startReconcileResyncWorker } =
     await import("./workers/reconcile-worker.js");
+  const { startSkillSyncWorker } = await import("./workers/skill-sync-worker.js");
   const { getBullMQConnectionOptions } = await import("./services/redis-config.js");
   const { logTlsStackInfo, initTlsObservability } = await import("./services/tls-observability.js");
 
@@ -111,6 +113,13 @@ async function main() {
   const migrationsPath = join(dirname(fileURLToPath(import.meta.url)), "db", "migrations");
   const applied = await migrateSafe(db, migrationsPath);
   logger.info({ applied }, "Database migrations applied");
+
+  // Heal contradictory (scope='global', workspace_id IS NOT NULL) secret rows
+  // left over from issue #509. Idempotent — a no-op once the data is clean.
+  const { healContradictoryGlobalSecrets } = await import("./services/secret-service.js");
+  await healContradictoryGlobalSecrets().catch((err) =>
+    logger.error({ err }, "healContradictoryGlobalSecrets failed at boot"),
+  );
 
   // Seed built-in connection providers (idempotent upsert)
   const { seedBuiltInProviders } = await import("./services/connection-service.js");
@@ -194,6 +203,7 @@ async function main() {
     cleanRepeatJobs("token-validation"),
     cleanRepeatJobs("reconcile"),
     cleanRepeatJobs("reconcile-resync"),
+    cleanRepeatJobs("skill-sync"),
   ]);
 
   // Start BullMQ workers (each re-registers its repeat job)
@@ -225,12 +235,18 @@ async function main() {
   const workflowTriggerWorker = startWorkflowTriggerWorker();
   logger.info("Workflow trigger worker started");
 
+  const persistentAgentWorker = startPersistentAgentWorker();
+  logger.info("Persistent agent worker started");
+
   const tokenValidationWorker = startTokenValidationWorker();
   logger.info("Token validation worker started");
 
   const reconcileWorker = startReconcileWorker();
   const reconcileResyncWorker = startReconcileResyncWorker();
   logger.info("Reconcile workers started");
+
+  const skillSyncWorker = startSkillSyncWorker();
+  logger.info("Skill sync worker started");
 
   // Check if metrics-server is available
   checkMetricsServer().catch(() => {});
@@ -252,10 +268,12 @@ async function main() {
     await prReviewWorker.close();
     await webhookWorker.close();
     await workflowWorker.close();
+    await persistentAgentWorker.close();
     await workflowTriggerWorker.close();
     await tokenValidationWorker.close();
     await reconcileWorker.close();
     await reconcileResyncWorker.close();
+    await skillSyncWorker.close();
     await app.close();
     // Flush pending OTel spans/metrics with 5s timeout
     await shutdownTelemetry();

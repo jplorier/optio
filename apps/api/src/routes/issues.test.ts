@@ -26,6 +26,12 @@ vi.mock("../services/git-token-service.js", () => ({
   getGitPlatformForRepo: (...args: unknown[]) => mockGetGitPlatformForRepo(...args),
 }));
 
+// Default return: an empty chainable so tests that don't script every db.select() call
+// (e.g. the new ticket_providers fan-out) get an empty result instead of undefined.
+const emptyChain = () => ({
+  from: vi.fn().mockReturnThis(),
+  where: vi.fn().mockResolvedValue([]),
+});
 const mockDbSelect = vi.fn();
 vi.mock("../db/client.js", () => ({
   db: {
@@ -42,6 +48,21 @@ vi.mock("../db/schema.js", () => ({
     state: "state",
     workspaceId: "workspaceId",
   },
+  ticketProviders: { id: "id", source: "source", enabled: "enabled" },
+}));
+
+vi.mock("@optio/ticket-providers", () => ({
+  getTicketProvider: vi.fn(() => ({
+    fetchActionableTickets: vi.fn().mockResolvedValue([]),
+  })),
+}));
+
+vi.mock("../services/secret-service.js", () => ({
+  retrieveSecret: vi.fn().mockRejectedValue(new Error("no secret")),
+}));
+
+vi.mock("../services/github-token-service.js", () => ({
+  getGitHubToken: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("../logger.js", () => ({
@@ -75,6 +96,7 @@ describe("GET /api/issues", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockDbSelect.mockImplementation(emptyChain);
     app = await buildTestApp();
   });
 
@@ -249,6 +271,7 @@ describe("POST /api/issues/assign", () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
+    mockDbSelect.mockImplementation(emptyChain);
     app = await buildTestApp();
   });
 
