@@ -154,7 +154,12 @@ async function authPlugin(app: FastifyInstance) {
 
     // Setup routes (other than /status) are public only before initial setup.
     // Once setup is complete they require authentication like any other route.
-    if (req.url.startsWith("/api/setup/")) {
+    // POST /api/secrets is also included here: the setup wizard saves agent API
+    // keys via that endpoint before any user session exists.
+    const isSetupRoute =
+      req.url.startsWith("/api/setup/") ||
+      (req.method === "POST" && req.url === "/api/secrets");
+    if (isSetupRoute) {
       const complete = await isSetupComplete();
       if (!complete) return; // Allow without auth during initial setup
       // Fall through to normal auth check
