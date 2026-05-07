@@ -6,7 +6,7 @@ import { isAuthDisabled } from "../services/oauth/index.js";
 import { getUserRole, ensureUserHasWorkspace } from "../services/workspace-service.js";
 import { listSecrets } from "../services/secret-service.js";
 import { db } from "../db/client.js";
-import { repos } from "../db/schema.js";
+import { users } from "../db/schema.js";
 import type { WorkspaceRole } from "@optio/shared";
 import { emitAuthFailureLog } from "../telemetry/logs.js";
 
@@ -32,14 +32,9 @@ export function requireRole(minimumRole: WorkspaceRole) {
     // Auth disabled — allow everything (local dev)
     if (isAuthDisabled()) return;
 
-    // No session yet: allow through during initial setup (before any agent key exists),
-    // or during the repos step of the wizard (before any repo exists).
-    // Matches the same exemptions applied in the main auth preHandler.
-    if (!req.user) {
-      const complete = await isSetupComplete();
-      if (!complete) return;
-      if (req.url === "/api/repos" && (await hasNoRepos())) return;
-    }
+    // No session: allow through while no user accounts exist (setup wizard phase).
+    // Once the first user logs in via OAuth the gate closes permanently.
+    if (!req.user && !(await hasAnyUser())) return;
 
     const role = req.user?.workspaceRole;
     const level = role ? (ROLE_LEVEL[role] ?? 0) : 0;
@@ -138,19 +133,44 @@ export function resetSetupCompleteCache(): void {
   _setupCompleteCache = null;
 }
 
+let _hasAnyUserCache: { value: boolean; expires: number } | null = null;
+const HAS_ANY_USER_CACHE_TTL_MS = 30_000; // 30 seconds
+
 /**
- * Returns true when no repos have been configured yet. Used to allow
- * unauthenticated POST /api/repos during the initial setup wizard — the
- * repos step runs after isSetupComplete() already returns true (agent key
- * was saved earlier in the wizard), so it needs its own gate.
+ * Returns true when at least one user account exists in the database.
+ * Used as the gate for the setup wizard bypass: all wizard endpoints are
+ * open until the first user logs in via OAuth, after which normal auth
+ * applies everywhere. Result is cached for 30 seconds.
  */
-async function hasNoRepos(): Promise<boolean> {
+async function hasAnyUser(): Promise<boolean> {
+  const now = Date.now();
+  if (_hasAnyUserCache && now < _hasAnyUserCache.expires) {
+    return _hasAnyUserCache.value;
+  }
   try {
-    const [row] = await db.select({ id: repos.id }).from(repos).limit(1);
-    return !row;
+    const [row] = await db.select({ id: users.id }).from(users).limit(1);
+    const value = !!row;
+    _hasAnyUserCache = { value, expires: now + HAS_ANY_USER_CACHE_TTL_MS };
+    return value;
   } catch {
     return false;
   }
+}
+
+/**
+ * All endpoints the setup wizard writes to. These are open to unauthenticated
+ * requests while no user accounts exist (initial setup phase).
+ */
+function isSetupWizardEndpoint(method: string, url: string): boolean {
+  const path = url.split("?")[0];
+  if (path.startsWith("/api/setup/")) return true;
+  if (method !== "POST") return false;
+  return (
+    path === "/api/secrets" ||
+    path === "/api/repos" ||
+    path === "/api/prompt-templates" ||
+    path === "/api/tickets/providers"
+  );
 }
 
 export function isPublicRoute(url: string): boolean {
@@ -178,24 +198,10 @@ async function authPlugin(app: FastifyInstance) {
     // Public routes — no auth needed
     if (isPublicRoute(req.url)) return;
 
-    // Setup routes (other than /status) are public only before initial setup.
-    // Once setup is complete they require authentication like any other route.
-    // POST /api/secrets is also included here: the setup wizard saves agent API
-    // keys via that endpoint before any user session exists.
-    const isSetupRoute =
-      req.url.startsWith("/api/setup/") || (req.method === "POST" && req.url === "/api/secrets");
-    if (isSetupRoute) {
-      const complete = await isSetupComplete();
-      if (!complete) return; // Allow without auth during initial setup
-      // Fall through to normal auth check
-    }
-
-    // The repos step of the setup wizard runs after isSetupComplete() is already
-    // true (agent key was saved first). Allow unauthenticated POST /api/repos
-    // only while no repos have been configured yet.
-    if (req.method === "POST" && req.url === "/api/repos") {
-      if (await hasNoRepos()) return;
-    }
+    // Setup wizard endpoints are open while no user accounts exist yet.
+    // Once the first user logs in via OAuth, hasAnyUser() returns true and
+    // this bypass closes permanently — all requests require a valid session.
+    if (isSetupWizardEndpoint(req.method, req.url) && !(await hasAnyUser())) return;
 
     // Token resolution order: Bearer header → session cookie
     // Note: WebSocket auth is handled separately by authenticateWs() in ws-auth.ts
