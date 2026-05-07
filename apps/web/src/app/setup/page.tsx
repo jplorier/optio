@@ -2582,9 +2582,7 @@ export default function SetupPage() {
                 )}
               </div>
 
-              <p className="text-sm text-text-muted text-center">
-                Log in to start using Optio.
-              </p>
+              <p className="text-sm text-text-muted text-center">Log in to start using Optio.</p>
               <div className="flex justify-center gap-3">
                 <button
                   onClick={() => router.push("/login")}
