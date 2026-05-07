@@ -10,17 +10,25 @@ export function SetupCheck() {
   const [checked, setChecked] = useState(false);
 
   useEffect(() => {
-    // Don't redirect if already on setup page
-    if (pathname === "/setup") {
+    // Don't redirect if already on setup or login page
+    if (pathname === "/setup" || pathname === "/login") {
       setChecked(true);
       return;
     }
 
     api
       .getSetupStatus()
-      .then((res) => {
+      .then(async (res) => {
         if (!res.isSetUp) {
-          router.replace("/setup");
+          // Not set up — require login before showing the wizard
+          try {
+            await api.getCurrentUser();
+            // Logged in but not set up → go to setup
+            router.replace("/setup");
+          } catch {
+            // Not logged in → go to login first
+            router.replace("/login");
+          }
         }
       })
       .catch(() => {

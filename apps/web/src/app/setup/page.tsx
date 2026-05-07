@@ -155,6 +155,13 @@ export default function SetupPage() {
   const [agentSecretScope, setAgentSecretScope] = useState<"global" | "user">("global");
   const [canSetGlobalSecrets, setCanSetGlobalSecrets] = useState(true);
 
+  // Logged-in user context (populated once getCurrentUser resolves)
+  const [currentUser, setCurrentUser] = useState<{
+    displayName: string | null;
+    email: string | null;
+    avatarUrl: string | null;
+  } | null>(null);
+
   // Step 6: Tickets — per-repo GitHub Issues toggles + a list of external trackers
   const [githubIssueRepos, setGithubIssueRepos] = useState<Record<string, boolean>>({});
   type AddedTracker = {
@@ -188,14 +195,25 @@ export default function SetupPage() {
       .catch(() => {});
     // Determine if the current user can store global secrets. Only admins
     // (or anyone, when auth is disabled) may; non-admins must use user scope.
+    // Also redirect to /login if not authenticated (setup requires login).
     api
       .getCurrentUser()
       .then((res) => {
         const isAdmin = res.authDisabled || res.user.workspaceRole === "admin";
         setCanSetGlobalSecrets(isAdmin);
         setAgentSecretScope(isAdmin ? "global" : "user");
+        if (!res.authDisabled) {
+          setCurrentUser({
+            displayName: res.user.displayName,
+            email: res.user.email,
+            avatarUrl: res.user.avatarUrl,
+          });
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        // Not authenticated — redirect to login so the user logs in first
+        router.replace("/login");
+      });
   }, []);
 
   // Check if OAuth token is already stored when reaching the agents step
@@ -766,6 +784,16 @@ export default function SetupPage() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-2xl">
+        {/* Logged-in user indicator */}
+        {currentUser && (
+          <div className="flex items-center justify-end gap-2 mb-4 text-sm text-text-muted">
+            <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center text-xs font-medium">
+              {(currentUser.displayName ?? currentUser.email ?? "?")[0].toUpperCase()}
+            </div>
+            <span>{currentUser.displayName ?? currentUser.email}</span>
+          </div>
+        )}
+
         {/* Progress */}
         <div className="flex items-center justify-center gap-1 mb-8">
           {STEPS.map((s, i) => (
@@ -2582,13 +2610,12 @@ export default function SetupPage() {
                 )}
               </div>
 
-              <p className="text-sm text-text-muted text-center">Log in to start using Optio.</p>
               <div className="flex justify-center gap-3">
                 <button
-                  onClick={() => router.push("/login")}
+                  onClick={() => router.push("/")}
                   className="flex items-center gap-2 px-6 py-2.5 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover"
                 >
-                  Log In <ArrowRight className="w-4 h-4" />
+                  Go to Dashboard <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>

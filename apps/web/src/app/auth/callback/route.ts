@@ -38,7 +38,21 @@ export async function GET(request: NextRequest) {
 
     const { token } = (await res.json()) as { token: string };
 
-    const response = NextResponse.redirect(new URL("/", PUBLIC_URL));
+    // Redirect to setup wizard if initial setup hasn't been completed yet
+    let redirectPath = "/";
+    try {
+      const setupRes = await fetch(`${INTERNAL_API_URL}/api/setup/status`);
+      if (setupRes.ok) {
+        const setupData = (await setupRes.json()) as { isSetUp: boolean };
+        if (!setupData.isSetUp) {
+          redirectPath = "/setup";
+        }
+      }
+    } catch {
+      // If we can't check setup status, proceed to home
+    }
+
+    const response = NextResponse.redirect(new URL(redirectPath, PUBLIC_URL));
     response.cookies.set(SESSION_COOKIE_NAME, token, {
       path: "/",
       httpOnly: true,
