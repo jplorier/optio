@@ -1,4 +1,4 @@
-import { eq, desc, and, or, ilike, gte, lte, sql } from "drizzle-orm";
+import { eq, desc, and, or, isNull, ilike, gte, lte, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { tasks, taskEvents, taskLogs, users, repos } from "../db/schema.js";
 import {
@@ -92,7 +92,7 @@ export async function listTasks(opts?: {
     conditions.push(eq(tasks.state, opts.state as any));
   }
   if (opts?.workspaceId) {
-    conditions.push(eq(tasks.workspaceId, opts.workspaceId));
+    conditions.push(or(eq(tasks.workspaceId, opts.workspaceId), isNull(tasks.workspaceId))!);
   }
 
   let query = db.select().from(tasks).orderBy(desc(tasks.createdAt));
@@ -130,7 +130,7 @@ export async function searchTasks(opts: SearchTasksOpts) {
 
   // Workspace filter
   if (opts.workspaceId) {
-    conditions.push(eq(tasks.workspaceId, opts.workspaceId));
+    conditions.push(or(eq(tasks.workspaceId, opts.workspaceId), isNull(tasks.workspaceId))!);
   }
 
   // Full-text search on title and prompt
@@ -720,7 +720,7 @@ export async function getRepoConfig(repoUrl: string) {
 export async function getTaskStats(workspaceId?: string | null) {
   const conditions = [];
   if (workspaceId) {
-    conditions.push(eq(tasks.workspaceId, workspaceId));
+    conditions.push(or(eq(tasks.workspaceId, workspaceId), isNull(tasks.workspaceId))!);
   }
 
   const whereClause = conditions.length > 0 ? and(...conditions) : undefined;

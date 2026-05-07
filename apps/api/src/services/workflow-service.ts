@@ -1,4 +1,4 @@
-import { eq, desc, sql, and, lte } from "drizzle-orm";
+import { eq, desc, sql, and, lte, or, isNull } from "drizzle-orm";
 import { CronExpressionParser } from "cron-parser";
 import { db } from "../db/client.js";
 import {
@@ -16,7 +16,7 @@ import { logger } from "../logger.js";
 
 export async function listWorkflows(workspaceId?: string) {
   const conditions = [];
-  if (workspaceId) conditions.push(eq(workflows.workspaceId, workspaceId));
+  if (workspaceId) conditions.push(or(eq(workflows.workspaceId, workspaceId), isNull(workflows.workspaceId))!);
 
   const baseQuery = db.select().from(workflows).orderBy(desc(workflows.createdAt));
   if (conditions.length > 0) {
@@ -158,7 +158,9 @@ export async function cloneWorkflow(
  * `getTaskStats()` so the frontend can treat it symmetrically.
  */
 export async function getWorkflowRunStats(workspaceId?: string | null) {
-  const wsFilter = workspaceId ? sql`AND w.workspace_id = ${workspaceId}` : sql``;
+  const wsFilter = workspaceId
+    ? sql`AND (w.workspace_id = ${workspaceId} OR w.workspace_id IS NULL)`
+    : sql``;
 
   const rows = await db.execute<{ state: string; count: string }>(sql`
     SELECT wr.state, COUNT(*)::text AS count
@@ -197,7 +199,9 @@ export async function getWorkflowRunStats(workspaceId?: string | null) {
 }
 
 export async function listWorkflowsWithStats(workspaceId?: string) {
-  const wsFilter = workspaceId ? sql`AND w.workspace_id = ${workspaceId}` : sql``;
+  const wsFilter = workspaceId
+    ? sql`AND (w.workspace_id = ${workspaceId} OR w.workspace_id IS NULL)`
+    : sql``;
 
   const rows = await db.execute<{
     id: string;

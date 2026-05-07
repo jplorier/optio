@@ -1,4 +1,4 @@
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, or, isNull } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { taskConfigs, workflowTriggers } from "../db/schema.js";
 import { TaskState } from "@optio/shared";
@@ -65,7 +65,7 @@ export async function getTaskConfig(id: string) {
 
 export async function listTaskConfigs(opts?: { workspaceId?: string | null }) {
   const conditions = [];
-  if (opts?.workspaceId) conditions.push(eq(taskConfigs.workspaceId, opts.workspaceId));
+  if (opts?.workspaceId) conditions.push(or(eq(taskConfigs.workspaceId, opts.workspaceId), isNull(taskConfigs.workspaceId))!);
 
   let q = db.select().from(taskConfigs).orderBy(desc(taskConfigs.createdAt));
   if (conditions.length > 0) q = q.where(and(...conditions)) as typeof q;

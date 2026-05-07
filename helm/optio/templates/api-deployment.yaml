@@ -119,13 +119,13 @@ spec:
             httpGet:
               path: /api/health
               port: {{ .Values.api.port }}
-            initialDelaySeconds: 10
+            initialDelaySeconds: 120
             periodSeconds: 10
           livenessProbe:
             httpGet:
               path: /api/health
               port: {{ .Values.api.port }}
-            initialDelaySeconds: 15
+            initialDelaySeconds: 150
             periodSeconds: 20
       volumes:
         - name: tmp

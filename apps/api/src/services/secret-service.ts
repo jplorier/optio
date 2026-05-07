@@ -232,7 +232,12 @@ export async function listSecrets(
 ): Promise<SecretRef[]> {
   const conditions = [];
   if (scope) conditions.push(eq(secrets.scope, scope));
-  if (workspaceId) conditions.push(eq(secrets.workspaceId, workspaceId));
+  // Global secrets are stored with workspace_id=NULL (enforced by storeSecret).
+  // Filtering by workspaceId for global/unscoped queries would exclude them all.
+  // Only apply the workspace filter for repo-scoped secrets.
+  if (workspaceId && scope && scope !== "global") {
+    conditions.push(eq(secrets.workspaceId, workspaceId));
+  }
   if (userId) conditions.push(eq(secrets.userId, userId));
 
   const query =
