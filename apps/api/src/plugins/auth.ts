@@ -30,6 +30,13 @@ export function requireRole(minimumRole: WorkspaceRole) {
     // Auth disabled — allow everything (local dev)
     if (isAuthDisabled()) return;
 
+    // No session yet: allow through during initial setup (before any agent key exists).
+    // Matches the same exemption applied in the main auth preHandler.
+    if (!req.user) {
+      const complete = await isSetupComplete();
+      if (!complete) return;
+    }
+
     const role = req.user?.workspaceRole;
     const level = role ? (ROLE_LEVEL[role] ?? 0) : 0;
 
