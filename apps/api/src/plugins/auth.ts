@@ -5,6 +5,8 @@ import { validateApiKey } from "../services/api-key-service.js";
 import { isAuthDisabled } from "../services/oauth/index.js";
 import { getUserRole, ensureUserHasWorkspace } from "../services/workspace-service.js";
 import { listSecrets } from "../services/secret-service.js";
+import { db } from "../db/client.js";
+import { repos } from "../db/schema.js";
 import type { WorkspaceRole } from "@optio/shared";
 import { emitAuthFailureLog } from "../telemetry/logs.js";
 
@@ -30,11 +32,13 @@ export function requireRole(minimumRole: WorkspaceRole) {
     // Auth disabled — allow everything (local dev)
     if (isAuthDisabled()) return;
 
-    // No session yet: allow through during initial setup (before any agent key exists).
-    // Matches the same exemption applied in the main auth preHandler.
+    // No session yet: allow through during initial setup (before any agent key exists),
+    // or during the repos step of the wizard (before any repo exists).
+    // Matches the same exemptions applied in the main auth preHandler.
     if (!req.user) {
       const complete = await isSetupComplete();
       if (!complete) return;
+      if (req.url === "/api/repos" && (await hasNoRepos())) return;
     }
 
     const role = req.user?.workspaceRole;
@@ -134,6 +138,21 @@ export function resetSetupCompleteCache(): void {
   _setupCompleteCache = null;
 }
 
+/**
+ * Returns true when no repos have been configured yet. Used to allow
+ * unauthenticated POST /api/repos during the initial setup wizard — the
+ * repos step runs after isSetupComplete() already returns true (agent key
+ * was saved earlier in the wizard), so it needs its own gate.
+ */
+async function hasNoRepos(): Promise<boolean> {
+  try {
+    const [row] = await db.select({ id: repos.id }).from(repos).limit(1);
+    return !row;
+  } catch {
+    return false;
+  }
+}
+
 export function isPublicRoute(url: string): boolean {
   const path = url.split("?")[0];
   if (PUBLIC_ROUTES.has(path) || PUBLIC_AUTH_ROUTES.has(path)) return true;
@@ -169,6 +188,13 @@ async function authPlugin(app: FastifyInstance) {
       const complete = await isSetupComplete();
       if (!complete) return; // Allow without auth during initial setup
       // Fall through to normal auth check
+    }
+
+    // The repos step of the setup wizard runs after isSetupComplete() is already
+    // true (agent key was saved first). Allow unauthenticated POST /api/repos
+    // only while no repos have been configured yet.
+    if (req.method === "POST" && req.url === "/api/repos") {
+      if (await hasNoRepos()) return;
     }
 
     // Token resolution order: Bearer header → session cookie
