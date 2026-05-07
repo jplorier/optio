@@ -2582,18 +2582,15 @@ export default function SetupPage() {
                 )}
               </div>
 
+              <p className="text-sm text-text-muted text-center">
+                Log in to start using Optio.
+              </p>
               <div className="flex justify-center gap-3">
                 <button
-                  onClick={() => router.push("/tasks/new")}
+                  onClick={() => router.push("/login")}
                   className="flex items-center gap-2 px-6 py-2.5 rounded-md bg-primary text-white text-sm font-medium hover:bg-primary-hover"
                 >
-                  Create Your First Task <ArrowRight className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => router.push("/")}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-md bg-bg-hover text-text-muted text-sm hover:text-text"
-                >
-                  Go to Dashboard
+                  Log In <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
