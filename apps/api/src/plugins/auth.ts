@@ -164,8 +164,7 @@ async function authPlugin(app: FastifyInstance) {
     // POST /api/secrets is also included here: the setup wizard saves agent API
     // keys via that endpoint before any user session exists.
     const isSetupRoute =
-      req.url.startsWith("/api/setup/") ||
-      (req.method === "POST" && req.url === "/api/secrets");
+      req.url.startsWith("/api/setup/") || (req.method === "POST" && req.url === "/api/secrets");
     if (isSetupRoute) {
       const complete = await isSetupComplete();
       if (!complete) return; // Allow without auth during initial setup
