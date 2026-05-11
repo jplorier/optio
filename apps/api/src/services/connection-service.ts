@@ -332,42 +332,43 @@ export async function createProvider(
 
 /**
  * Idempotent seeder: creates or updates built-in providers.
- * Uses upsert on the (slug, workspaceId) unique constraint.
+ *
+ * Uses explicit check-then-update rather than onConflictDoUpdate because
+ * PostgreSQL standard unique indexes treat NULL != NULL, so the conflict
+ * target (slug, workspaceId) never fires for built-in providers whose
+ * workspaceId is NULL — causing a new row to be inserted on every restart.
  */
 export async function seedBuiltInProviders(): Promise<void> {
   for (const provider of BUILT_IN_PROVIDERS) {
-    await db
-      .insert(connectionProviders)
-      .values({
-        slug: provider.slug,
-        name: provider.name,
-        description: provider.description,
-        icon: provider.icon,
-        category: provider.category,
-        type: provider.type,
-        configSchema: provider.configSchema,
-        requiredSecrets: provider.requiredSecrets,
-        mcpConfig: provider.mcpConfig ?? undefined,
-        capabilities: provider.capabilities,
-        builtIn: true,
-        workspaceId: undefined, // built-in providers have NULL workspaceId
-      })
-      .onConflictDoUpdate({
-        target: [connectionProviders.slug, connectionProviders.workspaceId],
-        set: {
-          name: provider.name,
-          description: provider.description,
-          icon: provider.icon,
-          category: provider.category,
-          type: provider.type,
-          configSchema: provider.configSchema,
-          requiredSecrets: provider.requiredSecrets,
-          mcpConfig: provider.mcpConfig ?? undefined,
-          capabilities: provider.capabilities,
-          builtIn: true,
-          updatedAt: new Date(),
-        },
-      });
+    const values = {
+      slug: provider.slug,
+      name: provider.name,
+      description: provider.description,
+      icon: provider.icon,
+      category: provider.category,
+      type: provider.type,
+      configSchema: provider.configSchema,
+      requiredSecrets: provider.requiredSecrets,
+      mcpConfig: provider.mcpConfig ?? undefined,
+      capabilities: provider.capabilities,
+      builtIn: true,
+      workspaceId: undefined as undefined, // built-in providers have NULL workspaceId
+    };
+
+    const [existing] = await db
+      .select({ id: connectionProviders.id })
+      .from(connectionProviders)
+      .where(and(eq(connectionProviders.slug, provider.slug), isNull(connectionProviders.workspaceId)))
+      .limit(1);
+
+    if (existing) {
+      await db
+        .update(connectionProviders)
+        .set({ ...values, updatedAt: new Date() })
+        .where(eq(connectionProviders.id, existing.id));
+    } else {
+      await db.insert(connectionProviders).values(values);
+    }
   }
 }
 

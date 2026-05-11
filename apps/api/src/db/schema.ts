@@ -10,6 +10,7 @@ import {
   boolean,
   customType,
   unique,
+  uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
 
@@ -742,7 +743,7 @@ export const connectionProviders = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
-    unique("connection_providers_slug_ws_key").on(table.slug, table.workspaceId),
+    uniqueIndex("connection_providers_slug_ws_key").on(table.slug, table.workspaceId).nullsNotDistinct(),
     index("connection_providers_category_idx").on(table.category),
     index("connection_providers_workspace_id_idx").on(table.workspaceId),
   ],
